@@ -16,7 +16,11 @@ class OpenCodeSessionError extends Schema.TaggedError<OpenCodeSessionError>()(
 
 class OpenCodeTurnFailed extends Schema.TaggedError<OpenCodeTurnFailed>()(
   'OpenCodeTurnFailed',
-  { code: Schema.String, message: Schema.String, cause: Schema.Defect },
+  {
+    code: Schema.optional(Schema.String),
+    message: Schema.String,
+    cause: Schema.Defect,
+  },
 ) {}
 
 export class OpenCode extends Effect.Service<OpenCode>()(
@@ -69,13 +73,14 @@ export class OpenCode extends Effect.Service<OpenCode>()(
           // Use: set model (if provided), run the turn, return the result
           (handle: AcpRuntimeHandle) =>
             Effect.gen(function* () {
-              if (input.model !== undefined) {
+              const model = input.model;
+              if (model !== undefined) {
                 yield* Effect.tryPromise({
                   try: () =>
                     runtime.setConfigOption({
                       handle,
                       key: 'model',
-                      value: input.model as string,
+                      value: model,
                     }),
                   catch: (cause) =>
                     new OpenCodeTurnFailed({
@@ -127,9 +132,9 @@ export class OpenCode extends Effect.Service<OpenCode>()(
               if (result.status === 'failed') {
                 return yield* Effect.fail(
                   new OpenCodeTurnFailed({
-                    code: result.error.code ?? 'TURN_FAILED',
+                    code: result.error.code,
                     message: result.error.message,
-                    cause: new Error(result.error.message),
+                    cause: result.error,
                   }),
                 );
               }
