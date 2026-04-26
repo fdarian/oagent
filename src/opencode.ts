@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  type AcpRuntimeEvent,
   type AcpRuntimeHandle,
   createAcpRuntime,
   createAgentRegistry,
@@ -54,6 +55,7 @@ export class OpenCode extends Effect.Service<OpenCode>()(
         model?: string;
         sessionId?: string;
         cwd: string;
+        onEvent?: (event: AcpRuntimeEvent) => void;
       }) =>
         Effect.acquireUseRelease(
           // Acquire: create or resume the session handle
@@ -104,6 +106,9 @@ export class OpenCode extends Effect.Service<OpenCode>()(
                 try: async () => {
                   let acc = '';
                   for await (const event of turn.events) {
+                    if (input.onEvent !== undefined) {
+                      input.onEvent(event);
+                    }
                     if (
                       event.type === 'text_delta' &&
                       event.stream !== 'thought'
