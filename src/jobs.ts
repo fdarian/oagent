@@ -48,6 +48,7 @@ export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
       prompt: string;
       model?: string;
       sessionId?: string;
+      cwd: string;
     }) =>
       Effect.gen(function* () {
         const jobId = randomUUID();

@@ -53,6 +53,7 @@ export class OpenCode extends Effect.Service<OpenCode>()(
         prompt: string;
         model?: string;
         sessionId?: string;
+        cwd: string;
       }) =>
         Effect.acquireUseRelease(
           // Acquire: create or resume the session handle
@@ -64,6 +65,7 @@ export class OpenCode extends Effect.Service<OpenCode>()(
                 sessionKey: randomUUID(),
                 agent: 'opencode',
                 mode: 'persistent',
+                cwd: input.cwd,
                 ...(input.sessionId !== undefined
                   ? { resumeSessionId: input.sessionId }
                   : {}),
