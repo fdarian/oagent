@@ -1,0 +1,36 @@
+{
+  "name": "opencode-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "private": false,
+  "description": "MCP server that exposes OpenCode to Claude Code as a subagent (via ACP)",
+  "license": "MIT",
+  "bin": {
+    "opencode-mcp": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "packageManager": "bun@1.3.13",
+  "scripts": {
+    "dev": "bun src/index.ts",
+    "format": "biome check --write",
+    "check:tsc": "tsc --noEmit",
+    "check:lint": "biome check",
+    "check": "bun check:tsc && bun check:lint"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "acpx": "^0.6.1",
+    "effect": "^3.21.2",
+    "@effect/platform": "^0.96.1",
+    "@effect/platform-bun": "^0.89.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.4.13",
+    "@types/bun": "^1.3.13",
+    "typescript": "^6.0.3"
+  }
+}
