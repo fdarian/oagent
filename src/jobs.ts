@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Effect, Fiber, Schema } from 'effect';
+import { Duration, Effect, Fiber, Schedule, Schema } from 'effect';
 import { OpenCode } from '#/opencode';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
@@ -23,8 +23,13 @@ type JobState =
       readonly sessionId: string;
       readonly text: string;
       readonly stopReason: string | undefined;
+      readonly terminatedAt: number;
     }
-  | { readonly status: 'error'; readonly message: string };
+  | {
+      readonly status: 'error';
+      readonly message: string;
+      readonly terminatedAt: number;
+    };
 
 type WaitResult =
   | { readonly status: 'running' }
@@ -38,11 +43,32 @@ type WaitResult =
 
 const TIMEOUT_DEFAULT_MS = 50_000;
 const TIMEOUT_MAX_MS = 55_000;
+const JOB_TTL_MS = 30 * 60_000;
+const JOB_SWEEP_INTERVAL_MS = 5 * 60_000;
 
 export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
   effect: Effect.gen(function* () {
     const opencode = yield* OpenCode;
     const map = new Map<string, JobState>();
+
+    const sweep = Effect.sync(() => {
+      const now = Date.now();
+      for (const [jobId, state] of map.entries()) {
+        if (
+          state.status !== 'running' &&
+          now - state.terminatedAt > JOB_TTL_MS
+        ) {
+          map.delete(jobId);
+        }
+      }
+    });
+
+    yield* Effect.forkDaemon(
+      Effect.repeat(
+        sweep,
+        Schedule.spaced(Duration.millis(JOB_SWEEP_INTERVAL_MS)),
+      ),
+    );
 
     const start = (input: {
       prompt: string;
@@ -61,6 +87,7 @@ export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
                   sessionId: result.sessionId,
                   text: result.text,
                   stopReason: result.stopReason,
+                  terminatedAt: Date.now(),
                 });
               }),
             ),
@@ -69,6 +96,7 @@ export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
                 map.set(jobId, {
                   status: 'error',
                   message: formatJobError(error),
+                  terminatedAt: Date.now(),
                 });
               }),
             ),
