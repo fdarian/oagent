@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
+import { randomUUID } from 'node:crypto';
 import { BunRuntime } from '@effect/platform-bun';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
@@ -46,10 +48,12 @@ const WaitArgsSchema = v.object({
   timeoutMs: v.optional(v.number()),
 });
 
-const program = Effect.gen(function* () {
-  const jobs = yield* Jobs;
-  const rt = yield* Effect.runtime<never>();
-
+/** Register tools on a Server instance using the given jobs service and Effect runtime. */
+function registerTools(
+  server: Server,
+  jobs: Jobs,
+  rt: Runtime.Runtime<never>,
+): void {
   /** Bridge an Effect into a plain Promise, re-throwing the real failure value. */
   const runHandler = async <A, E>(
     eff: Effect.Effect<A, E, never>,
@@ -66,11 +70,6 @@ const program = Effect.gen(function* () {
     }
     return exit.value;
   };
-
-  const server = new Server(
-    { name: 'opencode-mcp', version: '0.1.0' },
-    { capabilities: { tools: {} } },
-  );
 
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [
@@ -183,16 +182,105 @@ const program = Effect.gen(function* () {
       isError: true,
     };
   });
+}
 
-  yield* Effect.tryPromise({
-    try: () => server.connect(new StdioServerTransport()),
-    catch: (cause) =>
-      new Error(
-        `Failed to connect MCP transport: ${cause instanceof Error ? cause.message : String(cause)}`,
-      ),
-  });
+const program = Effect.gen(function* () {
+  const jobs = yield* Jobs;
+  const rt = yield* Effect.runtime<never>();
 
-  yield* Effect.never;
+  const mode = process.argv[2] ?? 'serve';
+
+  if (mode === 'stdio') {
+    const server = new Server(
+      { name: 'opencode-mcp', version: '0.1.0' },
+      { capabilities: { tools: {} } },
+    );
+    registerTools(server, jobs, rt);
+
+    yield* Effect.tryPromise({
+      try: () => server.connect(new StdioServerTransport()),
+      catch: (cause) =>
+        new Error(
+          `Failed to connect MCP transport: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+    });
+
+    yield* Effect.never;
+    return;
+  }
+
+  if (mode === 'serve') {
+    const port =
+      process.env.OPENCODE_MCP_PORT !== undefined
+        ? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
+        : 17777;
+
+    /** Map of MCP session ID → { transport, server } */
+    const sessions = new Map<
+      string,
+      { transport: WebStandardStreamableHTTPServerTransport; server: Server }
+    >();
+
+    const bunServer = yield* Effect.try({
+      try: () =>
+        Bun.serve({
+          hostname: '127.0.0.1',
+          port,
+          fetch: async (request) => {
+            const url = new URL(request.url);
+
+            if (url.pathname !== '/mcp') {
+              return new Response('Not Found', { status: 404 });
+            }
+
+            const sessionId = request.headers.get('mcp-session-id');
+
+            if (sessionId !== null) {
+              const session = sessions.get(sessionId);
+              if (session === undefined) {
+                return new Response('Session not found', { status: 404 });
+              }
+              return session.transport.handleRequest(request);
+            }
+
+            // No session ID — assume initialize request; create a new session.
+            const transport = new WebStandardStreamableHTTPServerTransport({
+              sessionIdGenerator: () => randomUUID(),
+              onsessioninitialized: (sid) => {
+                sessions.set(sid, { transport, server: mcpServer });
+              },
+              onsessionclosed: (sid) => {
+                sessions.delete(sid);
+              },
+            });
+
+            const mcpServer = new Server(
+              { name: 'opencode-mcp', version: '0.1.0' },
+              { capabilities: { tools: {} } },
+            );
+            registerTools(mcpServer, jobs, rt);
+
+            await mcpServer.connect(transport);
+            return transport.handleRequest(request);
+          },
+        }),
+      catch: (cause) =>
+        new Error(
+          `Failed to start HTTP server on port ${port}: ${cause instanceof Error ? cause.message : String(cause)}`,
+        ),
+    });
+
+    process.stderr.write(
+      `opencode-mcp listening on http://127.0.0.1:${bunServer.port}/mcp\n`,
+    );
+
+    yield* Effect.never;
+    return;
+  }
+
+  yield* Effect.fail(
+    new Error(`Unknown mode: "${mode}". Use "serve" (default) or "stdio".`),
+  );
 }).pipe(Effect.provide(Jobs.Default));
 
 BunRuntime.runMain(program);
