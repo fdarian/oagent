@@ -20,8 +20,9 @@ pass that sessionId back into a subsequent opencode_start call to continue the s
 conversation. The model parameter takes an OpenCode model id in provider-prefixed \
 format (run \`opencode models\` in a terminal to discover available ids — e.g. \
 opencode-go/kimi-k2.6, openrouter/anthropic/claude-sonnet-4.5); if omitted, \
-OpenCode's configured default is used. No cwd override is supported — all turns \
-run from the server's working directory.`;
+OpenCode's configured default is used. The cwd parameter is required: an absolute \
+path to the directory OpenCode should operate in — typically the parent agent's \
+project root.`;
 
 const OPENCODE_WAIT_DESCRIPTION = `\
 Wait for an OpenCode job (started via opencode_start) to complete. Blocks up to \
@@ -35,6 +36,7 @@ treating the task as complete.`;
 
 const StartArgsSchema = v.object({
   prompt: v.string(),
+  cwd: v.string(),
   model: v.optional(v.string()),
   sessionId: v.optional(v.string()),
 });
@@ -82,6 +84,11 @@ const program = Effect.gen(function* () {
               type: 'string',
               description: 'The task or question to send to OpenCode.',
             },
+            cwd: {
+              type: 'string',
+              description:
+                "Absolute path to the directory OpenCode should operate in — typically the parent agent's project root.",
+            },
             model: {
               type: 'string',
               description:
@@ -93,7 +100,7 @@ const program = Effect.gen(function* () {
                 'Resume a prior OpenCode session. Pass the sessionId returned from a previous opencode_wait done response.',
             },
           },
-          required: ['prompt'],
+          required: ['prompt', 'cwd'],
         },
       },
       {
