@@ -11,6 +11,7 @@ import {
 import { Cause, Effect, Exit, Runtime } from 'effect';
 import * as v from 'valibot';
 import { Jobs } from '#/jobs';
+import { handleJobDetail, handleJobEvents, handleJobList } from '#/web';
 
 const OPENCODE_START_DESCRIPTION = `\
 Delegate a task to OpenCode, a separate coding agent running as a subprocess. \
@@ -228,6 +229,18 @@ const program = Effect.gen(function* () {
           port,
           fetch: async (request) => {
             const url = new URL(request.url);
+
+            if (url.pathname === '/') return handleJobList(jobs);
+
+            const eventsJobId = url.pathname.match(
+              /^\/jobs\/([^/]+)\/events$/,
+            )?.[1];
+            if (eventsJobId !== undefined)
+              return handleJobEvents(jobs, eventsJobId, request.signal);
+
+            const detailJobId = url.pathname.match(/^\/jobs\/([^/]+)$/)?.[1];
+            if (detailJobId !== undefined)
+              return handleJobDetail(jobs, detailJobId);
 
             if (url.pathname !== '/mcp') {
               return new Response('Not Found', { status: 404 });
