@@ -72,6 +72,12 @@ Output (discriminated union):
 - `{ status: "done", text: string, sessionId: string, stopReason: string }` — final aggregated assistant text plus the sessionId you can pass back to `opencode_start` to continue the conversation
 - `{ status: "error", message: string }`
 
+## Web UI
+
+In `serve` (HTTP) mode, open `http://localhost:17777/` in a browser to see the live job list. Click a job to see its event timeline — text deltas, tool calls, status updates, and errors — streamed live via SSE while the job is running. The UI is server-rendered HTML; no framework or build step required.
+
+This is only available in `serve` mode. The stdio fallback has no web UI.
+
 ## Limits
 
 This is an MVP. The following are intentionally not supported:
