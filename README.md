@@ -18,13 +18,32 @@ cd opencode-mcp
 bun install
 ```
 
-Register with Claude Code (point the absolute path at the cloned repo):
+### HTTP daemon (default)
+
+Start the daemon once; it persists across Claude Code sessions:
 
 ```sh
-claude mcp add opencode -- bun /absolute/path/to/opencode-mcp/src/index.ts
+bun src/index.ts serve
+# opencode-mcp listening on http://127.0.0.1:17777/mcp
 ```
 
-Verify in a Claude Code session: ask Claude to call `opencode_start` with a small prompt — it should return a `jobId`, and a follow-up `opencode_wait` call should resolve to OpenCode's response.
+Register with Claude Code over HTTP:
+
+```sh
+claude mcp add --transport http opencode http://localhost:17777/mcp
+```
+
+The port defaults to `17777` and can be overridden with the `OPENCODE_MCP_PORT` environment variable.
+
+### stdio fallback
+
+If you prefer per-session stdio mode (one MCP server process per Claude Code session):
+
+```sh
+claude mcp add opencode -- bun /absolute/path/to/opencode-mcp/src/index.ts stdio
+```
+
+Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_wait` call should resolve to OpenCode's response.
 
 ## Tools
 
@@ -34,6 +53,7 @@ Delegates a task to OpenCode and returns a `jobId` immediately.
 
 Input:
 - `prompt: string` — the task to send
+- `cwd: string` — **required** absolute path to the directory OpenCode should operate in; typically the parent agent's project root
 - `model?: string` — OpenCode model id in provider-prefixed format (e.g. `opencode-go/kimi-k2.6`, `openrouter/anthropic/claude-sonnet-4.5`). Run `opencode models` to discover available ids. Omit to use OpenCode's configured default.
 - `sessionId?: string` — pass the `sessionId` returned from a prior `opencode_wait` to continue that conversation.
 
@@ -58,9 +78,9 @@ This is an MVP. The following are intentionally not supported:
 - `run_in_background` / worktree isolation — a job runs to completion or errors; no background detach
 - Cancellation — there's no `opencode_cancel` yet
 - Streaming partial output — you only see the aggregated text on `done`
-- Per-call `cwd` override — every job runs from the directory the MCP server was started in
+- No auth — the HTTP daemon binds to `127.0.0.1` only; no token is required or checked
 - Configurable permission policy — OpenCode's permission requests are auto-approved (the same pattern Claude Code uses with `--dangerously-skip-permissions`)
-- Job persistence across restarts — the in-memory job map is process-local
+- No job persistence across daemon restarts — the in-memory job map is process-local
 
 ## Development
 
