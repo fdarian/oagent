@@ -259,6 +259,7 @@ const program = Effect.gen(function* () {
         Bun.serve({
           hostname: '127.0.0.1',
           port,
+          idleTimeout: 0,
           fetch: async (request) => {
             const url = new URL(request.url);
 
