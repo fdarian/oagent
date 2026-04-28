@@ -158,15 +158,25 @@ function registerTools(
           isError: true,
         };
       }
+      const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
+      const WAIT_TIMEOUT_MAX_MS = 55_000;
       const result = await runHandler(
-        jobs.wait(parsed.output).pipe(
-          Effect.catchTag('JobNotFound', (err) =>
-            Effect.succeed({
-              status: 'error' as const,
-              message: `Job not found: ${err.jobId}`,
-            }),
+        jobs
+          .wait({
+            jobId: parsed.output.jobId,
+            timeoutMs: Math.min(
+              parsed.output.timeoutMs ?? WAIT_TIMEOUT_DEFAULT_MS,
+              WAIT_TIMEOUT_MAX_MS,
+            ),
+          })
+          .pipe(
+            Effect.catchTag('JobNotFound', (err) =>
+              Effect.succeed({
+                status: 'error' as const,
+                message: `Job not found: ${err.jobId}`,
+              }),
+            ),
           ),
-        ),
       );
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result) }],

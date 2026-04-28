@@ -58,7 +58,6 @@ type EventLog = {
 };
 
 const TIMEOUT_DEFAULT_MS = 50_000;
-const TIMEOUT_MAX_MS = 55_000;
 const JOB_TTL_MS = 30 * 60_000;
 const JOB_SWEEP_INTERVAL_MS = 5 * 60_000;
 const RING_BUFFER_MAX = 200;
@@ -190,10 +189,7 @@ export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
           return toWaitResult(state);
         }
 
-        const cap = Math.min(
-          input.timeoutMs ?? TIMEOUT_DEFAULT_MS,
-          TIMEOUT_MAX_MS,
-        );
+        const cap = input.timeoutMs ?? TIMEOUT_DEFAULT_MS;
 
         yield* Fiber.join(state.fiber).pipe(
           Effect.exit,
