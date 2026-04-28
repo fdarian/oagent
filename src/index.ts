@@ -11,7 +11,12 @@ import {
 import { Cause, Effect, Exit, Runtime } from 'effect';
 import * as v from 'valibot';
 import { Jobs } from '#/jobs';
-import { handleJobDetail, handleJobEvents, handleJobList } from '#/web';
+import {
+  handleJobDetail,
+  handleJobEvents,
+  handleJobList,
+  handleJobWait,
+} from '#/web';
 
 const OPENCODE_START_DESCRIPTION = `\
 Delegate a task to OpenCode, a separate coding agent running as a subprocess. \
@@ -247,6 +252,18 @@ const program = Effect.gen(function* () {
             )?.[1];
             if (eventsJobId !== undefined)
               return handleJobEvents(jobs, eventsJobId, request.signal);
+
+            const waitJobId = url.pathname.match(
+              /^\/jobs\/([^/]+)\/wait$/,
+            )?.[1];
+            if (waitJobId !== undefined) {
+              const timeoutParam = url.searchParams.get('timeoutMs');
+              const timeoutMs =
+                timeoutParam !== null
+                  ? Number.parseInt(timeoutParam, 10)
+                  : 600_000;
+              return handleJobWait(jobs, waitJobId, timeoutMs, rt);
+            }
 
             const detailJobId = url.pathname.match(/^\/jobs\/([^/]+)$/)?.[1];
             if (detailJobId !== undefined)
