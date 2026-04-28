@@ -24,11 +24,11 @@ Semantically equivalent to Claude Code's built-in Agent tool, but the underlying
 agent is OpenCode. Returns immediately with {jobId, waitUrl?}. If waitUrl is \
 present, the recommended way to wait is to run \`curl -sS <waitUrl>\` as a \
 background Bash command (run_in_background=true), then read the result with \
-BashOutput when ready. The curl returns the same JSON shape as opencode_wait. \
+BashOutput when ready. The curl returns the same JSON shape as opencode_result. \
 Optionally pass ?timeoutMs=N to the curl URL (default 600000 = 10min). The shell \
 will block until the job is terminal or the timeout fires; on timeout the response \
 is {status:"running"} and you can curl again. If waitUrl is absent (stdio mode), \
-fall back to repeatedly calling opencode_wait. The first successful wait response \
+fall back to repeatedly calling opencode_result. The first successful response \
 with status "done" will include the OpenCode sessionId; pass that sessionId back \
 into a subsequent opencode_start call to continue the same conversation. The model \
 parameter takes an OpenCode model id in provider-prefixed format (run \
@@ -38,16 +38,16 @@ OpenCode's configured default is used. The cwd parameter is required: an absolut
 path to the directory OpenCode should operate in — typically the parent agent's \
 project root.`;
 
-const OPENCODE_WAIT_DESCRIPTION = `\
-Wait for an OpenCode job (started via opencode_start) to complete. This is the \
-stdio-mode fallback; in HTTP daemon mode, prefer the waitUrl from opencode_start. \
-Blocks up to timeoutMs (default 50000, capped at 55000 to stay under Claude Code's \
-tool timeout). Returns a discriminated union: { status: "running" } — call again to \
-keep waiting; { status: "done", text, sessionId, stopReason } — the final \
-aggregated assistant text plus the sessionId you can pass back to opencode_start \
-to continue the same conversation; { status: "error", message } — the job \
-terminated with an error. Always poll until status is "done" or "error" before \
-treating the task as complete.`;
+const OPENCODE_RESULT_DESCRIPTION = `\
+Fetch the result of an OpenCode job (started via opencode_start). In HTTP daemon \
+mode, prefer the waitUrl from opencode_start; this tool is the stdio-mode \
+fallback. Blocks up to timeoutMs (default 50000, capped at 55000 to stay under \
+Claude Code's tool timeout). Returns a discriminated union: { status: "running" } \
+— call again to keep waiting; { status: "done", text, sessionId, stopReason } — \
+the final aggregated assistant text plus the sessionId you can pass back to \
+opencode_start to continue the same conversation; { status: "error", message } — \
+the job terminated with an error. Always poll until status is "done" or "error" \
+before treating the task as complete.`;
 
 const StartArgsSchema = v.object({
   prompt: v.string(),
@@ -56,7 +56,7 @@ const StartArgsSchema = v.object({
   sessionId: v.optional(v.string()),
 });
 
-const WaitArgsSchema = v.object({
+const ResultArgsSchema = v.object({
   jobId: v.string(),
   timeoutMs: v.optional(v.number()),
 });
@@ -110,15 +110,15 @@ function registerTools(
             sessionId: {
               type: 'string',
               description:
-                'Resume a prior OpenCode session. Pass the sessionId returned from a previous opencode_wait done response.',
+                'Resume a prior OpenCode session. Pass the sessionId returned from a previous opencode_result done response.',
             },
           },
           required: ['prompt', 'cwd'],
         },
       },
       {
-        name: 'opencode_wait',
-        description: OPENCODE_WAIT_DESCRIPTION,
+        name: 'opencode_result',
+        description: OPENCODE_RESULT_DESCRIPTION,
         inputSchema: {
           type: 'object' as const,
           properties: {
@@ -165,8 +165,8 @@ function registerTools(
       };
     }
 
-    if (request.params.name === 'opencode_wait') {
-      const parsed = v.safeParse(WaitArgsSchema, request.params.arguments);
+    if (request.params.name === 'opencode_result') {
+      const parsed = v.safeParse(ResultArgsSchema, request.params.arguments);
       if (!parsed.success) {
         return {
           content: [
