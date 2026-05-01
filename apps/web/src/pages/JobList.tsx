@@ -1,8 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
-import { orpc } from '../lib/orpc.ts'
+import { useQuery } from '@tanstack/react-query';
+import { orpc } from '../lib/orpc.ts';
 
 interface JobListProps {
-  onSelectJob: (id: string) => void
+  onSelectJob: (id: string) => void;
 }
 
 export function JobList({ onSelectJob }: JobListProps) {
@@ -10,19 +10,18 @@ export function JobList({ onSelectJob }: JobListProps) {
     queryKey: ['jobs'],
     queryFn: () => orpc.jobs.list(),
     refetchInterval: (query) => {
-      const jobs = query.state.data as Array<{ status: string }> | undefined
-      if (jobs !== undefined && jobs.some((j) => j.status === 'running')) {
-        return 2000
+      if (query.state.data?.some((j) => j.status === 'running')) {
+        return 2000;
       }
-      return false
+      return false;
     },
-  })
+  });
 
   if (isLoading) {
-    return <div className="p-6 text-gray-500">Loading...</div>
+    return <div className="p-6 text-gray-500">Loading...</div>;
   }
 
-  const jobs = data ?? []
+  const jobs = data ?? [];
 
   return (
     <div className="p-6">
@@ -53,9 +52,13 @@ export function JobList({ onSelectJob }: JobListProps) {
                   </button>
                 </td>
                 <td className="py-2 pr-4">{statusBadge(job.status)}</td>
-                <td className="py-2 pr-4 text-gray-400">{formatAge(job.createdAt)}</td>
+                <td className="py-2 pr-4 text-gray-400">
+                  {formatAge(job.createdAt)}
+                </td>
                 <td className="py-2 text-gray-400">
-                  {job.terminatedAt !== undefined ? formatAge(job.terminatedAt) : '—'}
+                  {job.terminatedAt !== undefined
+                    ? formatAge(job.terminatedAt)
+                    : '—'}
                 </td>
               </tr>
             ))}
@@ -63,7 +66,7 @@ export function JobList({ onSelectJob }: JobListProps) {
         </table>
       )}
     </div>
-  )
+  );
 }
 
 function statusBadge(status: string) {
@@ -71,19 +74,21 @@ function statusBadge(status: string) {
     running: 'bg-blue-900 text-blue-200',
     done: 'bg-green-900 text-green-200',
     error: 'bg-red-900 text-red-200',
-  }
+  };
   return (
-    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${classes[status] ?? 'bg-gray-800 text-gray-300'}`}>
+    <span
+      className={`inline-block px-2 py-0.5 rounded-full text-xs font-semibold ${classes[status] ?? 'bg-gray-800 text-gray-300'}`}
+    >
       {status}
     </span>
-  )
+  );
 }
 
 function formatAge(ms: number): string {
-  const secs = Math.floor((Date.now() - ms) / 1000)
-  if (secs < 60) return `${secs}s ago`
-  const mins = Math.floor(secs / 60)
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  return `${hrs}h ago`
+  const secs = Math.floor((Date.now() - ms) / 1000);
+  if (secs < 60) return `${secs}s ago`;
+  const mins = Math.floor(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  return `${hrs}h ago`;
 }
