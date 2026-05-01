@@ -43,7 +43,7 @@ If you prefer per-session stdio mode (one MCP server process per Claude Code ses
 claude mcp add opencode -- bun /absolute/path/to/opencode-mcp/src/index.ts stdio
 ```
 
-Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_wait` call should resolve to OpenCode's response.
+Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_result` call should resolve to OpenCode's response.
 
 ## Tools
 
@@ -55,13 +55,13 @@ Input:
 - `prompt: string` — the task to send
 - `cwd: string` — **required** absolute path to the directory OpenCode should operate in; typically the parent agent's project root
 - `model?: string` — OpenCode model id in provider-prefixed format (e.g. `opencode-go/kimi-k2.6`, `openrouter/anthropic/claude-sonnet-4.5`). Run `opencode models` to discover available ids. Omit to use OpenCode's configured default.
-- `sessionId?: string` — pass the `sessionId` returned from a prior `opencode_wait` to continue that conversation.
+- `sessionId?: string` — pass the `sessionId` returned from a prior `opencode_result` to continue that conversation.
 
 Output: `{ jobId: string }`
 
-### `opencode_wait`
+### `opencode_result`
 
-Blocks up to `timeoutMs` waiting for a job to finish. The split into start/wait exists because Claude Code enforces a ~60 s hard timeout per MCP tool call, while OpenCode turns can take minutes — so callers poll `opencode_wait` until the status is terminal.
+Fetches the result of a job, blocking up to `timeoutMs` if it's still running. In HTTP daemon mode, prefer the `waitUrl` returned by `opencode_start` — it's a long-poll endpoint you can hit with `curl` from a background shell. This MCP tool is the stdio-mode fallback; callers poll it until the status is terminal because Claude Code enforces a ~60 s hard timeout per MCP tool call, while OpenCode turns can take minutes.
 
 Input:
 - `jobId: string`
