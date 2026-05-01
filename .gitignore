@@ -6,3 +6,6 @@ dist
 .env.local
 bun.lock.bak
 /scripts/
+apps/cli/.gen/
+apps/cli/dist/
+apps/web/dist/
