@@ -1,4 +1,4 @@
-# opencode-mcp
+# oagent
 
 MCP server that exposes [OpenCode](https://opencode.ai) to Claude Code as a subagent — semantically equivalent to Claude Code's built-in `Agent` tool, but the work runs in OpenCode (a separate coding agent) over the [Agent Client Protocol](https://agentclientprotocol.com).
 
@@ -13,8 +13,8 @@ Useful when you want Claude Code to delegate a task to a different model, or to 
 ## Install
 
 ```sh
-git clone https://github.com/fdarian/opencode-mcp
-cd opencode-mcp
+git clone https://github.com/fdarian/oagent
+cd oagent
 bun install
 ```
 
@@ -24,7 +24,7 @@ Start the daemon once; it persists across Claude Code sessions:
 
 ```sh
 bun src/index.ts serve
-# opencode-mcp listening on http://127.0.0.1:17777/mcp
+# oagent listening on http://127.0.0.1:17777/mcp
 ```
 
 Register with Claude Code over HTTP:
@@ -40,7 +40,7 @@ The port defaults to `17777` and can be overridden with the `OPENCODE_MCP_PORT` 
 If you prefer per-session stdio mode (one MCP server process per Claude Code session):
 
 ```sh
-claude mcp add opencode -- bun /absolute/path/to/opencode-mcp/src/index.ts stdio
+claude mcp add opencode -- bun /absolute/path/to/oagent/src/index.ts stdio
 ```
 
 Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_result` call should resolve to OpenCode's response.

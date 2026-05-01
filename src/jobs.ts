@@ -66,7 +66,7 @@ const RING_BUFFER_MAX = 200;
 const TERMINAL_EVENT = '__terminal__';
 
 /** Base state directory, created lazily on first job start. */
-const stateDir = path.join(os.tmpdir(), `opencode-mcp-${process.pid}`, 'jobs');
+const stateDir = path.join(os.tmpdir(), `oagent-${process.pid}`, 'jobs');
 
 let stateDirEnsured = false;
 
@@ -76,7 +76,7 @@ function ensureStateDir(): void {
   stateDirEnsured = true;
 }
 
-export class Jobs extends Effect.Service<Jobs>()('opencode-mcp/Jobs', {
+export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
   effect: Effect.gen(function* () {
     const opencode = yield* OpenCode;
     const map = new Map<string, JobState>();

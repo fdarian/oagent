@@ -1,12 +1,12 @@
 {
-  "name": "opencode-mcp",
+  "name": "oagent",
   "version": "0.1.0",
   "type": "module",
   "private": false,
   "description": "MCP server that exposes OpenCode to Claude Code as a subagent (via ACP)",
   "license": "MIT",
   "bin": {
-    "opencode-mcp": "./src/index.ts"
+    "oagent": "./src/index.ts"
   },
   "files": [
     "src",

@@ -223,7 +223,7 @@ const program = Effect.gen(function* () {
 
   if (mode === 'stdio') {
     const server = new Server(
-      { name: 'opencode-mcp', version: '0.1.0' },
+      { name: 'oagent', version: '0.1.0' },
       { capabilities: { tools: {} } },
     );
     registerTools(server, jobs, rt, undefined);
@@ -313,7 +313,7 @@ const program = Effect.gen(function* () {
             });
 
             const mcpServer = new Server(
-              { name: 'opencode-mcp', version: '0.1.0' },
+              { name: 'oagent', version: '0.1.0' },
               { capabilities: { tools: {} } },
             );
             registerTools(mcpServer, jobs, rt, waitUrlBase);
@@ -329,7 +329,7 @@ const program = Effect.gen(function* () {
     });
 
     process.stderr.write(
-      `opencode-mcp listening on http://127.0.0.1:${bunServer.port}/mcp\n`,
+      `oagent listening on http://127.0.0.1:${bunServer.port}/mcp\n`,
     );
 
     yield* Effect.never;

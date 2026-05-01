@@ -121,8 +121,8 @@ export function handleJobList(jobs: Jobs): Response {
           .join('\n');
 
   const html = HTML_SHELL(
-    'opencode-mcp jobs',
-    `<h1>opencode-mcp</h1>
+    'oagent jobs',
+    `<h1>oagent</h1>
 <div class="container">
   <h2>Jobs</h2>
   <table>
@@ -183,8 +183,8 @@ scrollToBottom();
     : '';
 
   const html = HTML_SHELL(
-    `job ${truncate(jobId, 12)} — opencode-mcp`,
-    `<h1>opencode-mcp</h1>
+    `job ${truncate(jobId, 12)} — oagent`,
+    `<h1>oagent</h1>
 <div class="container">
   <p class="meta">
     <a href="/">← all jobs</a> &nbsp;|&nbsp;
