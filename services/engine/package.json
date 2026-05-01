@@ -2,7 +2,7 @@
   "name": "@oagent/engine",
   "version": "0.1.0",
   "type": "module",
-  "private": false,
+  "private": true,
   "exports": {
     ".": "./src/index.ts"
   },
