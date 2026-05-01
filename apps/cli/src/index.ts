@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 import { randomUUID } from 'node:crypto';
 import { Command, Options } from '@effect/cli';
-import { BunContext, BunRuntime } from '@effect/platform-bun';
+import { BunContext } from '@effect/platform-bun';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
