@@ -9,15 +9,16 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import {
+  createEngineHandler,
+  handleJobEvents,
+  handleJobWait,
+  Jobs,
+  OpenCode,
+  serveSPA,
+} from '@oagent/engine';
 import { Cause, Console, Effect, Exit, Runtime } from 'effect';
 import * as v from 'valibot';
-import { Jobs } from '#/jobs';
-import {
-  handleJobDetail,
-  handleJobEvents,
-  handleJobList,
-  handleJobWait,
-} from '#/web';
 
 const OPENCODE_START_DESCRIPTION = `\
 Delegate a task to OpenCode, a separate coding agent running as a subprocess. \
@@ -257,6 +258,28 @@ function runServe(port: number) {
       { transport: WebStandardStreamableHTTPServerTransport; server: Server }
     >();
 
+    // Build engine handler (oRPC)
+    const engineHandler = yield* createEngineHandler;
+
+    // Load SPA filemap dynamically
+    let webFilemap: Record<string, string> = {};
+    const mod = yield* Effect.tryPromise({
+      // biome-ignore lint/suspicious/noTsIgnore: generated module missing in dev
+      // @ts-ignore Generated at build time; missing in dev
+      try: () =>
+        import('../.gen/web-ui.gen.ts') as Promise<{
+          default?: Record<string, string>;
+        }>,
+      catch: () => undefined,
+    });
+    if (
+      mod !== undefined &&
+      mod.default !== undefined &&
+      typeof mod.default === 'object'
+    ) {
+      webFilemap = mod.default;
+    }
+
     const bunServer = yield* Effect.try({
       try: () =>
         Bun.serve({
@@ -266,14 +289,56 @@ function runServe(port: number) {
           fetch: async (request) => {
             const url = new URL(request.url);
 
-            if (url.pathname === '/') return handleJobList(jobs);
+            // 1. MCP endpoint
+            if (url.pathname === '/mcp') {
+              const sessionId = request.headers.get('mcp-session-id');
 
+              if (sessionId !== null) {
+                const session = sessions.get(sessionId);
+                if (session === undefined) {
+                  return new Response('Session not found', { status: 404 });
+                }
+                return session.transport.handleRequest(request);
+              }
+
+              const transport = new WebStandardStreamableHTTPServerTransport({
+                sessionIdGenerator: () => randomUUID(),
+                onsessioninitialized: (sid) => {
+                  sessions.set(sid, { transport, server: mcpServer });
+                },
+                onsessionclosed: (sid) => {
+                  sessions.delete(sid);
+                },
+              });
+
+              const mcpServer = new Server(
+                { name: 'oagent', version: '0.1.0' },
+                { capabilities: { tools: {} } },
+              );
+              registerTools(mcpServer, jobs, rt, waitUrlBase);
+
+              await mcpServer.connect(transport);
+              return transport.handleRequest(request);
+            }
+
+            // 2. oRPC endpoint
+            if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
+              const result = await engineHandler.handle(request, {
+                prefix: '/rpc',
+              });
+              if (result.matched) {
+                return result.response;
+              }
+            }
+
+            // 3. SSE events endpoint
             const eventsJobId = url.pathname.match(
               /^\/jobs\/([^/]+)\/events$/,
             )?.[1];
             if (eventsJobId !== undefined)
               return handleJobEvents(jobs, eventsJobId, request.signal);
 
+            // 4. Wait endpoint
             const waitJobId = url.pathname.match(
               /^\/jobs\/([^/]+)\/wait$/,
             )?.[1];
@@ -286,43 +351,13 @@ function runServe(port: number) {
               return handleJobWait(jobs, waitJobId, timeoutMs, rt);
             }
 
-            const detailJobId = url.pathname.match(/^\/jobs\/([^/]+)$/)?.[1];
-            if (detailJobId !== undefined)
-              return handleJobDetail(jobs, detailJobId);
-
-            if (url.pathname !== '/mcp') {
-              return new Response('Not Found', { status: 404 });
+            // 5. SPA fallback
+            const spaResponse = serveSPA(webFilemap, url.pathname);
+            if (spaResponse !== undefined) {
+              return spaResponse;
             }
 
-            const sessionId = request.headers.get('mcp-session-id');
-
-            if (sessionId !== null) {
-              const session = sessions.get(sessionId);
-              if (session === undefined) {
-                return new Response('Session not found', { status: 404 });
-              }
-              return session.transport.handleRequest(request);
-            }
-
-            // No session ID — assume initialize request; create a new session.
-            const transport = new WebStandardStreamableHTTPServerTransport({
-              sessionIdGenerator: () => randomUUID(),
-              onsessioninitialized: (sid) => {
-                sessions.set(sid, { transport, server: mcpServer });
-              },
-              onsessionclosed: (sid) => {
-                sessions.delete(sid);
-              },
-            });
-
-            const mcpServer = new Server(
-              { name: 'oagent', version: '0.1.0' },
-              { capabilities: { tools: {} } },
-            );
-            registerTools(mcpServer, jobs, rt, waitUrlBase);
-
-            await mcpServer.connect(transport);
-            return transport.handleRequest(request);
+            return new Response('Not Found', { status: 404 });
           },
         }),
       catch: (cause) =>
@@ -365,6 +400,7 @@ const program = Command.run(cli, {
   version: '0.1.0',
 })(process.argv).pipe(
   Effect.provide(Jobs.Default),
+  Effect.provide(OpenCode.Default),
   Effect.provide(BunContext.layer),
 );
 
