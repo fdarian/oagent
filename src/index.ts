@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { randomUUID } from 'node:crypto';
-import { BunRuntime } from '@effect/platform-bun';
+import { Command, Options } from '@effect/cli';
+import { BunContext, BunRuntime } from '@effect/platform-bun';
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
@@ -8,7 +9,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
-import { Cause, Effect, Exit, Runtime } from 'effect';
+import { Cause, Console, Effect, Exit, Runtime } from 'effect';
 import * as v from 'valibot';
 import { Jobs } from '#/jobs';
 import {
@@ -215,13 +216,11 @@ function registerTools(
   });
 }
 
-const program = Effect.gen(function* () {
-  const jobs = yield* Jobs;
-  const rt = yield* Effect.runtime<never>();
+function runStdio() {
+  return Effect.gen(function* () {
+    const jobs = yield* Jobs;
+    const rt = yield* Effect.runtime<never>();
 
-  const mode = process.argv[2] ?? 'serve';
-
-  if (mode === 'stdio') {
     const server = new Server(
       { name: 'oagent', version: '0.1.0' },
       { capabilities: { tools: {} } },
@@ -237,16 +236,20 @@ const program = Effect.gen(function* () {
     });
 
     yield* Effect.never;
-    return;
-  }
+  });
+}
 
-  if (mode === 'serve') {
-    const port =
+function runServe(port: number) {
+  return Effect.gen(function* () {
+    const jobs = yield* Jobs;
+    const rt = yield* Effect.runtime<never>();
+
+    const resolvedPort =
       process.env.OPENCODE_MCP_PORT !== undefined
         ? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
-        : 17777;
+        : port;
 
-    const waitUrlBase = `http://127.0.0.1:${port}`;
+    const waitUrlBase = `http://127.0.0.1:${resolvedPort}`;
 
     /** Map of MCP session ID → { transport, server } */
     const sessions = new Map<
@@ -258,7 +261,7 @@ const program = Effect.gen(function* () {
       try: () =>
         Bun.serve({
           hostname: '127.0.0.1',
-          port,
+          port: resolvedPort,
           idleTimeout: 0,
           fetch: async (request) => {
             const url = new URL(request.url);
@@ -324,21 +327,45 @@ const program = Effect.gen(function* () {
         }),
       catch: (cause) =>
         new Error(
-          `Failed to start HTTP server on port ${port}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
         ),
     });
 
-    process.stderr.write(
-      `oagent listening on http://127.0.0.1:${bunServer.port}/mcp\n`,
+    yield* Console.error(
+      `oagent listening on http://127.0.0.1:${bunServer.port}/mcp`,
     );
 
     yield* Effect.never;
-    return;
-  }
+  });
+}
 
-  yield* Effect.fail(
-    new Error(`Unknown mode: "${mode}". Use "serve" (default) or "stdio".`),
-  );
-}).pipe(Effect.provide(Jobs.Default));
+const serve = Command.make(
+  'serve',
+  {
+    port: Options.integer('port').pipe(
+      Options.withAlias('p'),
+      Options.withDefault(17_777),
+      Options.withDescription('Port to listen on (default: 17777)'),
+    ),
+  },
+  ({ port }) => runServe(port),
+);
 
-BunRuntime.runMain(program);
+const stdio = Command.make('stdio', {}, () => runStdio());
+
+const cli = Command.make('oagent').pipe(
+  Command.withDescription(
+    'MCP server that exposes OpenCode to Claude Code as a subagent via ACP',
+  ),
+  Command.withSubcommands([serve, stdio]),
+);
+
+const program = Command.run(cli, {
+  name: 'oagent',
+  version: '0.1.0',
+})(process.argv).pipe(
+  Effect.provide(Jobs.Default),
+  Effect.provide(BunContext.layer),
+);
+
+Effect.runPromise(program);

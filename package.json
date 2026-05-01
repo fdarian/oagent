@@ -6,7 +6,7 @@
   "description": "MCP server that exposes OpenCode to Claude Code as a subagent (via ACP)",
   "license": "MIT",
   "bin": {
-    "oagent": "./src/index.ts"
+    "oagent": "./dist/oagent"
   },
   "files": [
     "src",
@@ -16,12 +16,14 @@
   "packageManager": "bun@1.3.13",
   "scripts": {
     "dev": "bun src/index.ts",
+    "build": "bun scripts/build.ts",
     "format": "biome check --write",
     "check:tsc": "tsc --noEmit",
     "check:lint": "biome check",
     "check": "bun check:tsc && bun check:lint"
   },
   "dependencies": {
+    "@effect/cli": "^0.75.1",
     "@effect/platform": "^0.96.1",
     "@effect/platform-bun": "^0.89.0",
     "@modelcontextprotocol/sdk": "^1.29.0",
