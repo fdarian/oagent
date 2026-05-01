@@ -9,3 +9,4 @@ bun.lock.bak
 apps/cli/.gen/
 apps/cli/dist/
 apps/web/dist/
+tmp/
