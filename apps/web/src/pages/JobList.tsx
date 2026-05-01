@@ -44,6 +44,7 @@ export function JobList({ onSelectJob }: JobListProps) {
               <tr key={job.id} className="border-b border-gray-800">
                 <td className="py-2 pr-4">
                   <button
+                    type="button"
                     onClick={() => onSelectJob(job.id)}
                     className="text-blue-400 hover:underline truncate max-w-[200px]"
                   >

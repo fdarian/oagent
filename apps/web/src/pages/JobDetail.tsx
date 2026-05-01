@@ -18,7 +18,7 @@ type EventItem = {
   message?: string;
 };
 
-type LogEntry = { at: number; event: EventItem };
+type LogEntry = { id: number; at: number; event: EventItem };
 
 export function JobDetail({ jobId, onBack }: JobDetailProps) {
   const queryClient = useQueryClient();
@@ -29,6 +29,7 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
 
   const [events, setEvents] = useState<LogEntry[]>([]);
   const logRef = useRef<HTMLDivElement>(null);
+  const nextIdRef = useRef(0);
 
   useEffect(() => {
     const source = new EventSource(`/jobs/${jobId}/events`);
@@ -40,7 +41,11 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
         queryClient.invalidateQueries({ queryKey: ['jobs', jobId] });
         return;
       }
-      setEvents((prev) => [...prev, { at: Date.now(), event: data }]);
+      nextIdRef.current += 1;
+      setEvents((prev) => [
+        ...prev,
+        { id: nextIdRef.current, at: Date.now(), event: data },
+      ]);
     };
 
     source.onerror = () => {
@@ -53,17 +58,21 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
   }, [jobId, queryClient]);
 
   useEffect(() => {
-    if (logRef.current) {
+    if (logRef.current && events.length > 0) {
       logRef.current.scrollTop = logRef.current.scrollHeight;
     }
-  }, [events]);
+  }, [events.length]);
 
   const detail = job;
 
   return (
     <div className="p-6">
       <p className="text-sm text-gray-400 mb-4">
-        <button onClick={onBack} className="text-blue-400 hover:underline mr-2">
+        <button
+          type="button"
+          onClick={onBack}
+          className="text-blue-400 hover:underline mr-2"
+        >
           ← all jobs
         </button>
         | Job <strong className="text-gray-200">{jobId}</strong>{' '}
@@ -86,8 +95,8 @@ export function JobDetail({ jobId, onBack }: JobDetailProps) {
         {events.length === 0 ? (
           <p className="text-gray-500 italic">No events yet.</p>
         ) : (
-          events.map((entry, i) => (
-            <div key={`${entry.at}-${i}`} className="mb-1 leading-relaxed">
+          events.map((entry) => (
+            <div key={entry.id} className="mb-1 leading-relaxed">
               <span className="text-gray-600 mr-2">
                 {new Date(entry.at).toISOString().slice(11, 23)}
               </span>
