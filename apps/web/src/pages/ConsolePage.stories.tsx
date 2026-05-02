@@ -18,7 +18,7 @@ type Story = StoryObj<typeof meta>;
 
 export const EmptySelection: Story = {
   render: () => (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-canvas)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
       <JobSidebar
         grouped={[
           {
@@ -49,7 +49,7 @@ export const EmptySelection: Story = {
 
 export const RunningSession: Story = {
   render: () => (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-canvas)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
       <JobSidebar
         grouped={[
           {
@@ -81,7 +81,7 @@ export const RunningSession: Story = {
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <JobStatusStrip status="Running tool: read_file" isRunning />
-        <div className="min-h-0 flex-1 overflow-y-auto px-[var(--spacing-33)] py-[var(--spacing-22)]">
+        <div className="min-h-0 flex-1 overflow-y-auto px-33 py-22">
           <div className="mx-auto max-w-[900px]">
             <JobHeader
               id="job-run"
@@ -92,7 +92,7 @@ export const RunningSession: Story = {
               createdAt={Date.now() - 120_000}
               onCancel={() => {}}
             />
-            <div className="mt-[var(--spacing-22)]">
+            <div className="mt-22">
               <JobTimeline
                 parts={[
                   {
@@ -125,7 +125,7 @@ export const RunningSession: Story = {
                     toolCallId: 'tc-2',
                     title: 'write_file',
                     state: 'input-streaming',
-                    body: '{"path": "src/middleware/auth.ts", "content": "import { Effect } from \'effect\';\\n\\nexport const auth = Effect.sync(() => {"',
+                    body: '{"path": "src/middleware/auth.ts", "content": "import { Effect } from \'effect\';\\n\\nexport const auth = Effect.sync(() => {"}',
                     createdAt: Date.now() - 5000,
                   } as TimelinePart,
                 ]}
