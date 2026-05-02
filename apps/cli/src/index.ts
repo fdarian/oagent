@@ -250,8 +250,6 @@ function runServe(port: number) {
         ? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
         : port;
 
-    const waitUrlBase = `http://127.0.0.1:${resolvedPort}`;
-
     /** Map of MCP session ID → { transport, server } */
     const sessions = new Map<
       string,
@@ -280,94 +278,124 @@ function runServe(port: number) {
       webFilemap = mod.default;
     }
 
-    const bunServer = yield* Effect.try({
-      try: () =>
-        Bun.serve({
-          hostname: '127.0.0.1',
-          port: resolvedPort,
-          idleTimeout: 0,
-          fetch: async (request) => {
-            const url = new URL(request.url);
+    const fetchHandler = async (request: Request) => {
+      const url = new URL(request.url);
 
-            // 1. MCP endpoint
-            if (url.pathname === '/mcp') {
-              const sessionId = request.headers.get('mcp-session-id');
+      // 1. MCP endpoint
+      if (url.pathname === '/mcp') {
+        const sessionId = request.headers.get('mcp-session-id');
 
-              if (sessionId !== null) {
-                const session = sessions.get(sessionId);
-                if (session === undefined) {
-                  return new Response('Session not found', { status: 404 });
-                }
-                return session.transport.handleRequest(request);
-              }
+        if (sessionId !== null) {
+          const session = sessions.get(sessionId);
+          if (session === undefined) {
+            return new Response('Session not found', { status: 404 });
+          }
+          return session.transport.handleRequest(request);
+        }
 
-              const transport = new WebStandardStreamableHTTPServerTransport({
-                sessionIdGenerator: () => randomUUID(),
-                onsessioninitialized: (sid) => {
-                  sessions.set(sid, { transport, server: mcpServer });
-                },
-                onsessionclosed: (sid) => {
-                  sessions.delete(sid);
-                },
-              });
-
-              const mcpServer = new Server(
-                { name: 'oagent', version: '0.1.0' },
-                { capabilities: { tools: {} } },
-              );
-              registerTools(mcpServer, jobs, rt, waitUrlBase);
-
-              await mcpServer.connect(transport);
-              return transport.handleRequest(request);
-            }
-
-            // 2. oRPC endpoint
-            if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
-              const result = await engineHandler.handle(request, {
-                prefix: '/rpc',
-              });
-              if (result.matched) {
-                return result.response;
-              }
-            }
-
-            // 3. SSE events endpoint
-            const eventsJobId = url.pathname.match(
-              /^\/jobs\/([^/]+)\/events$/,
-            )?.[1];
-            if (eventsJobId !== undefined)
-              return handleJobEvents(jobs, eventsJobId, request.signal);
-
-            // 4. Wait endpoint
-            const waitJobId = url.pathname.match(
-              /^\/jobs\/([^/]+)\/wait$/,
-            )?.[1];
-            if (waitJobId !== undefined) {
-              const timeoutParam = url.searchParams.get('timeoutMs');
-              const timeoutMs =
-                timeoutParam !== null
-                  ? Number.parseInt(timeoutParam, 10)
-                  : 600_000;
-              return handleJobWait(jobs, waitJobId, timeoutMs, rt);
-            }
-
-            // 5. SPA fallback
-            const spaResponse = serveSPA(webFilemap, url.pathname);
-            if (spaResponse !== undefined) {
-              return spaResponse;
-            }
-
-            return new Response('Not Found', { status: 404 });
+        const transport = new WebStandardStreamableHTTPServerTransport({
+          sessionIdGenerator: () => randomUUID(),
+          onsessioninitialized: (sid) => {
+            sessions.set(sid, { transport, server: mcpServer });
           },
-        }),
+          onsessionclosed: (sid) => {
+            sessions.delete(sid);
+          },
+        });
+
+        const mcpServer = new Server(
+          { name: 'oagent', version: '0.1.0' },
+          { capabilities: { tools: {} } },
+        );
+        registerTools(mcpServer, jobs, rt, url.origin);
+
+        await mcpServer.connect(transport);
+        return transport.handleRequest(request);
+      }
+
+      // 2. oRPC endpoint
+      if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
+        const result = await engineHandler.handle(request, {
+          prefix: '/rpc',
+        });
+        if (result.matched) {
+          return result.response;
+        }
+      }
+
+      // 3. SSE events endpoint
+      const eventsJobId = url.pathname.match(/^\/jobs\/([^/]+)\/events$/)?.[1];
+      if (eventsJobId !== undefined)
+        return handleJobEvents(jobs, eventsJobId, request.signal);
+
+      // 4. Wait endpoint
+      const waitJobId = url.pathname.match(/^\/jobs\/([^/]+)\/wait$/)?.[1];
+      if (waitJobId !== undefined) {
+        const timeoutParam = url.searchParams.get('timeoutMs');
+        const timeoutMs =
+          timeoutParam !== null ? Number.parseInt(timeoutParam, 10) : 600_000;
+        return handleJobWait(jobs, waitJobId, timeoutMs, rt);
+      }
+
+      // 5. SPA fallback
+      const spaResponse = serveSPA(webFilemap, url.pathname);
+      if (spaResponse !== undefined) {
+        return spaResponse;
+      }
+
+      return new Response('Not Found', { status: 404 });
+    };
+
+    function tryBind(targetPort: number) {
+      try {
+        return {
+          server: Bun.serve({
+            hostname: '127.0.0.1',
+            port: targetPort,
+            idleTimeout: 0,
+            fetch: fetchHandler,
+          }),
+          didFallback: false,
+        };
+      } catch (cause) {
+        const msg = cause instanceof Error ? cause.message : String(cause);
+        const code =
+          cause instanceof Error
+            ? (cause as { code?: string }).code
+            : undefined;
+        if (
+          code === 'EADDRINUSE' ||
+          msg.includes('EADDRINUSE') ||
+          msg.includes('address already in use')
+        ) {
+          return {
+            server: Bun.serve({
+              hostname: '127.0.0.1',
+              port: 0,
+              idleTimeout: 0,
+              fetch: fetchHandler,
+            }),
+            didFallback: true,
+          };
+        }
+        throw cause;
+      }
+    }
+
+    const bindResult = yield* Effect.try({
+      try: () => tryBind(resolvedPort),
       catch: (cause) =>
         new Error(
           `Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
         ),
     });
 
+    if (bindResult.didFallback) {
+      console.warn(`port ${resolvedPort} in use, falling back to a free port`);
+    }
+
     yield* Console.error(
-      `oagent listening on http://127.0.0.1:${bunServer.port}/mcp`,
+      `oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
     );
 
     yield* Effect.never;
