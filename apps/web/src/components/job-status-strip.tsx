@@ -11,29 +11,21 @@ export function JobStatusStrip({ status, isRunning }: JobStatusStripProps) {
   useEffect(() => {
     if (!isRunning) return;
     const interval = setInterval(() => {
-      setDots((prev) => (prev.length >= 3 ? '' : prev + '.'));
+      setDots((prev) => (prev.length >= 3 ? '' : `${prev}.`));
     }, 500);
     return () => clearInterval(interval);
   }, [isRunning]);
 
-  if (!isRunning) {
-    return (
-      <div className="flex items-center gap-[var(--element-gap)] bg-[var(--color-status-strip)] px-[var(--card-padding)] py-[var(--element-gap)] text-[var(--text-caption)] text-[var(--color-ink)]">
-        <span className="font-[var(--font-weight-thin)] uppercase tracking-wide">
-          Idle
-        </span>
-      </div>
-    );
-  }
+  if (!isRunning) return null;
 
   return (
     <div className="flex items-center gap-[var(--element-gap)] bg-[var(--color-status-strip)] px-[var(--card-padding)] py-[var(--element-gap)] text-[var(--text-caption)] text-[var(--color-ink)]">
-      <span className="font-[var(--font-weight-thin)] uppercase tracking-wide">
+      <span className="font-medium uppercase tracking-wide">
         Agent is working
       </span>
-      <span className="font-[var(--font-weight-light)]">{dots}</span>
+      <span className="font-light">{dots}</span>
       {status !== undefined && status !== '' && (
-        <span className="font-[var(--font-weight-light)] text-[var(--color-smoke)]">
+        <span className="font-light text-[var(--color-graphite)]">
           — {status}
         </span>
       )}
