@@ -1,8 +1,8 @@
-import * as v from 'valibot'
-import { Effect } from 'effect'
-import { os } from '@orpc/server'
-import { createHandler } from 'ff-effect/for/orpc'
-import { Jobs } from '../jobs.ts'
+import { os } from '@orpc/server';
+import { Effect } from 'effect';
+import { createHandler } from 'ff-effect/for/orpc';
+import * as v from 'valibot';
+import { Jobs } from '../jobs.ts';
 
 const acpEventSchema = v.lazy(() =>
   v.union([
@@ -38,10 +38,10 @@ const acpEventSchema = v.lazy(() =>
       retryable: v.optional(v.boolean()),
     }),
   ]),
-)
+);
 
-const program = Effect.gen(function*() {
-  const jobs = yield* Jobs
+const program = Effect.gen(function* () {
+  const jobs = yield* Jobs;
 
   return {
     jobs: {
@@ -53,11 +53,14 @@ const program = Effect.gen(function*() {
               status: v.string(),
               createdAt: v.number(),
               terminatedAt: v.optional(v.number()),
+              prompt: v.string(),
+              cwd: v.string(),
+              model: v.optional(v.string()),
             }),
           ),
         ),
-        Effect.fn(function*() {
-          return jobs.list()
+        Effect.fn(function* () {
+          return jobs.list();
         }),
       ),
       get: yield* createHandler(
@@ -68,12 +71,15 @@ const program = Effect.gen(function*() {
               status: v.string(),
               createdAt: v.number(),
               terminatedAt: v.optional(v.number()),
+              prompt: v.string(),
+              cwd: v.string(),
+              model: v.optional(v.string()),
               recentEvents: v.array(acpEventSchema),
             }),
           ),
         ),
         Effect.fn(function* (opt) {
-          return jobs.getDetail(opt.input.jobId)
+          return jobs.getDetail(opt.input.jobId);
         }),
       ),
       start: yield* createHandler(
@@ -88,7 +94,7 @@ const program = Effect.gen(function*() {
           )
           .output(v.object({ jobId: v.string() })),
         Effect.fn(function* (opt) {
-          return yield* jobs.start(opt.input)
+          return yield* jobs.start(opt.input);
         }),
       ),
       wait: yield* createHandler(
@@ -119,12 +125,12 @@ const program = Effect.gen(function*() {
                 message: `Job not found: ${err.jobId}`,
               }),
             ),
-          )
+          );
         }),
       ),
     },
-  }
-})
+  };
+});
 
-export type EngineRouter = Effect.Effect.Success<typeof program>
-export { program }
+export type EngineRouter = Effect.Effect.Success<typeof program>;
+export { program };

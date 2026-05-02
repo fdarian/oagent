@@ -21,26 +21,32 @@ type JobOk = {
 };
 type JobErr = unknown;
 
+type JobMeta = {
+  readonly prompt: string;
+  readonly cwd: string;
+  readonly model: string | undefined;
+};
+
 type JobState =
-  | {
+  | (JobMeta & {
       readonly status: 'running';
       readonly fiber: Fiber.RuntimeFiber<JobOk, JobErr>;
       readonly createdAt: number;
-    }
-  | {
+    })
+  | (JobMeta & {
       readonly status: 'done';
       readonly sessionId: string;
       readonly text: string;
       readonly stopReason: string | undefined;
       readonly createdAt: number;
       readonly terminatedAt: number;
-    }
-  | {
+    })
+  | (JobMeta & {
       readonly status: 'error';
       readonly message: string;
       readonly createdAt: number;
       readonly terminatedAt: number;
-    };
+    });
 
 type WaitResult =
   | { readonly status: 'running' }
@@ -140,6 +146,12 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           emitter.emit(TERMINAL_EVENT);
         });
 
+        const meta: JobMeta = {
+          prompt: input.prompt,
+          cwd: input.cwd,
+          model: input.model,
+        };
+
         const fiber = yield* Effect.forkDaemon(
           opencode
             .runTurn({
@@ -153,6 +165,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               Effect.tap((result) =>
                 Effect.sync(() => {
                   map.set(jobId, {
+                    ...meta,
                     status: 'done',
                     sessionId: result.sessionId,
                     text: result.text,
@@ -165,6 +178,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               Effect.tapError((error) =>
                 Effect.sync(() => {
                   map.set(jobId, {
+                    ...meta,
                     status: 'error',
                     message: formatJobError(error),
                     createdAt,
@@ -175,7 +189,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               Effect.ensuring(closeResources),
             ),
         );
-        map.set(jobId, { status: 'running', fiber, createdAt });
+        map.set(jobId, { ...meta, status: 'running', fiber, createdAt });
         return { jobId };
       });
 
@@ -210,6 +224,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
       status: JobState['status'];
       createdAt: number;
       terminatedAt?: number;
+      prompt: string;
+      cwd: string;
+      model?: string;
     }[] => {
       const entries = Array.from(map.entries()).map(([id, state]) => ({
         id,
@@ -217,6 +234,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         createdAt: state.createdAt,
         terminatedAt:
           state.status !== 'running' ? state.terminatedAt : undefined,
+        prompt: state.prompt,
+        cwd: state.cwd,
+        model: state.model,
       }));
       entries.sort((a, b) => {
         // Running jobs first
@@ -238,6 +258,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           status: JobState['status'];
           createdAt: number;
           terminatedAt?: number;
+          prompt: string;
+          cwd: string;
+          model?: string;
           recentEvents: AcpRuntimeEvent[];
         }
       | undefined => {
@@ -250,6 +273,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         createdAt: state.createdAt,
         terminatedAt:
           state.status !== 'running' ? state.terminatedAt : undefined,
+        prompt: state.prompt,
+        cwd: state.cwd,
+        model: state.model,
         recentEvents: log !== undefined ? [...log.ring] : [],
       };
     };
