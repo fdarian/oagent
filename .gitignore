@@ -9,5 +9,6 @@ bun.lock.bak
 apps/cli/.gen/
 apps/cli/dist/
 apps/web/dist/
+apps/web/storybook-static/
 tmp/
 .claude/worktrees/*
