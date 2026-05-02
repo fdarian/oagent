@@ -198,7 +198,7 @@ export function reduceEvents(events: AcpEvent[]): AdapterResult {
           toolCallId: existing.toolCallId,
           title: ev.title ?? existing.title,
           state: newState,
-          body: existing.body + (ev.text ?? ''),
+          body: ev.text ?? existing.body,
           createdAt: existing.createdAt,
           durationMs,
         });
