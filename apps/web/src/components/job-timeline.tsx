@@ -11,14 +11,14 @@ export type JobTimelineProps = {
 export function JobTimeline({ parts }: JobTimelineProps) {
   if (parts.length === 0) {
     return (
-      <div className="flex items-center justify-center py-[var(--spacing-66)] text-[var(--text-caption)] text-muted-foreground">
+      <div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
         Waiting for events…
       </div>
     );
   }
 
   return (
-    <div className="flex flex-col gap-[var(--spacing-22)]">
+    <div className="flex flex-col gap-22">
       {parts.map((part) => {
         switch (part.kind) {
           case 'text':

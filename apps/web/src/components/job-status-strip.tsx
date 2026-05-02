@@ -19,7 +19,7 @@ export function JobStatusStrip({ status, isRunning }: JobStatusStripProps) {
   if (!isRunning) return null;
 
   return (
-    <div className="flex items-center gap-[var(--element-gap)] bg-status-strip px-[var(--card-padding)] py-[var(--element-gap)] text-[var(--text-caption)] text-foreground">
+    <div className="flex items-center gap-15 bg-status-strip px-22 py-15 text-caption text-foreground">
       <span className="font-medium uppercase tracking-wide">
         Agent is working
       </span>

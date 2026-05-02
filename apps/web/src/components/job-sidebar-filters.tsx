@@ -10,14 +10,14 @@ export function JobSidebarFilters({
   onCwdFilterChange,
 }: JobSidebarFiltersProps) {
   return (
-    <div className="flex items-center gap-[var(--element-gap)] border-b border-border px-[var(--card-padding)] py-[var(--element-gap)]">
+    <div className="flex items-center gap-15 border-b border-border px-22 py-15">
       <SearchIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
       <input
         type="text"
         value={cwdFilter}
         onChange={(e) => onCwdFilterChange(e.target.value)}
         placeholder="Filter by working dir…"
-        className="w-full bg-transparent text-[var(--text-caption)] font-light text-foreground placeholder:text-muted-foreground outline-none"
+        className="w-full bg-transparent text-caption font-light text-foreground placeholder:text-muted-foreground outline-none"
       />
     </div>
   );

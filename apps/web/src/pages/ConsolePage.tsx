@@ -42,7 +42,7 @@ export function ConsolePage() {
                 isRunning={selectedJob.status === 'running' && !events.terminal}
               />
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-[var(--spacing-33)] py-[var(--spacing-22)]">
+            <div className="min-h-0 flex-1 overflow-y-auto px-33 py-22">
               <div className="mx-auto max-w-[900px]">
                 <JobHeader
                   id={selectedJob.id}
@@ -63,7 +63,7 @@ export function ConsolePage() {
                     queryClient.invalidateQueries({ queryKey: ['jobs'] });
                   }}
                 />
-                <div className="mt-[var(--spacing-22)]">
+                <div className="mt-22">
                   <JobTimeline parts={events.parts} />
                 </div>
               </div>

@@ -46,13 +46,13 @@ export function JobHeader({
     );
 
   return (
-    <div className="flex flex-col gap-[var(--element-gap)] border-b border-border pb-[var(--spacing-22)]">
-      <div className="flex items-start justify-between gap-[var(--element-gap)]">
-        <div className="flex min-w-0 flex-1 flex-col gap-[var(--element-gap)]">
-          <pre className="whitespace-pre-wrap text-[var(--text-body)] font-light leading-[var(--text-body--line-height)] text-foreground">
+    <div className="flex flex-col gap-15 border-b border-border pb-22">
+      <div className="flex items-start justify-between gap-15">
+        <div className="flex min-w-0 flex-1 flex-col gap-15">
+          <pre className="whitespace-pre-wrap text-body font-light text-foreground">
             {promptLines}
           </pre>
-          <div className="flex items-center gap-[var(--element-gap)] text-[var(--text-caption)] text-muted-foreground">
+          <div className="flex items-center gap-15 text-caption text-muted-foreground">
             <span className="truncate">{cwd}</span>
             <span>·</span>
             <span>started {formatAge(createdAt)}</span>
@@ -66,10 +66,10 @@ export function JobHeader({
             )}
           </div>
         </div>
-        <div className="flex items-center gap-[var(--element-gap)]">
+        <div className="flex items-center gap-15">
           <div
             className={cn(
-              'flex items-center gap-[6px] border px-2 py-1 text-[var(--text-caption)]',
+              'flex items-center gap-[6px] border px-2 py-1 text-caption',
               status === 'running'
                 ? 'border-verdant-accent text-verdant-accent'
                 : status === 'done'
@@ -84,7 +84,7 @@ export function JobHeader({
             <button
               type="button"
               onClick={onCancel}
-              className="flex items-center gap-1 border border-destructive px-2 py-1 text-[var(--text-caption)] text-destructive transition-colors hover:bg-destructive hover:text-canvas"
+              className="flex items-center gap-1 border border-destructive px-2 py-1 text-caption text-destructive transition-colors hover:bg-destructive hover:text-canvas"
             >
               <XCircleIcon className="h-3 w-3" />
               Cancel
@@ -93,7 +93,7 @@ export function JobHeader({
           <button
             type="button"
             onClick={handleCopyId}
-            className="flex items-center gap-1 border border-border px-2 py-1 text-[var(--text-caption)] text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
+            className="flex items-center gap-1 border border-border px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
           >
             <CopyIcon className="h-3 w-3" />
             {copied ? 'Copied' : 'ID'}
