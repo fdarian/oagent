@@ -19,6 +19,7 @@ import {
 } from '@oagent/engine';
 import { Cause, Console, Effect, Exit, Runtime } from 'effect';
 import * as v from 'valibot';
+import cliPackage from '../package.json' with { type: 'json' };
 
 const OPENCODE_START_DESCRIPTION = `\
 Delegate a task to OpenCode, a separate coding agent running as a subprocess. \
@@ -223,7 +224,7 @@ function runStdio() {
     const rt = yield* Effect.runtime<never>();
 
     const server = new Server(
-      { name: 'oagent', version: '0.1.0' },
+      { name: 'oagent', version: cliPackage.version },
       { capabilities: { tools: {} } },
     );
     registerTools(server, jobs, rt, undefined);
@@ -304,7 +305,7 @@ function runServe(port: number) {
         });
 
         const mcpServer = new Server(
-          { name: 'oagent', version: '0.1.0' },
+          { name: 'oagent', version: cliPackage.version },
           { capabilities: { tools: {} } },
         );
         registerTools(mcpServer, jobs, rt, url.origin);
@@ -425,7 +426,7 @@ const cli = Command.make('oagent').pipe(
 
 const program = Command.run(cli, {
   name: 'oagent',
-  version: '0.1.0',
+  version: cliPackage.version,
 })(process.argv).pipe(
   Effect.provide(Jobs.Default),
   Effect.provide(OpenCode.Default),
