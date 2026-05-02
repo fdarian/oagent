@@ -124,7 +124,7 @@ const program = Effect.gen(function*() {
       ),
     },
   }
-}).pipe(Effect.provide(Jobs.Default))
+})
 
 export type EngineRouter = Effect.Effect.Success<typeof program>
 export { program }
