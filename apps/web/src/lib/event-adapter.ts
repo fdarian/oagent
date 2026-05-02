@@ -155,6 +155,11 @@ export function reduceEvents(events: AcpEvent[]): AdapterResult {
       continue;
     }
 
+    if (ev.type === 'status') {
+      lastStatus = ev.text;
+      continue;
+    }
+
     // Any non-text_delta event closes open text and reasoning
     if (openText !== null) {
       parts.push(openText);
@@ -203,11 +208,6 @@ export function reduceEvents(events: AcpEvent[]): AdapterResult {
           durationMs,
         });
       }
-      continue;
-    }
-
-    if (ev.type === 'status') {
-      lastStatus = ev.text;
       continue;
     }
 
