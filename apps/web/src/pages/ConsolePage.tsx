@@ -20,7 +20,7 @@ export function ConsolePage() {
     .find((j) => j.id === selectedId);
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--color-canvas)]">
+    <div className="flex h-screen w-screen overflow-hidden bg-background">
       <JobSidebar
         grouped={grouped}
         selectedId={selectedId}

@@ -38,21 +38,21 @@ export function JobHeader({
 
   const statusDot =
     status === 'running' ? (
-      <span className="inline-block h-[6px] w-[6px] bg-[var(--color-verdant-accent)]" />
+      <span className="inline-block h-[6px] w-[6px] bg-verdant-accent" />
     ) : status === 'done' ? (
-      <span className="inline-block h-[6px] w-[6px] bg-[var(--color-electric-blue)]" />
+      <span className="inline-block h-[6px] w-[6px] bg-primary" />
     ) : (
-      <span className="inline-block h-[6px] w-[6px] bg-[var(--color-terracotta)]" />
+      <span className="inline-block h-[6px] w-[6px] bg-destructive" />
     );
 
   return (
-    <div className="flex flex-col gap-[var(--element-gap)] border-b border-[var(--color-steel)] pb-[var(--spacing-22)]">
+    <div className="flex flex-col gap-[var(--element-gap)] border-b border-border pb-[var(--spacing-22)]">
       <div className="flex items-start justify-between gap-[var(--element-gap)]">
         <div className="flex min-w-0 flex-1 flex-col gap-[var(--element-gap)]">
-          <pre className="whitespace-pre-wrap text-[var(--text-body)] font-light leading-[var(--text-body--line-height)] text-[var(--color-ink)]">
+          <pre className="whitespace-pre-wrap text-[var(--text-body)] font-light leading-[var(--text-body--line-height)] text-foreground">
             {promptLines}
           </pre>
-          <div className="flex items-center gap-[var(--element-gap)] text-[var(--text-caption)] text-[var(--color-smoke)]">
+          <div className="flex items-center gap-[var(--element-gap)] text-[var(--text-caption)] text-muted-foreground">
             <span className="truncate">{cwd}</span>
             <span>·</span>
             <span>started {formatAge(createdAt)}</span>
@@ -71,10 +71,10 @@ export function JobHeader({
             className={cn(
               'flex items-center gap-[6px] border px-2 py-1 text-[var(--text-caption)]',
               status === 'running'
-                ? 'border-[var(--color-verdant-accent)] text-[var(--color-verdant-accent)]'
+                ? 'border-verdant-accent text-verdant-accent'
                 : status === 'done'
-                  ? 'border-[var(--color-electric-blue)] text-[var(--color-electric-blue)]'
-                  : 'border-[var(--color-terracotta)] text-[var(--color-terracotta)]',
+                  ? 'border-primary text-primary'
+                  : 'border-destructive text-destructive',
             )}
           >
             {statusDot}
@@ -84,7 +84,7 @@ export function JobHeader({
             <button
               type="button"
               onClick={onCancel}
-              className="flex items-center gap-1 border border-[var(--color-terracotta)] px-2 py-1 text-[var(--text-caption)] text-[var(--color-terracotta)] transition-colors hover:bg-[var(--color-terracotta)] hover:text-[var(--color-canvas)]"
+              className="flex items-center gap-1 border border-destructive px-2 py-1 text-[var(--text-caption)] text-destructive transition-colors hover:bg-destructive hover:text-canvas"
             >
               <XCircleIcon className="h-3 w-3" />
               Cancel
@@ -93,7 +93,7 @@ export function JobHeader({
           <button
             type="button"
             onClick={handleCopyId}
-            className="flex items-center gap-1 border border-[var(--color-steel)] px-2 py-1 text-[var(--text-caption)] text-[var(--color-smoke)] transition-colors hover:border-[var(--color-ink)] hover:text-[var(--color-ink)]"
+            className="flex items-center gap-1 border border-border px-2 py-1 text-[var(--text-caption)] text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
           >
             <CopyIcon className="h-3 w-3" />
             {copied ? 'Copied' : 'ID'}

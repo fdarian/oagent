@@ -20,9 +20,9 @@ export function JobSidebar({
   onSelectJob,
 }: JobSidebarProps) {
   return (
-    <div className="flex h-full w-[360px] shrink-0 flex-col border-r border-[var(--color-steel)] bg-[var(--color-canvas)]">
+    <div className="flex h-full w-[360px] shrink-0 flex-col border-r border-border bg-background">
       <div className="flex items-center justify-between px-[var(--card-padding)] py-[var(--element-gap)]">
-        <span className="text-[var(--text-subheading)] font-light text-[var(--color-ink)]">
+        <span className="text-[var(--text-subheading)] font-light text-foreground">
           oagent
         </span>
       </div>
@@ -32,11 +32,11 @@ export function JobSidebar({
       />
       <div className="min-h-0 flex-1 overflow-y-auto">
         {isLoading && grouped.length === 0 ? (
-          <div className="px-[var(--card-padding)] py-[var(--spacing-22)] text-[var(--text-caption)] text-[var(--color-smoke)]">
+          <div className="px-[var(--card-padding)] py-[var(--spacing-22)] text-[var(--text-caption)] text-muted-foreground">
             Loading…
           </div>
         ) : grouped.length === 0 ? (
-          <div className="px-[var(--card-padding)] py-[var(--spacing-22)] text-[var(--text-caption)] text-[var(--color-smoke)]">
+          <div className="px-[var(--card-padding)] py-[var(--spacing-22)] text-[var(--text-caption)] text-muted-foreground">
             No jobs found
           </div>
         ) : (

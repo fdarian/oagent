@@ -19,13 +19,13 @@ export function JobStatusStrip({ status, isRunning }: JobStatusStripProps) {
   if (!isRunning) return null;
 
   return (
-    <div className="flex items-center gap-[var(--element-gap)] bg-[var(--color-status-strip)] px-[var(--card-padding)] py-[var(--element-gap)] text-[var(--text-caption)] text-[var(--color-ink)]">
+    <div className="flex items-center gap-[var(--element-gap)] bg-status-strip px-[var(--card-padding)] py-[var(--element-gap)] text-[var(--text-caption)] text-foreground">
       <span className="font-medium uppercase tracking-wide">
         Agent is working
       </span>
       <span className="font-light">{dots}</span>
       {status !== undefined && status !== '' && (
-        <span className="font-light text-[var(--color-graphite)]">
+        <span className="font-light text-graphite">
           — {status}
         </span>
       )}

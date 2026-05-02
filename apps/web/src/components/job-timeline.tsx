@@ -11,7 +11,7 @@ export type JobTimelineProps = {
 export function JobTimeline({ parts }: JobTimelineProps) {
   if (parts.length === 0) {
     return (
-      <div className="flex items-center justify-center py-[var(--spacing-66)] text-[var(--text-caption)] text-[var(--color-smoke)]">
+      <div className="flex items-center justify-center py-[var(--spacing-66)] text-[var(--text-caption)] text-muted-foreground">
         Waiting for events…
       </div>
     );
