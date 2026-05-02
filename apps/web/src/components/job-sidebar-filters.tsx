@@ -17,7 +17,7 @@ export function JobSidebarFilters({
         value={cwdFilter}
         onChange={(e) => onCwdFilterChange(e.target.value)}
         placeholder="Filter by working dir…"
-        className="w-full bg-transparent text-[var(--text-caption)] font-[var(--font-weight-light)] text-[var(--color-ink)] placeholder:text-[var(--color-smoke)] outline-none"
+        className="w-full bg-transparent text-[var(--text-caption)] font-light text-[var(--color-ink)] placeholder:text-[var(--color-smoke)] outline-none"
       />
     </div>
   );

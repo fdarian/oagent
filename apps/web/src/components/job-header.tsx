@@ -1,7 +1,7 @@
 import { CopyIcon, XCircleIcon } from 'lucide-react';
 import { useCallback, useState } from 'react';
-import { cn } from '@/lib/utils';
 import { formatAge, formatElapsed } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 export type JobHeaderProps = {
   id: string;
@@ -49,7 +49,7 @@ export function JobHeader({
     <div className="flex flex-col gap-[var(--element-gap)] border-b border-[var(--color-steel)] pb-[var(--spacing-22)]">
       <div className="flex items-start justify-between gap-[var(--element-gap)]">
         <div className="flex min-w-0 flex-1 flex-col gap-[var(--element-gap)]">
-          <pre className="whitespace-pre-wrap font-[var(--font-sans)] text-[var(--text-body)] font-[var(--font-weight-light)] leading-[var(--text-body--line-height)] text-[var(--color-ink)]">
+          <pre className="whitespace-pre-wrap text-[var(--text-body)] font-light leading-[var(--text-body--line-height)] text-[var(--color-ink)]">
             {promptLines}
           </pre>
           <div className="flex items-center gap-[var(--element-gap)] text-[var(--text-caption)] text-[var(--color-smoke)]">

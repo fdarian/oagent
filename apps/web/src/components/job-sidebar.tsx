@@ -1,6 +1,6 @@
+import type { JobListItem } from '@/lib/use-job-list';
 import { JobSidebarFilters } from './job-sidebar-filters';
 import { JobSidebarList } from './job-sidebar-list';
-import type { JobListItem } from '@/lib/use-job-list';
 
 export type JobSidebarProps = {
   grouped: { label: string; items: JobListItem[] }[];
@@ -22,7 +22,7 @@ export function JobSidebar({
   return (
     <div className="flex h-full w-[360px] shrink-0 flex-col border-r border-[var(--color-steel)] bg-[var(--color-canvas)]">
       <div className="flex items-center justify-between px-[var(--card-padding)] py-[var(--element-gap)]">
-        <span className="text-[var(--text-subheading)] font-[var(--font-weight-light)] text-[var(--color-ink)]">
+        <span className="text-[var(--text-subheading)] font-light text-[var(--color-ink)]">
           oagent
         </span>
       </div>

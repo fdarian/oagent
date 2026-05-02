@@ -1,6 +1,6 @@
-import { cn } from '@/lib/utils';
 import { formatAge } from '@/lib/format';
 import type { JobListItem } from '@/lib/use-job-list';
+import { cn } from '@/lib/utils';
 
 export type JobSidebarListProps = {
   groups: { label: string; items: JobListItem[] };
@@ -22,17 +22,18 @@ export function JobSidebarList({
   return (
     <div className="flex flex-col">
       <div className="flex items-center justify-between px-[var(--card-padding)] py-[var(--element-gap)]">
-        <span className="text-[13px] font-[var(--font-weight-thin)] uppercase tracking-wide text-[var(--color-smoke)]">
+        <span className="text-[13px] font-medium uppercase tracking-wide text-[var(--color-smoke)]">
           {groups.label}
         </span>
-        <span className="text-[13px] font-[var(--font-weight-thin)] text-[var(--color-smoke)]">
+        <span className="text-[13px] font-medium text-[var(--color-smoke)]">
           {groups.items.length}
         </span>
       </div>
       <div className="flex flex-col">
         {groups.items.map((job) => {
           const isSelected = job.id === selectedId;
-          const promptPreview = job.prompt.split('\n')[0]?.slice(0, 80) ?? job.id;
+          const promptPreview =
+            job.prompt.split('\n')[0]?.slice(0, 80) ?? job.id;
           return (
             <button
               key={job.id}
@@ -52,7 +53,7 @@ export function JobSidebarList({
                     statusDotClass(job.status),
                   )}
                 />
-                <span className="truncate text-[var(--text-caption)] font-[var(--font-weight-light)] text-[var(--color-ink)]">
+                <span className="truncate text-[var(--text-caption)] font-light text-[var(--color-ink)]">
                   {promptPreview}
                 </span>
               </div>
