@@ -1,0 +1,27 @@
+import { AlertCircleIcon } from 'lucide-react';
+import type { TimelinePart } from '@/lib/event-adapter';
+
+export type JobTimelineErrorProps = {
+  part: Extract<TimelinePart, { kind: 'error' }>;
+};
+
+export function JobTimelineError({ part }: JobTimelineErrorProps) {
+  return (
+    <div className="flex flex-col gap-[var(--element-gap)] border border-[var(--color-terracotta)] bg-[color-mix(in_srgb,var(--color-terracotta)_5%,var(--color-canvas))] p-[var(--card-padding)]">
+      <div className="flex items-center gap-[var(--element-gap)] text-[var(--color-terracotta)]">
+        <AlertCircleIcon className="h-4 w-4" />
+        <span className="text-[var(--text-caption)] font-[var(--font-weight-light)] uppercase tracking-wide">
+          Error
+        </span>
+        {part.code !== undefined && (
+          <span className="text-[var(--text-caption)] text-[var(--color-smoke)]">
+            [{part.code}]
+          </span>
+        )}
+      </div>
+      <p className="whitespace-pre-wrap text-[var(--text-body)] font-[var(--font-weight-light)] text-[var(--color-ink)]">
+        {part.message}
+      </p>
+    </div>
+  );
+}
