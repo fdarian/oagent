@@ -60,12 +60,13 @@ type WaitResult =
 type EventLog = {
   readonly ring: SessionUpdate[];
   readonly emitter: EventEmitter;
+  readonly ndjsonPath: string;
 };
 
 const TIMEOUT_DEFAULT_MS = 50_000;
 const JOB_TTL_MS = 30 * 60_000;
 const JOB_SWEEP_INTERVAL_MS = 5 * 60_000;
-const RING_BUFFER_MAX = 200;
+const RING_BUFFER_MAX = 1000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
@@ -119,12 +120,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         const jobId = randomUUID();
         const createdAt = Date.now();
 
+        const ndjsonPath = path.join(stateDir, `${jobId}.ndjson`);
         const ring: SessionUpdate[] = [];
         const emitter = new EventEmitter();
         emitter.setMaxListeners(0);
-        eventLogs.set(jobId, { ring, emitter });
-
-        const ndjsonPath = path.join(stateDir, `${jobId}.ndjson`);
+        eventLogs.set(jobId, { ring, emitter, ndjsonPath });
         const writeStream = fs.createWriteStream(ndjsonPath, { flags: 'a' });
 
         const onEvent = (event: SessionUpdate): void => {
@@ -259,6 +259,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           prompt: string;
           cwd: string;
           model?: string;
+          ndjsonPath: string;
           recentEvents: SessionUpdate[];
         }
       | undefined => {
@@ -274,6 +275,10 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         prompt: state.prompt,
         cwd: state.cwd,
         model: state.model,
+        ndjsonPath:
+          log !== undefined
+            ? log.ndjsonPath
+            : path.join(stateDir, `${jobId}.ndjson`),
         recentEvents: log !== undefined ? [...log.ring] : [],
       };
     };
