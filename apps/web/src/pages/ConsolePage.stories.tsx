@@ -1,9 +1,9 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { JobEmptyState } from '@/components/job-empty-state';
 import { JobHeader } from '@/components/job-header';
 import { JobSidebar } from '@/components/job-sidebar';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
-import { JobEmptyState } from '@/components/job-empty-state';
 import type { TimelinePart } from '@/lib/event-adapter';
 
 const meta: Meta = {
@@ -107,9 +107,18 @@ export const RunningSession: Story = {
                     kind: 'tool',
                     id: 'tool-1',
                     toolCallId: 'tc-1',
+                    toolName: 'read_file',
                     title: 'read_file',
                     state: 'output-available',
-                    content: [{ type: 'content', content: { type: 'text', text: 'export function auth(req, res, next) {\n  const token = req.headers.authorization;\n  if (!token) return res.status(401).send();\n  next();\n}' } }],
+                    content: [
+                      {
+                        type: 'content',
+                        content: {
+                          type: 'text',
+                          text: 'export function auth(req, res, next) {\n  const token = req.headers.authorization;\n  if (!token) return res.status(401).send();\n  next();\n}',
+                        },
+                      },
+                    ],
                     locations: [{ path: 'src/middleware/auth.ts' }],
                     createdAt: Date.now() - 90_000,
                     durationMs: 800,
@@ -124,9 +133,18 @@ export const RunningSession: Story = {
                     kind: 'tool',
                     id: 'tool-2',
                     toolCallId: 'tc-2',
+                    toolName: 'write_file',
                     title: 'write_file',
                     state: 'input-streaming',
-                    content: [{ type: 'content', content: { type: 'text', text: "import { Effect } from 'effect';\n\nexport const auth = Effect.sync(() => {" } }],
+                    content: [
+                      {
+                        type: 'content',
+                        content: {
+                          type: 'text',
+                          text: "import { Effect } from 'effect';\n\nexport const auth = Effect.sync(() => {",
+                        },
+                      },
+                    ],
                     locations: [{ path: 'src/middleware/auth.ts' }],
                     createdAt: Date.now() - 5000,
                   },

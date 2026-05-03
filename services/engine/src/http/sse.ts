@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import type { Jobs } from '../jobs.ts';
 
 export function handleJobEvents(
@@ -14,16 +15,28 @@ export function handleJobEvents(
     start(controller) {
       const encode = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
 
-      // Replay ring buffer to catch up
-      for (const event of detail.recentEvents) {
-        controller.enqueue(encode(event));
-      }
-
-      // If job is already terminal, close immediately
+      // If job is already terminal, replay full ndjson log and close
       if (detail.status !== 'running') {
+        try {
+          const lines = fs.readFileSync(detail.ndjsonPath, 'utf8').split('\n');
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            controller.enqueue(encode(JSON.parse(line)));
+          }
+        } catch {
+          // Fall back to ring buffer if file is unavailable
+          for (const event of detail.recentEvents) {
+            controller.enqueue(encode(event));
+          }
+        }
         controller.enqueue(encode('__terminal__'));
         controller.close();
         return;
+      }
+
+      // Replay ring buffer to catch up for running jobs
+      for (const event of detail.recentEvents) {
+        controller.enqueue(encode(event));
       }
 
       // `closed` is mutable flag state, not deferred initialization — let is intentional.
