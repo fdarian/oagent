@@ -17,7 +17,7 @@ import {
   OpenCode,
   serveSPA,
 } from '@oagent/engine';
-import { Cause, Console, Effect, Exit, Runtime } from 'effect';
+import { Cause, Console, Effect, Exit, Layer, Runtime } from 'effect';
 import * as v from 'valibot';
 import cliPackage from '../package.json' with { type: 'json' };
 
@@ -424,13 +424,15 @@ const cli = Command.make('oagent').pipe(
   Command.withSubcommands([serve, stdio]),
 );
 
+const layerMain = Layer.mergeAll(
+  Jobs.Default,
+  OpenCode.Default,
+  BunContext.layer,
+).pipe(Layer.provideMerge(Layer.scope));
+
 const program = Command.run(cli, {
   name: 'oagent',
   version: cliPackage.version,
-})(process.argv).pipe(
-  Effect.provide(Jobs.Default),
-  Effect.provide(OpenCode.Default),
-  Effect.provide(BunContext.layer),
-);
+})(process.argv).pipe(Effect.provide(layerMain));
 
 Effect.runPromise(program);
