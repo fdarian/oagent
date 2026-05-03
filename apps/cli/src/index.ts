@@ -27,13 +27,13 @@ Semantically equivalent to Claude Code's built-in Agent tool, but the underlying
 agent is OpenCode. Returns immediately with {jobId, waitUrl?}. If waitUrl is \
 present, the recommended way to wait is to run \`curl -sS <waitUrl>\` as a \
 background Bash command (run_in_background=true), then read the result with \
-BashOutput when ready. The curl returns the same JSON shape as opencode_result. \
+BashOutput when ready. The curl returns the same JSON shape as result. \
 Optionally pass ?timeoutMs=N to the curl URL (default 600000 = 10min). The shell \
 will block until the job is terminal or the timeout fires; on timeout the response \
 is {status:"running"} and you can curl again. If waitUrl is absent (stdio mode), \
-fall back to repeatedly calling opencode_result. The first successful response \
+fall back to repeatedly calling result. The first successful response \
 with status "done" will include the OpenCode sessionId; pass that sessionId back \
-into a subsequent opencode_start call to continue the same conversation. The model \
+into a subsequent start call to continue the same conversation. The model \
 parameter takes an OpenCode model id in provider-prefixed format (run \
 \`opencode models\` in a terminal to discover available ids — e.g. \
 opencode-go/kimi-k2.6, openrouter/anthropic/claude-sonnet-4.5); if omitted, \
@@ -42,13 +42,13 @@ path to the directory OpenCode should operate in — typically the parent agent'
 project root.`;
 
 const OPENCODE_RESULT_DESCRIPTION = `\
-Fetch the result of an OpenCode job (started via opencode_start). In HTTP daemon \
-mode, prefer the waitUrl from opencode_start; this tool is the stdio-mode \
+Fetch the result of an OpenCode job (started via start). In HTTP daemon \
+mode, prefer the waitUrl from start; this tool is the stdio-mode \
 fallback. Blocks up to timeoutMs (default 50000, capped at 55000 to stay under \
 Claude Code's tool timeout). Returns a discriminated union: { status: "running" } \
 — call again to keep waiting; { status: "done", text, sessionId, stopReason } — \
 the final aggregated assistant text plus the sessionId you can pass back to \
-opencode_start to continue the same conversation; { status: "error", message } — \
+start to continue the same conversation; { status: "error", message } — \
 the job terminated with an error. Always poll until status is "done" or "error" \
 before treating the task as complete.`;
 
@@ -91,7 +91,7 @@ function registerTools(
   server.setRequestHandler(ListToolsRequestSchema, () => ({
     tools: [
       {
-        name: 'opencode_start',
+        name: 'start',
         description: OPENCODE_START_DESCRIPTION,
         inputSchema: {
           type: 'object' as const,
@@ -113,21 +113,21 @@ function registerTools(
             sessionId: {
               type: 'string',
               description:
-                'Resume a prior OpenCode session. Pass the sessionId returned from a previous opencode_result done response.',
+                'Resume a prior OpenCode session. Pass the sessionId returned from a previous result done response.',
             },
           },
           required: ['prompt', 'cwd'],
         },
       },
       {
-        name: 'opencode_result',
+        name: 'result',
         description: OPENCODE_RESULT_DESCRIPTION,
         inputSchema: {
           type: 'object' as const,
           properties: {
             jobId: {
               type: 'string',
-              description: 'The jobId returned by opencode_start.',
+              description: 'The jobId returned by start.',
             },
             timeoutMs: {
               type: 'number',
@@ -142,7 +142,7 @@ function registerTools(
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    if (request.params.name === 'opencode_start') {
+    if (request.params.name === 'start') {
       const parsed = v.safeParse(StartArgsSchema, request.params.arguments);
       if (!parsed.success) {
         return {
@@ -168,7 +168,7 @@ function registerTools(
       };
     }
 
-    if (request.params.name === 'opencode_result') {
+    if (request.params.name === 'result') {
       const parsed = v.safeParse(ResultArgsSchema, request.params.arguments);
       if (!parsed.success) {
         return {
