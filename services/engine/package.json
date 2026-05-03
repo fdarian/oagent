@@ -16,7 +16,6 @@
     "@effect/platform": "^0.96.1",
     "@effect/platform-bun": "^0.89.0",
     "@orpc/server": "latest",
-    "acpx": "^0.6.1",
     "effect": "^3.21.2",
     "ff-effect": "latest",
     "valibot": "^1.3.1"
