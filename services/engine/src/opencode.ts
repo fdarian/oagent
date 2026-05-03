@@ -1,14 +1,11 @@
 /// <reference types="bun" />
-import { randomUUID } from 'node:crypto';
-import os from 'node:os';
-import path from 'node:path';
 import {
-  type AcpRuntimeEvent,
-  type AcpRuntimeHandle,
-  createAcpRuntime,
-  createAgentRegistry,
-  createFileSessionStore,
-} from 'acpx/runtime';
+  ClientSideConnection,
+  ndJsonStream,
+  PROTOCOL_VERSION,
+  type Client,
+  type SessionUpdate,
+} from '@agentclientprotocol/sdk';
 import { Effect, Schema } from 'effect';
 
 class OpenCodeSessionError extends Schema.TaggedError<OpenCodeSessionError>()(
@@ -27,26 +24,99 @@ class OpenCodeTurnFailed extends Schema.TaggedError<OpenCodeTurnFailed>()(
 
 export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
   effect: Effect.gen(function* () {
-    // Stable per-process state directory — one session store per server process.
-    const stateDir = path.join(os.tmpdir(), `oagent-${process.pid}`);
+    const subprocess = yield* Effect.acquireRelease(
+      Effect.sync(() => {
+        const transform = new TransformStream<Uint8Array, Uint8Array>();
+        const proc = Bun.spawn(['opencode', 'acp'], {
+          stdin: transform.readable,
+          stdout: 'pipe',
+          stderr: 'inherit',
+          cwd: process.cwd(),
+        });
+        return { transform, proc };
+      }),
+      (resources) =>
+        Effect.sync(() => {
+          resources.proc.kill();
+        }),
+    );
 
-    const sessionStore = createFileSessionStore({ stateDir });
+    const stream = ndJsonStream(
+      subprocess.transform.writable,
+      subprocess.proc.stdout,
+    );
 
-    // Override the built-in registry entry which resolves to "npx -y opencode-ai acp",
-    // using the locally installed binary directly instead.
-    const agentRegistry = createAgentRegistry({
-      overrides: { opencode: 'opencode acp' },
-    });
+    const listeners = new Map<string, (e: SessionUpdate) => void>();
 
-    // createAcpRuntime is synchronous — one instance, reused across all turns.
-    // No hard timeoutMs here; the job/MCP layer handles polling and cancellation.
-    // TODO: per-turn cwd override is out of scope for MVP — all turns use server's cwd.
-    const runtime = createAcpRuntime({
-      cwd: process.cwd(),
-      sessionStore,
-      agentRegistry,
-      permissionMode: 'approve-all',
-      nonInteractivePermissions: 'fail',
+    const registerListener = (
+      sessionId: string,
+      fn: (e: SessionUpdate) => void,
+    ) => {
+      listeners.set(sessionId, fn);
+      return () => {
+        listeners.delete(sessionId);
+      };
+    };
+
+    const conn = new ClientSideConnection(
+      (): Client => ({
+        sessionUpdate: async (params) => {
+          const listener = listeners.get(params.sessionId);
+          if (listener !== undefined) {
+            listener(params.update);
+          }
+        },
+        requestPermission: async (params) => {
+          const allowAlways = params.options.find(
+            (opt) => opt.kind === 'allow_always',
+          );
+          if (allowAlways !== undefined) {
+            return {
+              outcome: { outcome: 'selected', optionId: allowAlways.optionId },
+            };
+          }
+          const allowOnce = params.options.find(
+            (opt) => opt.kind === 'allow_once',
+          );
+          if (allowOnce !== undefined) {
+            return {
+              outcome: { outcome: 'selected', optionId: allowOnce.optionId },
+            };
+          }
+          return { outcome: { outcome: 'cancelled' } };
+        },
+        readTextFile: async (params) => {
+          const text = await Bun.file(params.path).text();
+          if (params.line !== undefined && params.line !== null) {
+            const lines = text.split('\n');
+            const start = Math.max(params.line - 1, 0);
+            const end =
+              params.limit !== undefined && params.limit !== null
+                ? start + params.limit
+                : undefined;
+            return { content: lines.slice(start, end).join('\n') };
+          }
+          return { content: text };
+        },
+        writeTextFile: async (params) => {
+          await Bun.write(params.path, params.content);
+          return {};
+        },
+      }),
+      stream,
+    );
+
+    yield* Effect.tryPromise({
+      try: () =>
+        conn.initialize({
+          protocolVersion: PROTOCOL_VERSION,
+          clientCapabilities: {
+            fs: { readTextFile: true, writeTextFile: true },
+            terminal: false,
+          },
+          clientInfo: { name: 'oagent', version: '0.1.0' },
+        }),
+      catch: (cause) => new OpenCodeSessionError({ cause }),
     });
 
     const runTurn = (input: {
@@ -54,129 +124,94 @@ export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
       model?: string;
       sessionId?: string;
       cwd: string;
-      onEvent?: (event: AcpRuntimeEvent) => void;
+      onEvent?: (event: SessionUpdate) => void;
     }) =>
-      Effect.acquireUseRelease(
-        // Acquire: create or resume the session handle
-        Effect.tryPromise({
-          try: () =>
-            runtime.ensureSession({
-              // When resuming: use a fresh sessionKey so acpx takes the loadSession
-              // path (matching a key with an existing record is required to skip it).
-              sessionKey: randomUUID(),
-              agent: 'opencode',
-              mode: 'persistent',
-              cwd: input.cwd,
-              ...(input.sessionId !== undefined
-                ? { resumeSessionId: input.sessionId }
-                : {}),
-            }),
-          catch: (cause) => new OpenCodeSessionError({ cause }),
-        }),
-        // Use: set model (if provided), run the turn, return the result
-        (handle: AcpRuntimeHandle) =>
-          Effect.gen(function* () {
-            const model = input.model;
-            if (model !== undefined) {
-              yield* Effect.tryPromise({
-                try: () =>
-                  runtime.setConfigOption({
-                    handle,
-                    key: 'model',
-                    value: model,
-                  }),
-                catch: (cause) =>
-                  new OpenCodeTurnFailed({
-                    code: 'SET_CONFIG_OPTION',
-                    message: 'setConfigOption failed',
-                    cause,
-                  }),
-              });
-            }
-
-            const turn = runtime.startTurn({
-              handle,
-              text: input.prompt,
-              mode: 'prompt',
-              requestId: randomUUID(),
-            });
-
-            const text = yield* Effect.tryPromise({
-              try: async () => {
-                let acc = '';
-                for await (const event of turn.events) {
-                  if (input.onEvent !== undefined) {
-                    input.onEvent(event);
-                  }
-                  if (
-                    event.type === 'text_delta' &&
-                    event.stream !== 'thought'
-                  ) {
-                    acc += event.text;
-                  }
-                }
-                return acc;
-              },
-              catch: (cause) =>
-                new OpenCodeTurnFailed({
-                  code: 'EVENT_STREAM',
-                  message: 'event stream errored',
-                  cause,
+      Effect.gen(function* () {
+        const sessionId = yield* (() => {
+          if (input.sessionId !== undefined) {
+            const sid = input.sessionId;
+            return Effect.tryPromise({
+              try: () =>
+                conn.loadSession({
+                  sessionId: sid,
+                  cwd: input.cwd,
+                  mcpServers: [],
                 }),
-            });
-
-            const result = yield* Effect.tryPromise({
-              try: () => turn.result,
-              catch: (cause) =>
-                new OpenCodeTurnFailed({
-                  code: 'RESULT_REJECTED',
-                  message: 'result promise rejected',
-                  cause,
-                }),
-            });
-
-            if (result.status === 'failed') {
-              return yield* Effect.fail(
-                new OpenCodeTurnFailed({
-                  code: result.error.code,
-                  message: result.error.message,
-                  cause: result.error,
-                }),
-              );
-            }
-
-            const sessionId = handle.backendSessionId;
-            if (sessionId === undefined) {
-              return yield* Effect.fail(
-                new OpenCodeSessionError({
-                  cause: new Error(
-                    'backendSessionId missing after successful turn',
-                  ),
-                }),
-              );
-            }
-
-            const stopReason =
-              result.status === 'completed' || result.status === 'cancelled'
-                ? result.stopReason
-                : undefined;
-
-            return { sessionId, text, stopReason };
-          }),
-        // Release: always close the session handle, even on interruption.
-        // discardPersistentState:false because opencode doesn't support session/close
-        // with state discard (throws ACP_BACKEND_UNSUPPORTED_CONTROL otherwise).
-        (handle: AcpRuntimeHandle) =>
-          Effect.tryPromise({
+              catch: (cause) => new OpenCodeSessionError({ cause }),
+            }).pipe(Effect.map(() => sid));
+          }
+          return Effect.tryPromise({
             try: () =>
-              runtime.close({
-                handle,
-                reason: 'turn-complete',
-                discardPersistentState: false,
-              }),
+              conn
+                .newSession({ cwd: input.cwd, mcpServers: [] })
+                .then((res) => res.sessionId),
             catch: (cause) => new OpenCodeSessionError({ cause }),
-          }).pipe(Effect.orDie),
-      );
+          });
+        })();
+
+        let buffer = '';
+
+        const unregister = registerListener(sessionId, (update) => {
+          if (input.onEvent !== undefined) {
+            input.onEvent(update);
+          }
+          if (
+            update.sessionUpdate === 'agent_message_chunk' &&
+            update.content.type === 'text'
+          ) {
+            buffer += update.content.text;
+          }
+        });
+
+        const response = yield* Effect.gen(function* () {
+          const model = input.model;
+          if (model !== undefined) {
+            yield* Effect.tryPromise({
+              try: () =>
+                conn.setSessionConfigOption({
+                  sessionId,
+                  configId: 'model',
+                  value: model,
+                }),
+              catch: (cause) =>
+                new OpenCodeTurnFailed({
+                  code: 'SET_CONFIG_OPTION',
+                  message: 'setConfigOption failed',
+                  cause,
+                }),
+            });
+          }
+
+          return yield* Effect.tryPromise({
+            try: (signal) => {
+              const onAbort = () => {
+                void conn.cancel({ sessionId });
+              };
+              signal.addEventListener('abort', onAbort, { once: true });
+              return conn
+                .prompt({
+                  sessionId,
+                  prompt: [{ type: 'text', text: input.prompt }],
+                })
+                .finally(() => {
+                  signal.removeEventListener('abort', onAbort);
+                });
+            },
+            catch: (cause) =>
+              new OpenCodeTurnFailed({
+                code: 'PROMPT_REJECTED',
+                message: 'prompt rejected',
+                cause,
+              }),
+          });
+        }).pipe(Effect.ensuring(Effect.sync(unregister)));
+
+        return {
+          sessionId,
+          text: buffer,
+          stopReason: response.stopReason,
+        };
+      });
 
     return { runTurn };
   }),

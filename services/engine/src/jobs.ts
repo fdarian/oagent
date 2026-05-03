@@ -4,11 +4,9 @@ import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { AcpRuntimeEvent } from 'acpx/runtime';
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Duration, Effect, Fiber, Schedule, Schema } from 'effect';
 import { OpenCode } from './opencode.ts';
-
-export type { AcpRuntimeEvent };
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
   jobId: Schema.String,
@@ -60,7 +58,7 @@ type WaitResult =
 
 /** Per-job event log: ring buffer + live fanout emitter. */
 type EventLog = {
-  readonly ring: AcpRuntimeEvent[];
+  readonly ring: SessionUpdate[];
   readonly emitter: EventEmitter;
 };
 
@@ -121,7 +119,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         const jobId = randomUUID();
         const createdAt = Date.now();
 
-        const ring: AcpRuntimeEvent[] = [];
+        const ring: SessionUpdate[] = [];
         const emitter = new EventEmitter();
         emitter.setMaxListeners(0);
         eventLogs.set(jobId, { ring, emitter });
@@ -129,7 +127,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         const ndjsonPath = path.join(stateDir, `${jobId}.ndjson`);
         const writeStream = fs.createWriteStream(ndjsonPath, { flags: 'a' });
 
-        const onEvent = (event: AcpRuntimeEvent): void => {
+        const onEvent = (event: SessionUpdate): void => {
           // Append to ring buffer, evict oldest if over capacity
           ring.push(event);
           if (ring.length > RING_BUFFER_MAX) {
@@ -261,7 +259,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           prompt: string;
           cwd: string;
           model?: string;
-          recentEvents: AcpRuntimeEvent[];
+          recentEvents: SessionUpdate[];
         }
       | undefined => {
       const state = map.get(jobId);
@@ -282,19 +280,19 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
     /**
      * Subscribe to live events for a job.
-     * The listener is called with each new AcpRuntimeEvent.
+     * The listener is called with each new SessionUpdate.
      * When the job reaches terminal status the listener is called with the
      * synthetic string `'__terminal__'` so the SSE handler can close.
      * Returns an unsubscribe function.
      */
     const subscribe = (
       jobId: string,
-      listener: (event: AcpRuntimeEvent | typeof TERMINAL_EVENT) => void,
+      listener: (event: SessionUpdate | typeof TERMINAL_EVENT) => void,
     ): (() => void) => {
       const log = eventLogs.get(jobId);
       if (log === undefined) return () => {};
 
-      const onEvent = (event: AcpRuntimeEvent) => listener(event);
+      const onEvent = (event: SessionUpdate) => listener(event);
       const onTerminal = () => listener(TERMINAL_EVENT);
 
       log.emitter.on('event', onEvent);

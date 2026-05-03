@@ -1,6 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { JobTimelineTool } from './job-timeline-tool';
-import type { TimelinePart } from '@/lib/event-adapter';
 
 const meta: Meta<typeof JobTimelineTool> = {
   component: JobTimelineTool,
@@ -17,9 +16,10 @@ export const InputStreaming: Story = {
       toolCallId: 'tc-1',
       title: 'write_file',
       state: 'input-streaming',
-      body: '{"path": "src/config.ts", "content": "export const config = {"',
+      content: [{ type: 'content', content: { type: 'text', text: '{"path": "src/config.ts", "content": "export const config = {"' } }],
+      locations: [{ path: 'src/config.ts' }],
       createdAt: Date.now() - 2000,
-    } as TimelinePart & { kind: 'tool' },
+    },
   },
 };
 
@@ -31,9 +31,10 @@ export const InputAvailable: Story = {
       toolCallId: 'tc-2',
       title: 'shell',
       state: 'input-available',
-      body: '{"command": "git status"}',
+      content: [{ type: 'content', content: { type: 'text', text: '$ git status' } }],
+      locations: [],
       createdAt: Date.now() - 3000,
-    } as TimelinePart & { kind: 'tool' },
+    },
   },
 };
 
@@ -45,10 +46,11 @@ export const OutputAvailable: Story = {
       toolCallId: 'tc-3',
       title: 'read_file',
       state: 'output-available',
-      body: '{"path": "/etc/hosts", "content": "127.0.0.1 localhost\\n::1 localhost"}',
+      content: [{ type: 'content', content: { type: 'text', text: '127.0.0.1 localhost\n::1 localhost' } }],
+      locations: [{ path: '/etc/hosts' }],
       createdAt: Date.now() - 5000,
       durationMs: 1200,
-    } as TimelinePart & { kind: 'tool' },
+    },
   },
 };
 
@@ -60,9 +62,10 @@ export const OutputError: Story = {
       toolCallId: 'tc-4',
       title: 'shell',
       state: 'output-error',
-      body: '{"command": "rm -rf /", "error": "Permission denied"}',
+      content: [{ type: 'content', content: { type: 'text', text: "$ rm -rf /\nrm: refusing to remove root directory: '/'" } }],
+      locations: [],
       createdAt: Date.now() - 1000,
       durationMs: 300,
-    } as TimelinePart & { kind: 'tool' },
+    },
   },
 };

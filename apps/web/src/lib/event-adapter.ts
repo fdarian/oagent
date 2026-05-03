@@ -1,240 +1,314 @@
-type AcpEvent =
-  | { type: 'text_delta'; text?: string; stream?: 'output' | 'thought'; tag?: string }
-  | { type: 'status'; text: string; tag?: string; used?: number; size?: number }
-  | {
-      type: 'tool_call';
-      text?: string;
-      tag?: string;
-      toolCallId?: string;
-      status?: string;
-      title?: string;
-    }
-  | { type: 'done'; stopReason?: string }
-  | { type: 'error'; message: string; code?: string; retryable?: boolean };
+import type { SessionUpdate, ToolCallContent, ToolCallLocation, ToolKind } from '@oagent/engine'
 
 export type TimelinePart =
   | { kind: 'text'; id: string; text: string; createdAt: number }
   | {
-      kind: 'reasoning';
-      id: string;
-      text: string;
-      isStreaming: boolean;
-      createdAt: number;
-      durationMs?: number;
+      kind: 'reasoning'
+      id: string
+      text: string
+      isStreaming: boolean
+      createdAt: number
+      durationMs?: number
     }
   | {
-      kind: 'tool';
-      id: string;
-      toolCallId: string;
-      title: string;
-      state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error';
-      body: string;
-      createdAt: number;
-      durationMs?: number;
+      kind: 'tool'
+      id: string
+      toolCallId: string
+      title: string
+      state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error'
+      toolKind?: ToolKind
+      content: ToolCallContent[]
+      locations: ToolCallLocation[]
+      createdAt: number
+      durationMs?: number
     }
-  | { kind: 'error'; id: string; message: string; code?: string; createdAt: number };
+  | { kind: 'error'; id: string; message: string; code?: string; createdAt: number }
 
 export type AdapterResult = {
-  parts: TimelinePart[];
-  lastStatus?: string;
-  terminalReason?: 'done' | 'error';
-};
+  parts: TimelinePart[]
+  lastStatus?: string
+}
 
 function makeId(prefix: string, index: number): string {
-  return `${prefix}-${index}`;
+  return `${prefix}-${index}`
 }
 
-function hashToolId(
-  event: Extract<AcpEvent, { type: 'tool_call' }>,
-  index: number,
-): string {
-  if (event.toolCallId !== undefined && event.toolCallId !== '') {
-    return event.toolCallId;
-  }
-  const key = `${event.title ?? ''}:${event.text ?? ''}:${event.tag ?? ''}:${index}`;
-  let hash = 0;
-  for (let i = 0; i < key.length; i++) {
-    const char = key.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash;
-  }
-  return `tool-${Math.abs(hash).toString(36)}`;
-}
-
-function mapToolState(status?: string): 'input-streaming' | 'input-available' | 'output-available' | 'output-error' {
+function mapToolState(status?: string | null): 'input-streaming' | 'input-available' | 'output-available' | 'output-error' {
   switch (status) {
     case 'pending':
-      return 'input-streaming';
-    case 'running':
-      return 'input-available';
+      return 'input-streaming'
+    case 'in_progress':
+      return 'input-available'
     case 'completed':
-      return 'output-available';
-    case 'error':
-      return 'output-error';
+      return 'output-available'
+    case 'failed':
+      return 'output-error'
     default:
-      return 'input-streaming';
+      return 'input-streaming'
   }
 }
 
-/**
- * Pure, re-runnable reducer: given the full event list (SSE replay or live tail),
- * rebuilds the timeline from scratch so seed and incremental updates are identical.
- */
-export function reduceEvents(events: AcpEvent[]): AdapterResult {
-  const parts: TimelinePart[] = [];
-  let lastStatus: string | undefined;
-  let terminalReason: 'done' | 'error' | undefined;
+type OpenText = {
+  kind: 'text'
+  id: string
+  text: string
+  createdAt: number
+  messageId?: string | null
+}
 
-  // Mutable builders for the "open" parts we are currently accumulating
-  let openText: TimelinePart & { kind: 'text' } | null = null;
-  let openReasoning: TimelinePart & { kind: 'reasoning' } | null = null;
-  const openTools = new Map<string, TimelinePart & { kind: 'tool' }>();
+type OpenReasoning = {
+  kind: 'reasoning'
+  id: string
+  text: string
+  isStreaming: boolean
+  createdAt: number
+  messageId?: string | null
+}
 
-  const now = Date.now();
+function shouldContinueAccumulating(
+  openPart: { messageId?: string | null } | null,
+  chunkMessageId: string | null | undefined,
+): boolean {
+  if (openPart === null) return false
+  const openId = openPart.messageId
+  if (openId !== null && openId !== undefined && chunkMessageId !== null && chunkMessageId !== undefined) {
+    return openId === chunkMessageId
+  }
+  return true
+}
+
+export function reduceEvents(events: SessionUpdate[]): AdapterResult {
+  const parts: TimelinePart[] = []
+  let lastStatus: string | undefined
+
+  let openText: OpenText | null = null
+  let openReasoning: OpenReasoning | null = null
+  const openTools = new Map<string, TimelinePart & { kind: 'tool' }>()
+
+  const now = Date.now()
 
   for (let i = 0; i < events.length; i++) {
-    const ev = events[i];
-    if (ev === undefined) continue;
-    const createdAt = now - (events.length - 1 - i) * 100;
+    const update = events[i]
+    if (update === undefined) continue
+    const createdAt = now - (events.length - 1 - i) * 100
 
-    if (ev.type === 'text_delta') {
-      if (ev.stream === 'thought') {
-        // Close any open text part first
-        if (openText !== null) {
-          parts.push(openText);
-          openText = null;
-        }
-        if (openReasoning === null) {
-          openReasoning = {
-            kind: 'reasoning',
-            id: makeId('reasoning', i),
-            text: ev.text ?? '',
-            isStreaming: true,
-            createdAt,
-          };
-        } else {
-          openReasoning = {
-            kind: 'reasoning',
-            id: openReasoning.id,
-            text: openReasoning.text + (ev.text ?? ''),
-            isStreaming: openReasoning.isStreaming,
-            createdAt: openReasoning.createdAt,
-          };
-        }
-      } else {
-        // output or undefined
-        // Close any open reasoning part first
-        if (openReasoning !== null) {
-          const durationMs = createdAt - openReasoning.createdAt;
-          parts.push({
-            kind: 'reasoning',
-            id: openReasoning.id,
-            text: openReasoning.text,
-            isStreaming: false,
-            createdAt: openReasoning.createdAt,
-            durationMs,
-          });
-          openReasoning = null;
-        }
+    const isAccumulatingChunk =
+      update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'agent_thought_chunk'
+    const isFlushOnlyChunk = update.sessionUpdate === 'user_message_chunk'
+
+    if (!isAccumulatingChunk) {
+      if (openText !== null) {
+        parts.push(openText)
+        openText = null
+      }
+      if (openReasoning !== null) {
+        const durationMs = createdAt - openReasoning.createdAt
+        parts.push({
+          kind: 'reasoning',
+          id: openReasoning.id,
+          text: openReasoning.text,
+          isStreaming: false,
+          createdAt: openReasoning.createdAt,
+          durationMs,
+        })
+        openReasoning = null
+      }
+    }
+
+    if (isFlushOnlyChunk) {
+      continue
+    }
+
+    if (update.sessionUpdate === 'agent_message_chunk') {
+      const chunkMessageId = update.messageId
+      const contentBlock = update.content
+      const chunkText = contentBlock.type === 'text' ? contentBlock.text : undefined
+
+      if (openReasoning !== null) {
+        const durationMs = createdAt - openReasoning.createdAt
+        parts.push({
+          kind: 'reasoning',
+          id: openReasoning.id,
+          text: openReasoning.text,
+          isStreaming: false,
+          createdAt: openReasoning.createdAt,
+          durationMs,
+        })
+        openReasoning = null
+      }
+
+      const shouldContinue = shouldContinueAccumulating(openText, chunkMessageId)
+      if (!shouldContinue && openText !== null) {
+        parts.push(openText)
+        openText = null
+      }
+
+      if (chunkText !== undefined) {
         if (openText === null) {
           openText = {
             kind: 'text',
             id: makeId('text', i),
-            text: ev.text ?? '',
+            text: chunkText,
             createdAt,
-          };
+            messageId: chunkMessageId,
+          }
         } else {
           openText = {
             kind: 'text',
             id: openText.id,
-            text: openText.text + (ev.text ?? ''),
+            text: openText.text + chunkText,
             createdAt: openText.createdAt,
-          };
+            messageId: chunkMessageId,
+          }
+        }
+      } else if (openText !== null) {
+        openText = {
+          kind: 'text',
+          id: openText.id,
+          text: openText.text,
+          createdAt: openText.createdAt,
+          messageId: chunkMessageId,
         }
       }
-      continue;
+
+      continue
     }
 
-    if (ev.type === 'status') {
-      lastStatus = ev.text;
-      continue;
+    if (update.sessionUpdate === 'agent_thought_chunk') {
+      const chunkMessageId = update.messageId
+      const contentBlock = update.content
+      const chunkText = contentBlock.type === 'text' ? contentBlock.text : undefined
+
+      if (openText !== null) {
+        parts.push(openText)
+        openText = null
+      }
+
+      const shouldContinue = shouldContinueAccumulating(openReasoning, chunkMessageId)
+      if (!shouldContinue && openReasoning !== null) {
+        const durationMs = createdAt - openReasoning.createdAt
+        parts.push({
+          kind: 'reasoning',
+          id: openReasoning.id,
+          text: openReasoning.text,
+          isStreaming: false,
+          createdAt: openReasoning.createdAt,
+          durationMs,
+        })
+        openReasoning = null
+      }
+
+      if (chunkText !== undefined) {
+        if (openReasoning === null) {
+          openReasoning = {
+            kind: 'reasoning',
+            id: makeId('reasoning', i),
+            text: chunkText,
+            isStreaming: true,
+            createdAt,
+            messageId: chunkMessageId,
+          }
+        } else {
+          openReasoning = {
+            kind: 'reasoning',
+            id: openReasoning.id,
+            text: openReasoning.text + chunkText,
+            isStreaming: openReasoning.isStreaming,
+            createdAt: openReasoning.createdAt,
+            messageId: chunkMessageId,
+          }
+        }
+      } else if (openReasoning !== null) {
+        openReasoning = {
+          kind: 'reasoning',
+          id: openReasoning.id,
+          text: openReasoning.text,
+          isStreaming: openReasoning.isStreaming,
+          createdAt: openReasoning.createdAt,
+          messageId: chunkMessageId,
+        }
+      }
+
+      continue
     }
 
-    // Any non-text_delta event closes open text and reasoning
-    if (openText !== null) {
-      parts.push(openText);
-      openText = null;
-    }
-    if (openReasoning !== null) {
-      const durationMs = createdAt - openReasoning.createdAt;
-      parts.push({
-        kind: 'reasoning',
-        id: openReasoning.id,
-        text: openReasoning.text,
-        isStreaming: false,
-        createdAt: openReasoning.createdAt,
-        durationMs,
-      });
-      openReasoning = null;
-    }
-
-    if (ev.type === 'tool_call') {
-      const toolCallId = hashToolId(ev, i);
-      const existing = openTools.get(toolCallId);
-      const newState = mapToolState(ev.status);
+    if (update.sessionUpdate === 'tool_call') {
+      const toolCallId = update.toolCallId
+      const existing = openTools.get(toolCallId)
+      const newState = mapToolState(update.status)
       if (existing === undefined) {
         openTools.set(toolCallId, {
           kind: 'tool',
-          id: makeId('tool', i),
+          id: `tool-${toolCallId}`,
           toolCallId,
-          title: ev.title ?? 'Tool',
+          title: update.title,
           state: newState,
-          body: ev.text ?? '',
+          toolKind: update.kind ?? undefined,
+          content: update.content ?? [],
+          locations: update.locations ?? [],
           createdAt,
-        });
+        })
       } else {
         const durationMs =
-          newState === 'output-available' || newState === 'output-error'
+          (newState === 'output-available' || newState === 'output-error') && existing.durationMs === undefined
             ? createdAt - existing.createdAt
-            : existing.durationMs;
+            : existing.durationMs
         openTools.set(toolCallId, {
           kind: 'tool',
           id: existing.id,
           toolCallId: existing.toolCallId,
-          title: ev.title ?? existing.title,
+          title: update.title,
           state: newState,
-          body: ev.text ?? existing.body,
+          toolKind: update.kind ?? existing.toolKind,
+          content: update.content ?? existing.content,
+          locations: update.locations ?? existing.locations,
           createdAt: existing.createdAt,
           durationMs,
-        });
+        })
       }
-      continue;
+      continue
     }
 
-    if (ev.type === 'done') {
-      terminalReason = 'done';
-      continue;
+    if (update.sessionUpdate === 'tool_call_update') {
+      const toolCallId = update.toolCallId
+      const existing = openTools.get(toolCallId)
+      if (existing === undefined) {
+        continue
+      }
+      const nextTitle = update.title !== null && update.title !== undefined ? update.title : existing.title
+      const nextState = update.status !== null && update.status !== undefined ? mapToolState(update.status) : existing.state
+      const nextToolKind = update.kind !== null && update.kind !== undefined ? update.kind : existing.toolKind
+      const nextContent = update.content !== null && update.content !== undefined ? update.content : existing.content
+      const nextLocations = update.locations !== null && update.locations !== undefined ? update.locations : existing.locations
+      const durationMs =
+        (nextState === 'output-available' || nextState === 'output-error') && existing.durationMs === undefined
+          ? createdAt - existing.createdAt
+          : existing.durationMs
+      openTools.set(toolCallId, {
+        kind: 'tool',
+        id: existing.id,
+        toolCallId: existing.toolCallId,
+        title: nextTitle,
+        state: nextState,
+        toolKind: nextToolKind,
+        content: nextContent,
+        locations: nextLocations,
+        createdAt: existing.createdAt,
+        durationMs,
+      })
+      continue
     }
 
-    if (ev.type === 'error') {
-      terminalReason = 'error';
-      parts.push({
-        kind: 'error',
-        id: makeId('error', i),
-        message: ev.message,
-        code: ev.code,
-        createdAt,
-      });
-      continue;
-    }
+    // Ignored variants: plan, available_commands_update, current_mode_update,
+    // config_option_update, session_info_update, usage_update
+    // Open text/reasoning already flushed above.
   }
 
-  // Flush remaining open parts at end of event list
   if (openText !== null) {
-    parts.push(openText);
+    parts.push(openText)
   }
   if (openReasoning !== null) {
-    const durationMs = now - openReasoning.createdAt;
+    const durationMs = now - openReasoning.createdAt
     parts.push({
       kind: 'reasoning',
       id: openReasoning.id,
@@ -242,11 +316,20 @@ export function reduceEvents(events: AcpEvent[]): AdapterResult {
       isStreaming: false,
       createdAt: openReasoning.createdAt,
       durationMs,
-    });
+    })
   }
   for (const tool of openTools.values()) {
-    parts.push(tool);
+    parts.push(tool)
   }
 
-  return { parts, lastStatus, terminalReason };
+  for (let j = parts.length - 1; j >= 0; j--) {
+    const part = parts[j]
+    if (part === undefined) continue
+    if (part.kind === 'tool' && (part.state === 'input-streaming' || part.state === 'input-available')) {
+      lastStatus = `Running tool: ${part.title}`
+      break
+    }
+  }
+
+  return { parts, lastStatus }
 }
