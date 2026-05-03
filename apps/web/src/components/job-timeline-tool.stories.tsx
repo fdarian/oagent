@@ -19,7 +19,7 @@ export const InputStreaming: Story = {
       state: 'input-streaming',
       body: '{"path": "src/config.ts", "content": "export const config = {"',
       createdAt: Date.now() - 2000,
-    } as TimelinePart & { kind: 'tool' },
+    } as unknown as TimelinePart & { kind: 'tool' },
   },
 };
 
@@ -33,7 +33,7 @@ export const InputAvailable: Story = {
       state: 'input-available',
       body: '{"command": "git status"}',
       createdAt: Date.now() - 3000,
-    } as TimelinePart & { kind: 'tool' },
+    } as unknown as TimelinePart & { kind: 'tool' },
   },
 };
 
@@ -48,7 +48,7 @@ export const OutputAvailable: Story = {
       body: '{"path": "/etc/hosts", "content": "127.0.0.1 localhost\\n::1 localhost"}',
       createdAt: Date.now() - 5000,
       durationMs: 1200,
-    } as TimelinePart & { kind: 'tool' },
+    } as unknown as TimelinePart & { kind: 'tool' },
   },
 };
 
@@ -63,6 +63,6 @@ export const OutputError: Story = {
       body: '{"command": "rm -rf /", "error": "Permission denied"}',
       createdAt: Date.now() - 1000,
       durationMs: 300,
-    } as TimelinePart & { kind: 'tool' },
+    } as unknown as TimelinePart & { kind: 'tool' },
   },
 };

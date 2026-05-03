@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { reduceEvents, type AdapterResult, type TimelinePart } from './event-adapter.ts';
+import { reduceEvents, type TimelinePart } from './event-adapter.ts';
 
 export type JobEventsState = {
   parts: TimelinePart[];
@@ -38,7 +38,7 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
       setResult({
         parts: next.parts,
         lastStatus: next.lastStatus,
-        terminal: next.terminalReason !== undefined,
+        terminal: false,
       });
     };
 

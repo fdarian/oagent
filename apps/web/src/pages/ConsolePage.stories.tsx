@@ -112,7 +112,7 @@ export const RunningSession: Story = {
                     body: '{"path": "src/middleware/auth.ts", "content": "export function auth(req, res, next) {\\n  const token = req.headers.authorization;\\n  if (!token) return res.status(401).send();\\n  next();\\n}"}',
                     createdAt: Date.now() - 90_000,
                     durationMs: 800,
-                  } as TimelinePart,
+                  } as unknown as TimelinePart,
                   {
                     kind: 'text',
                     id: 'text-1',
@@ -127,7 +127,7 @@ export const RunningSession: Story = {
                     state: 'input-streaming',
                     body: '{"path": "src/middleware/auth.ts", "content": "import { Effect } from \'effect\';\\n\\nexport const auth = Effect.sync(() => {"}',
                     createdAt: Date.now() - 5000,
-                  } as TimelinePart,
+                  } as unknown as TimelinePart,
                 ]}
               />
             </div>
