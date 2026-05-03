@@ -4,42 +4,6 @@ import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
 import { Jobs } from '../jobs.ts';
 
-const acpEventSchema = v.lazy(() =>
-  v.union([
-    v.object({
-      type: v.literal('text_delta'),
-      text: v.string(),
-      stream: v.optional(v.union([v.literal('output'), v.literal('thought')])),
-      tag: v.optional(v.string()),
-    }),
-    v.object({
-      type: v.literal('status'),
-      text: v.string(),
-      tag: v.optional(v.string()),
-      used: v.optional(v.number()),
-      size: v.optional(v.number()),
-    }),
-    v.object({
-      type: v.literal('tool_call'),
-      text: v.string(),
-      tag: v.optional(v.string()),
-      toolCallId: v.optional(v.string()),
-      status: v.optional(v.string()),
-      title: v.optional(v.string()),
-    }),
-    v.object({
-      type: v.literal('done'),
-      stopReason: v.optional(v.string()),
-    }),
-    v.object({
-      type: v.literal('error'),
-      message: v.string(),
-      code: v.optional(v.string()),
-      retryable: v.optional(v.boolean()),
-    }),
-  ]),
-);
-
 const program = Effect.gen(function* () {
   const jobs = yield* Jobs;
 
@@ -74,12 +38,21 @@ const program = Effect.gen(function* () {
               prompt: v.string(),
               cwd: v.string(),
               model: v.optional(v.string()),
-              recentEvents: v.array(acpEventSchema),
             }),
           ),
         ),
         Effect.fn(function* (opt) {
-          return jobs.getDetail(opt.input.jobId);
+          const detail = jobs.getDetail(opt.input.jobId);
+          if (detail === undefined) return undefined;
+          return {
+            id: detail.id,
+            status: detail.status,
+            createdAt: detail.createdAt,
+            terminatedAt: detail.terminatedAt,
+            prompt: detail.prompt,
+            cwd: detail.cwd,
+            model: detail.model,
+          };
         }),
       ),
       start: yield* createHandler(
