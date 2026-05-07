@@ -72,7 +72,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               event_id: eventId,
               message_id: 'messageId' in event ? (event.messageId as string | undefined) ?? null : null,
               content: event.content,
-            } as any);
+            } as any).run();
             break;
           }
           case 'tool_call':
@@ -87,35 +87,35 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               locations: 'locations' in event ? (event.locations as unknown[]) ?? null : null,
               raw_input: 'rawInput' in event ? event.rawInput ?? null : null,
               raw_output: 'rawOutput' in event ? event.rawOutput ?? null : null,
-            } as any);
+            } as any).run();
             break;
           }
           case 'plan': {
             tx.insert(schema.planEvents).values({
               event_id: eventId,
               entries: event.entries,
-            } as any);
+            } as any).run();
             break;
           }
           case 'available_commands_update': {
             tx.insert(schema.availableCommandsEvents).values({
               event_id: eventId,
               available_commands: event.availableCommands,
-            } as any);
+            } as any).run();
             break;
           }
           case 'current_mode_update': {
             tx.insert(schema.currentModeEvents).values({
               event_id: eventId,
               current_mode_id: event.currentModeId,
-            } as any);
+            } as any).run();
             break;
           }
           case 'config_option_update': {
             tx.insert(schema.configOptionEvents).values({
               event_id: eventId,
               config_options: event.configOptions,
-            } as any);
+            } as any).run();
             break;
           }
           case 'session_info_update': {
@@ -123,7 +123,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               event_id: eventId,
               title: 'title' in event ? (event.title as string | undefined) ?? null : null,
               updated_at: 'updatedAt' in event ? (event.updatedAt as string | undefined) ?? null : null,
-            } as any);
+            } as any).run();
             break;
           }
           case 'usage_update': {
@@ -133,7 +133,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               used: event.used,
               cost_amount: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { amount: number }).amount : null,
               cost_currency: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { currency: string }).currency : null,
-            } as any);
+            } as any).run();
             break;
           }
         }
