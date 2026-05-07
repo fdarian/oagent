@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { Jobs } from '../jobs.ts';
 
 export function handleJobEvents(
@@ -15,31 +15,6 @@ export function handleJobEvents(
     start(controller) {
       const encode = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
 
-      // If job is already terminal, replay full ndjson log and close
-      if (detail.status !== 'running') {
-        try {
-          const lines = fs.readFileSync(detail.ndjsonPath, 'utf8').split('\n');
-          for (const line of lines) {
-            if (line.trim() === '') continue;
-            controller.enqueue(encode(JSON.parse(line)));
-          }
-        } catch {
-          // Fall back to ring buffer if file is unavailable
-          for (const event of detail.recentEvents) {
-            controller.enqueue(encode(event));
-          }
-        }
-        controller.enqueue(encode('__terminal__'));
-        controller.close();
-        return;
-      }
-
-      // Replay ring buffer to catch up for running jobs
-      for (const event of detail.recentEvents) {
-        controller.enqueue(encode(event));
-      }
-
-      // `closed` is mutable flag state, not deferred initialization — let is intentional.
       let closed = false;
       const safeClose = () => {
         if (closed) return;
@@ -51,21 +26,81 @@ export function handleJobEvents(
         controller.enqueue(data);
       };
 
-      const unsubscribe = jobs.subscribe(jobId, (event) => {
-        if (event === '__terminal__') {
+      const buffer: Array<
+        | { type: 'event'; event: SessionUpdate; sequence: number }
+        | { type: 'terminal' }
+      > = [];
+      let maxSequence = 0;
+      let live = false;
+
+      let unsubscribe = (): void => {};
+      const onAbort = (): void => {
+        unsubscribe();
+        safeClose();
+      };
+
+      const listener = (
+        payload:
+          | { type: 'event'; event: SessionUpdate; sequence: number }
+          | { type: 'terminal' },
+      ) => {
+        if (live) {
+          if (payload.type === 'terminal') {
+            safeEnqueue(encode('__terminal__'));
+            safeClose();
+            unsubscribe();
+            signal.removeEventListener('abort', onAbort);
+            return;
+          }
+          if (payload.sequence > maxSequence) {
+            maxSequence = payload.sequence;
+            safeEnqueue(encode(payload.event));
+          }
+        } else {
+          buffer.push(payload);
+        }
+      };
+
+      unsubscribe = jobs.subscribe(jobId, listener);
+
+      // Read history from DB
+      const history = jobs.readEventsSince(jobId, 0);
+      for (const item of history) {
+        safeEnqueue(encode(item.event));
+        if (item.sequence > maxSequence) maxSequence = item.sequence;
+      }
+
+      // Atomically switch to live and drain buffer
+      live = true;
+      let sawTerminal = false;
+      for (const payload of buffer) {
+        if (payload.type === 'terminal') {
+          sawTerminal = true;
           safeEnqueue(encode('__terminal__'));
           safeClose();
           unsubscribe();
           signal.removeEventListener('abort', onAbort);
           return;
         }
-        safeEnqueue(encode(event));
-      });
+        if (payload.sequence > maxSequence) {
+          maxSequence = payload.sequence;
+          safeEnqueue(encode(payload.event));
+        }
+      }
+      buffer.length = 0;
 
-      const onAbort = () => {
-        unsubscribe();
+      // Race fix: if job became terminal between subscribe and drain, we may have missed the emitter event.
+      // Re-check status; if terminal, close now.
+      const current = jobs.getDetail(jobId);
+      if (current !== undefined && current.status !== 'running') {
+        if (!sawTerminal) {
+          safeEnqueue(encode('__terminal__'));
+        }
         safeClose();
-      };
+        unsubscribe();
+        signal.removeEventListener('abort', onAbort);
+        return;
+      }
 
       signal.addEventListener('abort', onAbort, { once: true });
     },

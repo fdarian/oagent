@@ -1,11 +1,12 @@
 /// <reference types="bun" />
-import { randomUUID } from 'node:crypto';
+import { randomUUIDv7 } from 'bun';
 import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { Duration, Effect, Fiber, Schedule, Schema } from 'effect';
+import { and, eq, gt, sql } from 'drizzle-orm';
+import { Duration, Effect, Fiber, Schema } from 'effect';
+import { assembleEvent } from './db/assembleEvent.ts';
+import { Db } from './db/client.ts';
+import * as schema from './db/schema.ts';
 import { OpenCode } from './opencode.ts';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
@@ -19,33 +20,6 @@ type JobOk = {
 };
 type JobErr = unknown;
 
-type JobMeta = {
-  readonly prompt: string;
-  readonly cwd: string;
-  readonly model: string | undefined;
-};
-
-type JobState =
-  | (JobMeta & {
-      readonly status: 'running';
-      readonly fiber: Fiber.RuntimeFiber<JobOk, JobErr>;
-      readonly createdAt: number;
-    })
-  | (JobMeta & {
-      readonly status: 'done';
-      readonly sessionId: string;
-      readonly text: string;
-      readonly stopReason: string | undefined;
-      readonly createdAt: number;
-      readonly terminatedAt: number;
-    })
-  | (JobMeta & {
-      readonly status: 'error';
-      readonly message: string;
-      readonly createdAt: number;
-      readonly terminatedAt: number;
-    });
-
 type WaitResult =
   | { readonly status: 'running' }
   | {
@@ -56,99 +30,207 @@ type WaitResult =
     }
   | { readonly status: 'error'; readonly message: string };
 
-/** Per-job event log: ring buffer + live fanout emitter. */
-type EventLog = {
-  readonly ring: SessionUpdate[];
-  readonly emitter: EventEmitter;
-  readonly ndjsonPath: string;
-};
-
 const TIMEOUT_DEFAULT_MS = 50_000;
-const JOB_TTL_MS = 30 * 60_000;
-const JOB_SWEEP_INTERVAL_MS = 5 * 60_000;
-const RING_BUFFER_MAX = 1000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
-/** Base state directory, created lazily on first job start. */
-const stateDir = path.join(os.tmpdir(), `oagent-${process.pid}`, 'jobs');
-
-let stateDirEnsured = false;
-
-function ensureStateDir(): void {
-  if (stateDirEnsured) return;
-  fs.mkdirSync(stateDir, { recursive: true });
-  stateDirEnsured = true;
-}
-
 export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
   effect: Effect.gen(function* () {
     const opencode = yield* OpenCode;
-    const map = new Map<string, JobState>();
-    const eventLogs = new Map<string, EventLog>();
+    const { db } = yield* Db;
 
-    const sweep = Effect.sync(() => {
-      const now = Date.now();
-      for (const [jobId, state] of map.entries()) {
-        if (
-          state.status !== 'running' &&
-          now - state.terminatedAt > JOB_TTL_MS
-        ) {
-          map.delete(jobId);
-          eventLogs.delete(jobId);
+    const liveEmitters = new Map<string, EventEmitter>();
+    const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, JobErr>>();
+
+    const insertEvent = (jobId: number, event: SessionUpdate): number => {
+      return db.transaction((tx) => {
+        const meta =
+          '_meta' in event && event._meta !== undefined && event._meta !== null
+            ? (event._meta as Record<string, unknown>)
+            : null;
+
+        const eventRow = tx
+          .insert(schema.events)
+          .values({
+            job_id: jobId,
+            type: event.sessionUpdate,
+            meta,
+          })
+          .returning({ id: schema.events.id })
+          .get();
+        if (eventRow === undefined) {
+          throw new Error('Failed to insert event');
         }
-      }
-    });
+        const eventId = eventRow.id;
 
-    yield* Effect.forkDaemon(
-      Effect.repeat(
-        sweep,
-        Schedule.spaced(Duration.millis(JOB_SWEEP_INTERVAL_MS)),
-      ),
-    );
+        switch (event.sessionUpdate) {
+          case 'user_message_chunk':
+          case 'agent_message_chunk':
+          case 'agent_thought_chunk': {
+            tx.insert(schema.chunkEvents).values({
+              event_id: eventId,
+              message_id: 'messageId' in event ? (event.messageId as string | undefined) ?? null : null,
+              content: event.content,
+            } as any);
+            break;
+          }
+          case 'tool_call':
+          case 'tool_call_update': {
+            tx.insert(schema.toolCallEvents).values({
+              event_id: eventId,
+              tool_call_id: event.toolCallId,
+              title: 'title' in event ? (event.title as string | undefined) ?? null : null,
+              status: 'status' in event ? (event.status as string | undefined) ?? null : null,
+              kind: 'kind' in event ? (event.kind as string | undefined) ?? null : null,
+              content: 'content' in event ? (event.content as unknown as unknown[]) ?? null : null,
+              locations: 'locations' in event ? (event.locations as unknown[]) ?? null : null,
+              raw_input: 'rawInput' in event ? event.rawInput ?? null : null,
+              raw_output: 'rawOutput' in event ? event.rawOutput ?? null : null,
+            } as any);
+            break;
+          }
+          case 'plan': {
+            tx.insert(schema.planEvents).values({
+              event_id: eventId,
+              entries: event.entries,
+            } as any);
+            break;
+          }
+          case 'available_commands_update': {
+            tx.insert(schema.availableCommandsEvents).values({
+              event_id: eventId,
+              available_commands: event.availableCommands,
+            } as any);
+            break;
+          }
+          case 'current_mode_update': {
+            tx.insert(schema.currentModeEvents).values({
+              event_id: eventId,
+              current_mode_id: event.currentModeId,
+            } as any);
+            break;
+          }
+          case 'config_option_update': {
+            tx.insert(schema.configOptionEvents).values({
+              event_id: eventId,
+              config_options: event.configOptions,
+            } as any);
+            break;
+          }
+          case 'session_info_update': {
+            tx.insert(schema.sessionInfoEvents).values({
+              event_id: eventId,
+              title: 'title' in event ? (event.title as string | undefined) ?? null : null,
+              updated_at: 'updatedAt' in event ? (event.updatedAt as string | undefined) ?? null : null,
+            } as any);
+            break;
+          }
+          case 'usage_update': {
+            tx.insert(schema.usageEvents).values({
+              event_id: eventId,
+              size: event.size,
+              used: event.used,
+              cost_amount: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { amount: number }).amount : null,
+              cost_currency: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { currency: string }).currency : null,
+            } as any);
+            break;
+          }
+        }
+
+        return eventId;
+      });
+    };
+
+    const readEventsSince = (jobId: number, sinceId: number): { event: SessionUpdate; sequence: number }[] => {
+      const rows = db
+        .select()
+        .from(schema.events)
+        .leftJoin(schema.chunkEvents, eq(schema.events.id, schema.chunkEvents.event_id))
+        .leftJoin(schema.toolCallEvents, eq(schema.events.id, schema.toolCallEvents.event_id))
+        .leftJoin(schema.planEvents, eq(schema.events.id, schema.planEvents.event_id))
+        .leftJoin(schema.availableCommandsEvents, eq(schema.events.id, schema.availableCommandsEvents.event_id))
+        .leftJoin(schema.currentModeEvents, eq(schema.events.id, schema.currentModeEvents.event_id))
+        .leftJoin(schema.configOptionEvents, eq(schema.events.id, schema.configOptionEvents.event_id))
+        .leftJoin(schema.sessionInfoEvents, eq(schema.events.id, schema.sessionInfoEvents.event_id))
+        .leftJoin(schema.usageEvents, eq(schema.events.id, schema.usageEvents.event_id))
+        .where(and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)))
+        .orderBy(schema.events.created_at, schema.events.id)
+        .all();
+
+      return rows.map((row) => {
+        const event = assembleEvent(
+          {
+            id: row.events.id,
+            job_id: row.events.job_id,
+            created_at: row.events.created_at,
+            type: row.events.type,
+            meta: row.events.meta,
+          },
+          {
+            message_id: row.chunk_events?.message_id ?? null,
+            content: row.chunk_events?.content ?? null,
+            tool_call_id: row.tool_call_events?.tool_call_id ?? null,
+            title: row.tool_call_events?.title ?? null,
+            status: row.tool_call_events?.status ?? null,
+            kind: row.tool_call_events?.kind ?? null,
+            locations: row.tool_call_events?.locations ?? null,
+            raw_input: row.tool_call_events?.raw_input ?? null,
+            raw_output: row.tool_call_events?.raw_output ?? null,
+            entries: row.plan_events?.entries ?? null,
+            available_commands: row.available_commands_events?.available_commands ?? null,
+            current_mode_id: row.current_mode_events?.current_mode_id ?? null,
+            config_options: row.config_option_events?.config_options ?? null,
+            updated_at: row.session_info_events?.updated_at ?? null,
+            size: row.usage_events?.size ?? null,
+            used: row.usage_events?.used ?? null,
+            cost_amount: row.usage_events?.cost_amount ?? null,
+            cost_currency: row.usage_events?.cost_currency ?? null,
+          },
+        );
+        return { event, sequence: row.events.id };
+      });
+    };
 
     const start = (input: {
       prompt: string;
       model?: string;
       sessionId?: string;
       cwd: string;
-    }) =>
+    }): Effect.Effect<{ jobId: string }, never, never> =>
       Effect.gen(function* () {
-        ensureStateDir();
+        const uuid = randomUUIDv7();
 
-        const jobId = randomUUID();
-        const createdAt = Date.now();
+        const jobRow = db
+          .insert(schema.jobs)
+          .values({
+            uuid,
+            status: 'running',
+            prompt: input.prompt,
+            cwd: input.cwd,
+            model: input.model ?? null,
+          })
+          .returning({ id: schema.jobs.id })
+          .get();
+        if (jobRow === undefined) {
+          throw new Error('Failed to insert job');
+        }
+        const internalId = jobRow.id;
 
-        const ndjsonPath = path.join(stateDir, `${jobId}.ndjson`);
-        const ring: SessionUpdate[] = [];
         const emitter = new EventEmitter();
         emitter.setMaxListeners(0);
-        eventLogs.set(jobId, { ring, emitter, ndjsonPath });
-        const writeStream = fs.createWriteStream(ndjsonPath, { flags: 'a' });
+        liveEmitters.set(uuid, emitter);
 
         const onEvent = (event: SessionUpdate): void => {
-          // Append to ring buffer, evict oldest if over capacity
-          ring.push(event);
-          if (ring.length > RING_BUFFER_MAX) {
-            ring.shift();
-          }
-          // Write to ndjson file
-          writeStream.write(`${JSON.stringify(event)}\n`);
-          // Fanout to live SSE subscribers
-          emitter.emit('event', event);
+          const eventId = insertEvent(internalId, event);
+          emitter.emit('event', { event, sequence: eventId });
         };
 
         const closeResources = Effect.sync(() => {
-          writeStream.end();
+          liveEmitters.delete(uuid);
+          liveFibers.delete(uuid);
           emitter.emit(TERMINAL_EVENT);
         });
-
-        const meta: JobMeta = {
-          prompt: input.prompt,
-          cwd: input.cwd,
-          model: input.model,
-        };
 
         const fiber = yield* Effect.forkDaemon(
           opencode
@@ -162,168 +244,214 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
             .pipe(
               Effect.tap((result) =>
                 Effect.sync(() => {
-                  map.set(jobId, {
-                    ...meta,
-                    status: 'done',
-                    sessionId: result.sessionId,
-                    text: result.text,
-                    stopReason: result.stopReason,
-                    createdAt,
-                    terminatedAt: Date.now(),
-                  });
+                  db.update(schema.jobs)
+                    .set({
+                      status: 'done',
+                      session_id: result.sessionId,
+                      text: result.text,
+                      stop_reason: result.stopReason ?? null,
+                      terminated_at: new Date(),
+                    })
+                    .where(eq(schema.jobs.id, internalId))
+                    .run();
                 }),
               ),
               Effect.tapError((error) =>
                 Effect.sync(() => {
-                  map.set(jobId, {
-                    ...meta,
-                    status: 'error',
-                    message: formatJobError(error),
-                    createdAt,
-                    terminatedAt: Date.now(),
-                  });
+                  db.update(schema.jobs)
+                    .set({
+                      status: 'error',
+                      error_message: formatJobError(error),
+                      terminated_at: new Date(),
+                    })
+                    .where(eq(schema.jobs.id, internalId))
+                    .run();
                 }),
               ),
               Effect.ensuring(closeResources),
             ),
         );
-        map.set(jobId, { ...meta, status: 'running', fiber, createdAt });
-        return { jobId };
+
+        liveFibers.set(uuid, fiber);
+        return { jobId: uuid };
       });
 
-    const wait = (input: { jobId: string; timeoutMs?: number }) =>
+    const wait = (input: {
+      jobId: string;
+      timeoutMs?: number;
+    }): Effect.Effect<WaitResult, JobNotFound, never> =>
       Effect.gen(function* () {
-        const state = map.get(input.jobId);
-        if (state === undefined) {
+        const job = db
+          .select()
+          .from(schema.jobs)
+          .where(eq(schema.jobs.uuid, input.jobId))
+          .limit(1)
+          .get();
+
+        if (job === undefined) {
           return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
         }
 
-        if (state.status !== 'running') {
-          return toWaitResult(state);
+        if (job.status !== 'running') {
+          return toWaitResult(job);
         }
 
         const cap = input.timeoutMs ?? TIMEOUT_DEFAULT_MS;
+        const fiber = liveFibers.get(input.jobId);
 
-        yield* Fiber.join(state.fiber).pipe(
-          Effect.exit,
-          Effect.timeoutOption(cap),
-        );
+        if (fiber !== undefined) {
+          yield* Fiber.join(fiber).pipe(
+            Effect.exit,
+            Effect.timeoutOption(cap),
+          );
 
-        const updated = map.get(input.jobId);
-        if (updated === undefined) {
-          return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
+          const updated = db
+            .select()
+            .from(schema.jobs)
+            .where(eq(schema.jobs.uuid, input.jobId))
+            .limit(1)
+            .get();
+          if (updated === undefined) {
+            return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
+          }
+          return toWaitResult(updated);
         }
-        return toWaitResult(updated);
+
+        // Defensive fallback: poll the row at 500ms cadence
+        const startTime = Date.now();
+        const deadline = startTime + cap;
+        while (Date.now() < deadline) {
+          const row = db
+            .select()
+            .from(schema.jobs)
+            .where(eq(schema.jobs.uuid, input.jobId))
+            .limit(1)
+            .get();
+          if (row === undefined) {
+            return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
+          }
+          if (row.status !== 'running') {
+            return toWaitResult(row);
+          }
+          Bun.sleepSync(500);
+        }
+        return { status: 'running' };
       });
 
-    /** Snapshot of all jobs, running first then terminal, sorted by most-recent. */
     const list = (): {
       id: string;
-      status: JobState['status'];
+      status: 'running' | 'done' | 'error';
       createdAt: number;
       terminatedAt?: number;
       prompt: string;
       cwd: string;
       model?: string;
     }[] => {
-      const entries = Array.from(map.entries()).map(([id, state]) => ({
-        id,
-        status: state.status,
-        createdAt: state.createdAt,
-        terminatedAt:
-          state.status !== 'running' ? state.terminatedAt : undefined,
-        prompt: state.prompt,
-        cwd: state.cwd,
-        model: state.model,
+      const rows = db
+        .select()
+        .from(schema.jobs)
+        .orderBy(sql`(${schema.jobs.status} = 'running') DESC`, schema.jobs.created_at)
+        .all();
+
+      return rows.map((row) => ({
+        id: row.uuid,
+        status: row.status,
+        createdAt: row.created_at.getTime(),
+        terminatedAt: row.terminated_at?.getTime(),
+        prompt: row.prompt,
+        cwd: row.cwd,
+        model: row.model ?? undefined,
       }));
-      entries.sort((a, b) => {
-        // Running jobs first
-        const aRunning = a.status === 'running' ? 1 : 0;
-        const bRunning = b.status === 'running' ? 1 : 0;
-        if (aRunning !== bRunning) return bRunning - aRunning;
-        // Then most recent first
-        return b.createdAt - a.createdAt;
-      });
-      return entries;
     };
 
-    /** Pull state + ring buffer for a single job. Returns undefined if not found. */
     const getDetail = (
       jobId: string,
     ):
       | {
           id: string;
-          status: JobState['status'];
+          status: 'running' | 'done' | 'error';
           createdAt: number;
           terminatedAt?: number;
           prompt: string;
           cwd: string;
           model?: string;
-          ndjsonPath: string;
           recentEvents: SessionUpdate[];
         }
       | undefined => {
-      const state = map.get(jobId);
-      if (state === undefined) return undefined;
-      const log = eventLogs.get(jobId);
+      const job = db
+        .select()
+        .from(schema.jobs)
+        .where(eq(schema.jobs.uuid, jobId))
+        .limit(1)
+        .get();
+      if (job === undefined) return undefined;
+
+      const events = readEventsSince(job.id, 0);
       return {
-        id: jobId,
-        status: state.status,
-        createdAt: state.createdAt,
-        terminatedAt:
-          state.status !== 'running' ? state.terminatedAt : undefined,
-        prompt: state.prompt,
-        cwd: state.cwd,
-        model: state.model,
-        ndjsonPath:
-          log !== undefined
-            ? log.ndjsonPath
-            : path.join(stateDir, `${jobId}.ndjson`),
-        recentEvents: log !== undefined ? [...log.ring] : [],
+        id: job.uuid,
+        status: job.status,
+        createdAt: job.created_at.getTime(),
+        terminatedAt: job.terminated_at?.getTime(),
+        prompt: job.prompt,
+        cwd: job.cwd,
+        model: job.model ?? undefined,
+        recentEvents: events.map((e) => e.event),
       };
     };
 
-    /**
-     * Subscribe to live events for a job.
-     * The listener is called with each new SessionUpdate.
-     * When the job reaches terminal status the listener is called with the
-     * synthetic string `'__terminal__'` so the SSE handler can close.
-     * Returns an unsubscribe function.
-     */
     const subscribe = (
       jobId: string,
-      listener: (event: SessionUpdate | typeof TERMINAL_EVENT) => void,
+      listener: (
+        payload:
+          | { type: 'event'; event: SessionUpdate; sequence: number }
+          | { type: 'terminal' },
+      ) => void,
     ): (() => void) => {
-      const log = eventLogs.get(jobId);
-      if (log === undefined) return () => {};
+      const emitter = liveEmitters.get(jobId);
+      if (emitter === undefined) {
+        return () => {};
+      }
 
-      const onEvent = (event: SessionUpdate) => listener(event);
-      const onTerminal = () => listener(TERMINAL_EVENT);
+      const onEvent = (payload: { event: SessionUpdate; sequence: number }) =>
+        listener({ type: 'event', event: payload.event, sequence: payload.sequence });
+      const onTerminal = () => listener({ type: 'terminal' });
 
-      log.emitter.on('event', onEvent);
-      log.emitter.once(TERMINAL_EVENT, onTerminal);
+      emitter.on('event', onEvent);
+      emitter.once(TERMINAL_EVENT, onTerminal);
 
       return () => {
-        log.emitter.off('event', onEvent);
-        log.emitter.off(TERMINAL_EVENT, onTerminal);
+        emitter.off('event', onEvent);
+        emitter.off(TERMINAL_EVENT, onTerminal);
       };
     };
 
-    return { start, wait, list, getDetail, subscribe };
+    return { start, wait, list, getDetail, subscribe, readEventsSince: (jobId: string, sinceId: number) => {
+      const job = db.select().from(schema.jobs).where(eq(schema.jobs.uuid, jobId)).limit(1).get();
+      if (job === undefined) return [];
+      return readEventsSince(job.id, sinceId);
+    } };
   }),
-  dependencies: [OpenCode.Default],
+  dependencies: [OpenCode.Default, Db.Default],
 }) {}
 
-function toWaitResult(state: JobState): WaitResult {
-  if (state.status === 'running') return { status: 'running' };
-  if (state.status === 'done')
+function toWaitResult(
+  job: {
+    status: 'running' | 'done' | 'error';
+    session_id: string | null;
+    text: string | null;
+    stop_reason: string | null;
+    error_message: string | null;
+  },
+): WaitResult {
+  if (job.status === 'running') return { status: 'running' };
+  if (job.status === 'done')
     return {
       status: 'done',
-      sessionId: state.sessionId,
-      text: state.text,
-      stopReason: state.stopReason,
+      sessionId: job.session_id ?? '',
+      text: job.text ?? '',
+      stopReason: job.stop_reason ?? undefined,
     };
-  return { status: 'error', message: state.message };
+  return { status: 'error', message: job.error_message ?? '' };
 }
 
 function formatJobError(error: unknown): string {
