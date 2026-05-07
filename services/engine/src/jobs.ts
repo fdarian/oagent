@@ -18,7 +18,6 @@ type JobOk = {
   readonly text: string;
   readonly stopReason: string | undefined;
 };
-type JobErr = unknown;
 
 type WaitResult =
   | { readonly status: 'running' }
@@ -41,7 +40,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
     const { db } = yield* Db;
 
     const liveEmitters = new Map<string, EventEmitter>();
-    const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, JobErr>>();
+    const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, unknown>>();
 
     const insertEvent = (jobId: number, event: SessionUpdate): number => {
       return db.transaction((tx) => {

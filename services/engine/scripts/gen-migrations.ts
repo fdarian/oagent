@@ -12,7 +12,6 @@ const imports: string[] = [];
 const filesEntries: string[] = [];
 
 for (const entry of journal.entries) {
-  const sqlPath = path.join(process.cwd(), 'drizzle', `${entry.tag}.sql`);
   const relSqlPath = path.posix.join('..', 'drizzle', `${entry.tag}.sql`);
   imports.push(`import m${String(entry.idx).padStart(4, '0')} from '${relSqlPath}' with { type: 'text' };`);
   filesEntries.push(`  '${entry.tag}': m${String(entry.idx).padStart(4, '0')}`);
