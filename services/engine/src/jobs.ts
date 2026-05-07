@@ -70,9 +70,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           case 'agent_thought_chunk': {
             tx.insert(schema.chunkEvents).values({
               event_id: eventId,
-              message_id: 'messageId' in event ? (event.messageId as string | undefined) ?? null : null,
+              message_id: event.messageId ?? null,
               content: event.content,
-            } as any).run();
+            }).run();
             break;
           }
           case 'tool_call':
@@ -80,50 +80,50 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
             tx.insert(schema.toolCallEvents).values({
               event_id: eventId,
               tool_call_id: event.toolCallId,
-              title: 'title' in event ? (event.title as string | undefined) ?? null : null,
-              status: 'status' in event ? (event.status as string | undefined) ?? null : null,
-              kind: 'kind' in event ? (event.kind as string | undefined) ?? null : null,
-              content: 'content' in event ? (event.content as unknown as unknown[]) ?? null : null,
-              locations: 'locations' in event ? (event.locations as unknown[]) ?? null : null,
-              raw_input: 'rawInput' in event ? event.rawInput ?? null : null,
-              raw_output: 'rawOutput' in event ? event.rawOutput ?? null : null,
-            } as any).run();
+              title: event.title ?? null,
+              status: event.status ?? null,
+              kind: event.kind ?? null,
+              content: event.content ?? null,
+              locations: event.locations ?? null,
+              raw_input: event.rawInput ?? null,
+              raw_output: event.rawOutput ?? null,
+            }).run();
             break;
           }
           case 'plan': {
             tx.insert(schema.planEvents).values({
               event_id: eventId,
               entries: event.entries,
-            } as any).run();
+            }).run();
             break;
           }
           case 'available_commands_update': {
             tx.insert(schema.availableCommandsEvents).values({
               event_id: eventId,
               available_commands: event.availableCommands,
-            } as any).run();
+            }).run();
             break;
           }
           case 'current_mode_update': {
             tx.insert(schema.currentModeEvents).values({
               event_id: eventId,
               current_mode_id: event.currentModeId,
-            } as any).run();
+            }).run();
             break;
           }
           case 'config_option_update': {
             tx.insert(schema.configOptionEvents).values({
               event_id: eventId,
               config_options: event.configOptions,
-            } as any).run();
+            }).run();
             break;
           }
           case 'session_info_update': {
             tx.insert(schema.sessionInfoEvents).values({
               event_id: eventId,
-              title: 'title' in event ? (event.title as string | undefined) ?? null : null,
-              updated_at: 'updatedAt' in event ? (event.updatedAt as string | undefined) ?? null : null,
-            } as any).run();
+              title: event.title ?? null,
+              updated_at: event.updatedAt ?? null,
+            }).run();
             break;
           }
           case 'usage_update': {
@@ -131,9 +131,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
               event_id: eventId,
               size: event.size,
               used: event.used,
-              cost_amount: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { amount: number }).amount : null,
-              cost_currency: 'cost' in event && event.cost !== undefined && event.cost !== null ? (event.cost as { currency: string }).currency : null,
-            } as any).run();
+              cost_amount: event.cost?.amount ?? null,
+              cost_currency: event.cost?.currency ?? null,
+            }).run();
             break;
           }
         }
