@@ -7,7 +7,7 @@ class MigrationError extends Schema.TaggedError<MigrationError>()('MigrationErro
   cause: Schema.Defect,
 }) {}
 
-export const runMigrations = (db: BunSQLiteDatabase) =>
+export const runMigrations = (db: BunSQLiteDatabase<Record<string, unknown>>) =>
   Effect.try({
     try: () => {
       const migrations = bundle.journal.entries.map((e: { idx: number; when: number; tag: string; breakpoints: boolean }) => {
