@@ -436,6 +436,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 function toWaitResult(
   job: {
+    uuid: string;
     status: 'running' | 'done' | 'error';
     session_id: string | null;
     text: string | null;
@@ -444,14 +445,25 @@ function toWaitResult(
   },
 ): WaitResult {
   if (job.status === 'running') return { status: 'running' };
-  if (job.status === 'done')
+  if (job.status === 'done') {
+    if (job.session_id === null || job.text === null) {
+      throw new Error(
+        `Invariant violated: done job ${job.uuid} missing session_id or text`,
+      );
+    }
     return {
       status: 'done',
-      sessionId: job.session_id ?? '',
-      text: job.text ?? '',
+      sessionId: job.session_id,
+      text: job.text,
       stopReason: job.stop_reason ?? undefined,
     };
-  return { status: 'error', message: job.error_message ?? '' };
+  }
+  if (job.error_message === null) {
+    throw new Error(
+      `Invariant violated: error job ${job.uuid} missing error_message`,
+    );
+  }
+  return { status: 'error', message: job.error_message };
 }
 
 function formatJobError(error: unknown): string {
