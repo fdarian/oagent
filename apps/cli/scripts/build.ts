@@ -59,9 +59,26 @@ export default filemap;
 
 fs.writeFileSync(path.join(genDir, 'web-ui.gen.ts'), genContent, 'utf-8');
 
-// 4. Build standalone binary
+// 4. Generate embedded migrations bundle
+const genMigrations = Bun.spawnSync([
+  'bun',
+  '--cwd',
+  '../../services/engine',
+  'gen-migrations',
+]);
+if (genMigrations.exitCode !== 0) {
+  console.error('Migration bundle generation failed:');
+  console.error(genMigrations.stderr.toString());
+  process.exit(1);
+}
+
+// 5. Build standalone binary
 const result = await Bun.build({
-  entrypoints: ['./src/index.ts', '.gen/web-ui.gen.ts'],
+  entrypoints: [
+    './src/index.ts',
+    '.gen/web-ui.gen.ts',
+    '../../services/engine/.gen/migrations.gen.ts',
+  ],
   minify: true,
   bytecode: true,
   compile: { outfile: 'dist/oagent' },
