@@ -12,6 +12,13 @@ class DbOpenError extends Schema.TaggedError<DbOpenError>()('DbOpenError', {
   path: Schema.String,
 }) {}
 
+class OrphanRecoveryError extends Schema.TaggedError<OrphanRecoveryError>()(
+  'OrphanRecoveryError',
+  {
+    cause: Schema.Defect,
+  },
+) {}
+
 const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
   Effect.try({
     try: () => {
@@ -19,7 +26,7 @@ const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
         sql`UPDATE jobs SET status = 'error', error_message = 'engine restarted while running', terminated_at = ${Date.now()} WHERE status = 'running'`,
       );
     },
-    catch: (cause) => new DbOpenError({ cause, path: 'recover' }),
+    catch: (cause) => new OrphanRecoveryError({ cause }),
   });
 
 export class Db extends Effect.Service<Db>()('oagent/Db', {
