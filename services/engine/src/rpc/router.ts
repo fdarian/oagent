@@ -14,7 +14,7 @@ const program = Effect.gen(function* () {
           v.array(
             v.object({
               id: v.string(),
-              status: v.string(),
+              status: v.picklist(['running', 'done', 'error']),
               createdAt: v.number(),
               terminatedAt: v.optional(v.number()),
               prompt: v.string(),
@@ -32,7 +32,7 @@ const program = Effect.gen(function* () {
           v.optional(
             v.object({
               id: v.string(),
-              status: v.string(),
+              status: v.picklist(['running', 'done', 'error']),
               createdAt: v.number(),
               terminatedAt: v.optional(v.number()),
               prompt: v.string(),
