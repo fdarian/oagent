@@ -8,6 +8,13 @@
       "when": 1778151470771,
       "tag": "0000_luxuriant_sasquatch",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1778154739562,
+      "tag": "0001_mute_inertia",
+      "breakpoints": true
     }
   ]
 }
