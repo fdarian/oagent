@@ -11,7 +11,7 @@ import type {
 
 export const jobs = sqliteTable('jobs', {
   id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
-  uuid: text().notNull().unique(),
+  uuid: text().notNull(),
   status: text({ enum: ['running', 'done', 'error'] }).notNull(),
   prompt: text().notNull(),
   cwd: text().notNull(),
