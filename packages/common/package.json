@@ -1,0 +1,24 @@
+{
+	"name": "@oagent/common",
+	"version": "0.1.0",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": "./src/index.ts",
+		"./dev-sessions": "./src/dev-sessions.ts"
+	},
+	"dependencies": {
+		"@effect/platform": "^0.96.1",
+		"effect": "^3.21.2",
+		"random-word-slugs": "^0.1.7"
+	},
+	"scripts": {
+		"check:type": "tsgo --noEmit",
+		"check:lint": "biome check"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.13",
+		"@typescript/native-preview": "^7.0.0-dev.20260525.1",
+		"typescript": "^6.0.3"
+	}
+}
