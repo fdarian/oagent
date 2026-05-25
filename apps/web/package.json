@@ -11,6 +11,7 @@
 		"build-storybook": "storybook build"
 	},
 	"dependencies": {
+		"@effect/platform": "^0.96.1",
 		"@orpc/client": "latest",
 		"@radix-ui/react-use-controllable-state": "^1.2.2",
 		"@rive-app/react-webgl2": "^4.28.3",
@@ -25,6 +26,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
+		"effect": "^3.21.2",
 		"embla-carousel-react": "^8.6.0",
 		"lucide-react": "^1.16.0",
 		"media-chrome": "^4.19.0",
@@ -42,6 +44,7 @@
 		"use-stick-to-bottom": "^1.1.4"
 	},
 	"devDependencies": {
+		"@oagent/common": "workspace:*",
 		"@oagent/config": "workspace:*",
 		"@oagent/engine": "workspace:*",
 		"@orpc/server": "latest",
