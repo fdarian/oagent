@@ -68,6 +68,17 @@ const program = Effect.gen(function* () {
 					return yield* jobs.start(opt.input);
 				}),
 			),
+			cancel: yield* createHandler(
+				os
+					.input(v.object({ jobId: v.string() }))
+					.output(v.object({ ok: v.boolean() })),
+				Effect.fn(function* (opt) {
+					return yield* jobs.cancel(opt.input).pipe(
+						Effect.map(() => ({ ok: true })),
+						Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
+					);
+				}),
+			),
 			wait: yield* createHandler(
 				os
 					.input(
