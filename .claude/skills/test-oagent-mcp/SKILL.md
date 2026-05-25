@@ -9,17 +9,9 @@ description: Test and probe the oagent MCP server's tools using the official `@m
 - You want to call a tool (e.g. `start`, `result`) against a running oagent instance and inspect its response.
 - Ad-hoc debugging during development — not for wiring oagent into a Claude Code session.
 
-## Always go through `bun dev`
-
-Do not manually spawn `bun apps/cli/src/index.ts serve` (or any other ad-hoc entrypoint) to get a test instance. `bun dev` already gives you:
-
-- A session-isolated SQLite at `services/engine/.data/sessions/<slug>/sqlite.db` (your real `~/.config/oagent/sqlite.db` is never touched).
-- A sticky port preserved across restarts.
-- The live URL written to `services/engine/.data/running.json` for discovery.
-
-If `bun dev` is not running, ask the user to start it rather than spawning your own server — a hand-rolled instance bypasses the session/port/discovery wiring and will desync from whatever else is running.
-
 ## Discover the live URL
+
+The engine must already be running via `bun dev` (see [engine dev doc](../../../services/engine/docs/development.md)). Do not spawn your own server — ask the user to start `bun dev` if it isn't running.
 
 ```sh
 URL=$(jq -r .url services/engine/.data/running.json)

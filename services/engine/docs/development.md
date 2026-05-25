@@ -2,18 +2,10 @@
 
 ## Running
 
-The orchestrated way — `bun dev` from repo root starts engine + web in parallel (see also the [web dev doc](../../../apps/web/docs/development.md)).
-
-To run the engine alone:
+`bun dev` from repo root starts engine + web in parallel (see also the [web dev doc](../../../apps/web/docs/development.md)). To run the engine alone:
 
 ```sh
 bun --filter '@oagent/engine' dev
-```
-
-The port is sticky per session (see [Sessions](#sessions)); there is no `--port` flag on the dev script. For the MCP stdio transport:
-
-```sh
-cd apps/cli && bun src/index.ts stdio
 ```
 
 ## Sessions
@@ -21,7 +13,7 @@ cd apps/cli && bun src/index.ts stdio
 `bun dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session contains:
 
 - `sqlite.db` — engine DB
-- `dev-port` — sticky port (re-used across restarts of this session)
+- `sess.json` — per-session persistent state (sticky port, etc.)
 
 By default `services/engine/scripts/dev.ts` picks the most recently used session, or creates a new one with a random-noun slug on first run.
 
@@ -35,19 +27,12 @@ While `bun dev` is running, `services/engine/.data/running.json` contains the li
 { "url": "http://127.0.0.1:17777" }
 ```
 
-Written by `services/engine/scripts/dev.ts` on startup; cleaned up on shutdown. The MCP endpoint is `${url}/mcp`.
-
-Read it from scripts:
-
-```sh
-URL=$(jq -r .url services/engine/.data/running.json)
-```
+Written by `services/engine/scripts/dev.ts` on startup; cleaned up on shutdown.
 
 For probing tools on the running engine, see the `test-oagent-mcp` skill at `.claude/skills/test-oagent-mcp/SKILL.md`.
 
 ## Environment variables
 
-| Variable         | Default                      | Description                                                                    |
-| ---------------- | ---------------------------- | ------------------------------------------------------------------------------ |
-| `OAGENT_DB_PATH` | `~/.config/oagent/sqlite.db` | SQLite path. `services/engine/scripts/dev.ts` sets it to the session's `sqlite.db`.  |
-| `ENGINE_URL`     | (unset)                      | Used by `apps/web` Vite proxy. `services/engine/scripts/dev.ts` sets it via running.json. |
+| Variable         | Default                      | Description                                                                         |
+| ---------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
+| `OAGENT_DB_PATH` | `~/.config/oagent/sqlite.db` | SQLite path. `services/engine/scripts/dev.ts` sets it to the session's `sqlite.db`. |
