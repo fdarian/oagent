@@ -2,18 +2,10 @@
 	"extends": "@oagent/config/tsconfig-web.json",
 	"compilerOptions": {
 		"jsx": "react-jsx",
-		"types": [
-			"vite/client",
-			"bun"
-		],
+		"types": ["vite/client", "bun"],
 		"paths": {
-			"@/*": [
-				"./src/*"
-			]
+			"@/*": ["./src/*"]
 		}
 	},
-	"include": [
-		"src/**/*",
-		"scripts/**/*"
-	]
+	"include": ["src/**/*", "scripts/**/*"]
 }
