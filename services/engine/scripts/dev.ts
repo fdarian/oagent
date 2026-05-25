@@ -11,7 +11,6 @@ const main = defineDevCli({
 	dir: join(REPO_ROOT, 'services/engine'),
 	run: (ctx) =>
 		Effect.gen(function* () {
-			const engine = yield* Engine;
 			const s = yield* ctx.session;
 			yield* Effect.logInfo(`[dev] session: ${s.name}`);
 
@@ -22,11 +21,15 @@ const main = defineDevCli({
 			yield* Effect.logInfo(`[dev] port: ${port} (${url})`);
 
 			yield* ctx.publishRunning({ url });
-			yield* engine.startServer({
-				port,
-				serverInfo: { name: 'oagent', version: enginePackage.version },
-			});
-		}).pipe(Effect.provide(Engine.layer)),
+
+			yield* Effect.gen(function* () {
+				const engine = yield* Engine;
+				yield* engine.startServer({
+					port,
+					serverInfo: { name: 'oagent', version: enginePackage.version },
+				});
+			}).pipe(Effect.provide(Engine.layer));
+		}),
 });
 
 main(process.argv);

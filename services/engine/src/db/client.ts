@@ -31,7 +31,7 @@ const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
 
 export class Db extends Effect.Service<Db>()('oagent/Db', {
 	scoped: Effect.gen(function* () {
-		const dbPath = yield* Effect.sync(resolveDbPath);
+		const dbPath = yield* resolveDbPath();
 		const sqlite = yield* Effect.acquireRelease(
 			Effect.try({
 				try: () => {
