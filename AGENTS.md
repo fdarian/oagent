@@ -20,7 +20,7 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 
 ```sh
 bun dev          # parallel: cli on :17777 + vite on :5173 (proxies /rpc and /jobs to ENGINE_URL ?? :17777)
-bun check        # tsc + biome across all packages
+bun check        # typecheck + biome across all packages
 bun run build    # vite build → filemap gen → Bun.build({ compile }) → apps/cli/dist/oagent
 ```
 

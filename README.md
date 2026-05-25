@@ -92,7 +92,7 @@ This is an MVP. The following are intentionally not supported:
 
 ```sh
 bun dev          # run src/index.ts directly
-bun check        # tsc + biome lint
+bun check        # typecheck + biome lint
 bun run format   # biome format + lint --write
 ```
 

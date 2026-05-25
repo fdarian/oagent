@@ -8,8 +8,7 @@
 	},
 	"types": "./src/index.ts",
 	"scripts": {
-		"check:tsc": "tsc --noEmit",
-		"check": "bun check:tsc",
+		"check:type": "tsgo --noEmit",
 		"db:generate": "drizzle-kit generate && bun scripts/gen-migrations.ts",
 		"gen-migrations": "bun scripts/gen-migrations.ts"
 	},
@@ -25,7 +24,7 @@
 	},
 	"devDependencies": {
 		"@types/bun": "^1.3.13",
-		"drizzle-kit": "^0.31.10",
-		"typescript": "^6.0.3"
+		"@typescript/native-preview": "^7.0.0-dev.20260525.1",
+		"drizzle-kit": "^0.31.10"
 	}
 }
