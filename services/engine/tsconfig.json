@@ -1,19 +1,7 @@
 {
+	"extends": "@oagent/config/tsconfig-library.json",
 	"compilerOptions": {
-		"target": "ESNext",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"lib": ["ESNext"],
-		"types": ["bun"],
-		"strict": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"verbatimModuleSyntax": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"resolveJsonModule": true,
-		"allowImportingTsExtensions": true,
-		"noEmit": true
+		"types": ["bun"]
 	},
 	"include": ["src/**/*", ".gen/**/*"]
 }
