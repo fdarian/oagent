@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { JobEmptyState } from '@/components/job-empty-state';
 import { JobHeader } from '@/components/job-header';
@@ -6,6 +6,7 @@ import { JobPromptView } from '@/components/job-prompt-view';
 import { JobSidebar } from '@/components/job-sidebar';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
+import { orpc } from '@/lib/orpc';
 import { useJobEvents } from '@/lib/use-job-events';
 import { useJobList } from '@/lib/use-job-list';
 
@@ -15,6 +16,16 @@ export function ConsolePage() {
 	const { grouped, isLoading, cwdFilter, setCwdFilter } = useJobList();
 	const events = useJobEvents(selectedId);
 	const queryClient = useQueryClient();
+
+	const cancelJob = useMutation({
+		mutationFn: (jobId: string) => orpc.jobs.cancel({ jobId }),
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ['jobs'] });
+		},
+		onError: (error) => {
+			console.error('Failed to cancel job', error);
+		},
+	});
 
 	// Find selected job metadata from the list
 	const selectedJob = grouped
@@ -67,8 +78,7 @@ export function ConsolePage() {
 										createdAt={selectedJob.createdAt}
 										terminatedAt={selectedJob.terminatedAt}
 										onCancel={() => {
-											// TODO: wire cancel when engine supports it
-											queryClient.invalidateQueries({ queryKey: ['jobs'] });
+											cancelJob.mutate(selectedJob.id);
 										}}
 										onExpandPrompt={() => setIsPromptExpanded(true)}
 									/>
