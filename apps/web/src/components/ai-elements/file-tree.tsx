@@ -292,6 +292,7 @@ export const FileTreeActions = ({
   children,
   ...props
 }: FileTreeActionsProps) => (
+  // biome-ignore lint/a11y/useSemanticElements: intentional ARIA group pattern
   <div
     className={cn('ml-auto flex items-center gap-1', className)}
     onClick={stopPropagation}
