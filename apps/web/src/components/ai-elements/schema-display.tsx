@@ -106,7 +106,7 @@ export const SchemaDisplayPath = ({
   return (
     <span
       className={cn('font-mono text-sm', className)}
-      // oxlint-disable-next-line eslint-plugin-react(no-danger)
+      // biome-ignore lint/security/noDangerouslySetInnerHtml: highlighted syntax content is pre-sanitized server-side
       dangerouslySetInnerHTML={{ __html: children ?? highlightedPath }}
       {...props}
     />
