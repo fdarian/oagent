@@ -42,6 +42,7 @@
 		"use-stick-to-bottom": "^1.1.4"
 	},
 	"devDependencies": {
+		"@oagent/config": "workspace:*",
 		"@oagent/engine": "workspace:*",
 		"@orpc/server": "latest",
 		"@storybook/addon-a11y": "^10.4.1",
