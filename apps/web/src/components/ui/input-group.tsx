@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 
 function InputGroup({ className, ...props }: React.ComponentProps<'div'>) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: shadcn/ui pattern, intentional div with role
     <div
       data-slot="input-group"
       role="group"
@@ -60,6 +61,7 @@ function InputGroupAddon({
   ...props
 }: React.ComponentProps<'div'> & VariantProps<typeof inputGroupAddonVariants>) {
   return (
+    // biome-ignore lint/a11y/useSemanticElements: shadcn/ui pattern, intentional div with role
     <div
       role="group"
       data-slot="input-group-addon"
@@ -70,6 +72,11 @@ function InputGroupAddon({
           return;
         }
         e.currentTarget.parentElement?.querySelector('input')?.focus();
+      }}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.currentTarget.parentElement?.querySelector('input')?.focus();
+        }
       }}
       {...props}
     />
