@@ -66,11 +66,13 @@ export function ConsolePage() {
 									<JobHeader
 										id={selectedJob.id}
 										status={
-											events.terminal
-												? events.parts.some((p) => p.kind === 'error')
-													? 'error'
-													: 'done'
-												: selectedJob.status
+											selectedJob.status !== 'running'
+												? selectedJob.status
+												: events.terminal
+													? events.parts.some((p) => p.kind === 'error')
+														? 'error'
+														: 'done'
+													: selectedJob.status
 										}
 										prompt={selectedJob.prompt}
 										cwd={selectedJob.cwd}
