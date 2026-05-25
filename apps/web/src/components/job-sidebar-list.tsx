@@ -42,8 +42,8 @@ export function JobSidebarList({
               className={cn(
                 'flex flex-col gap-[6px] border-l px-22 py-15 text-left transition-colors',
                 isSelected
-                  ? 'border-l-ink bg-[color-mix(in_srgb,var(--color-ink)_3%,var(--color-canvas))]'
-                  : 'border-l-transparent hover:bg-[color-mix(in_srgb,var(--color-ink)_1%,var(--color-canvas))]',
+                  ? 'border-l-ink bg-[color-mix(in_srgb,var(--color-ink)_3%,var(--color-canvas))] dark:bg-[color-mix(in_srgb,var(--color-ink)_8%,var(--color-canvas))]'
+                  : 'border-l-transparent hover:bg-[color-mix(in_srgb,var(--color-ink)_1%,var(--color-canvas))] dark:hover:bg-[color-mix(in_srgb,var(--color-ink)_5%,var(--color-canvas))]',
               )}
             >
               <div className="flex items-center gap-15">

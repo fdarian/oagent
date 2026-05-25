@@ -7,7 +7,7 @@ export type JobTimelineErrorProps = {
 
 export function JobTimelineError({ part }: JobTimelineErrorProps) {
   return (
-    <div className="flex flex-col gap-15 border border-destructive bg-[color-mix(in_srgb,var(--color-terracotta)_5%,var(--color-canvas))] p-22">
+    <div className="flex flex-col gap-15 border border-destructive bg-[color-mix(in_srgb,var(--color-terracotta)_5%,var(--color-canvas))] p-22 dark:bg-[color-mix(in_srgb,var(--color-terracotta)_10%,var(--color-canvas))]">
       <div className="flex items-center gap-15 text-destructive">
         <AlertCircleIcon className="h-4 w-4" />
         <span className="text-caption font-light uppercase tracking-wide">
