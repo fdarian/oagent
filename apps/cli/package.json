@@ -10,7 +10,6 @@
 		"src"
 	],
 	"scripts": {
-		"dev": "bun src/index.ts",
 		"build": "bun scripts/build.ts",
 		"format": "biome check --write",
 		"check:type": "tsgo --noEmit",
@@ -18,13 +17,14 @@
 	},
 	"dependencies": {
 		"@effect/cli": "^0.75.1",
+		"@effect/platform": "^0.96.1",
 		"@effect/platform-bun": "^0.89.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@oagent/engine": "workspace:*",
-		"effect": "^3.21.2",
-		"valibot": "^1.4.1"
+		"effect": "^3.21.2"
 	},
 	"devDependencies": {
+		"@oagent/config": "workspace:*",
 		"@types/bun": "^1.3.13",
 		"@typescript/native-preview": "^7.0.0-dev.20260525.1",
 		"typescript": "^6.0.3"

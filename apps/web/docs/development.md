@@ -1,17 +1,19 @@
 # Development
 
+See also: [engine dev](../../services/engine/docs/development.md).
+
 ## Running
 
 ```sh
 bun dev
 ```
 
-Starts Vite on `:5173`. Proxies `/rpc` and `/jobs` to the engine (defaults to `http://localhost:17777`).
+Starts Vite on `:5173`. `apps/web/scripts/dev.ts` watches `services/engine/.data/running.json` (via `fs.watch`, no timeout) to discover the engine URL, then sets `ENGINE_URL` before invoking Vite. Start the engine first — the web script will wait until it appears.
 
-Set `ENGINE_URL` if the engine is running on a different port:
+To run Vite in true standalone mode without the engine (bypassing the running-signal wrapper):
 
 ```sh
-ENGINE_URL=http://localhost:18000 bun dev
+ENGINE_URL=http://localhost:18000 bunx vite
 ```
 
 ## Environment variables

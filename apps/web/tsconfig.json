@@ -1,23 +1,11 @@
 {
+	"extends": "@oagent/config/tsconfig-web.json",
 	"compilerOptions": {
-		"target": "ESNext",
-		"module": "ESNext",
-		"moduleResolution": "bundler",
-		"lib": ["ESNext", "DOM"],
 		"jsx": "react-jsx",
-		"strict": true,
-		"noUncheckedIndexedAccess": true,
-		"noImplicitOverride": true,
-		"verbatimModuleSyntax": true,
-		"esModuleInterop": true,
-		"skipLibCheck": true,
-		"resolveJsonModule": true,
-		"allowImportingTsExtensions": true,
-		"noEmit": true,
-		"types": ["vite/client"],
+		"types": ["vite/client", "bun"],
 		"paths": {
 			"@/*": ["./src/*"]
 		}
 	},
-	"include": ["src/**/*"]
+	"include": ["src/**/*", "scripts/**/*"]
 }

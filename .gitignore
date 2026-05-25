@@ -6,8 +6,7 @@ dist
 .env
 .env.local
 bun.lock.bak
-/scripts/
-apps/cli/.gen/
+services/engine/.data/
 apps/cli/dist/
 apps/web/dist/
 apps/web/storybook-static/
