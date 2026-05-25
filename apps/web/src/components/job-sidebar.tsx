@@ -1,6 +1,7 @@
 import type { JobListItem } from '@/lib/use-job-list';
 import { JobSidebarFilters } from './job-sidebar-filters';
 import { JobSidebarList } from './job-sidebar-list';
+import { ThemeToggle } from './theme-toggle';
 
 export type JobSidebarProps = {
   grouped: { label: string; items: JobListItem[] }[];
@@ -25,6 +26,7 @@ export function JobSidebar({
         <span className="text-subheading font-light text-foreground">
           oagent
         </span>
+        <ThemeToggle />
       </div>
       <JobSidebarFilters
         cwdFilter={cwdFilter}
