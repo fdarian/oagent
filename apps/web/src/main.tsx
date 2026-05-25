@@ -6,12 +6,14 @@ import { queryClient } from './lib/query.ts';
 import { ThemeProvider } from './lib/theme.tsx';
 import './styles.css';
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </ThemeProvider>
-  </StrictMode>,
+const root = document.getElementById('root');
+if (root === null) throw new Error('Root element not found');
+createRoot(root).render(
+	<StrictMode>
+		<ThemeProvider>
+			<QueryClientProvider client={queryClient}>
+				<App />
+			</QueryClientProvider>
+		</ThemeProvider>
+	</StrictMode>,
 );

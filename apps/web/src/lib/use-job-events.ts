@@ -2,54 +2,54 @@ import { useEffect, useRef, useState } from 'react';
 import { reduceEvents, type TimelinePart } from './event-adapter.ts';
 
 export type JobEventsState = {
-  parts: TimelinePart[];
-  lastStatus?: string;
-  terminal: boolean;
+	parts: TimelinePart[];
+	lastStatus?: string;
+	terminal: boolean;
 };
 
 export function useJobEvents(jobId: string | undefined): JobEventsState {
-  const [result, setResult] = useState<JobEventsState>({
-    parts: [],
-    terminal: false,
-  });
-  const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
+	const [result, setResult] = useState<JobEventsState>({
+		parts: [],
+		terminal: false,
+	});
+	const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
 
-  useEffect(() => {
-    if (jobId === undefined) {
-      eventsRef.current = [];
-      setResult({ parts: [], terminal: false });
-      return;
-    }
+	useEffect(() => {
+		if (jobId === undefined) {
+			eventsRef.current = [];
+			setResult({ parts: [], terminal: false });
+			return;
+		}
 
-    const source = new EventSource(`/jobs/${jobId}/events`);
+		const source = new EventSource(`/jobs/${jobId}/events`);
 
-    source.onmessage = (e) => {
-      const data = JSON.parse(e.data);
-      if (data === '__terminal__') {
-        source.close();
-        setResult((prev) => ({
-          ...prev,
-          terminal: true,
-        }));
-        return;
-      }
-      eventsRef.current = [...eventsRef.current, data];
-      const next = reduceEvents(eventsRef.current);
-      setResult({
-        parts: next.parts,
-        lastStatus: next.lastStatus,
-        terminal: false,
-      });
-    };
+		source.onmessage = (e) => {
+			const data = JSON.parse(e.data);
+			if (data === '__terminal__') {
+				source.close();
+				setResult((prev) => ({
+					...prev,
+					terminal: true,
+				}));
+				return;
+			}
+			eventsRef.current = [...eventsRef.current, data];
+			const next = reduceEvents(eventsRef.current);
+			setResult({
+				parts: next.parts,
+				lastStatus: next.lastStatus,
+				terminal: false,
+			});
+		};
 
-    source.onerror = () => {
-      source.close();
-    };
+		source.onerror = () => {
+			source.close();
+		};
 
-    return () => {
-      source.close();
-    };
-  }, [jobId]);
+		return () => {
+			source.close();
+		};
+	}, [jobId]);
 
-  return result;
+	return result;
 }

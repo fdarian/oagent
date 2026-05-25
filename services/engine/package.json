@@ -1,31 +1,31 @@
 {
-  "name": "@oagent/engine",
-  "version": "0.1.0",
-  "type": "module",
-  "private": true,
-  "exports": {
-    ".": "./src/index.ts"
-  },
-  "types": "./src/index.ts",
-  "scripts": {
-    "check:tsc": "tsc --noEmit",
-    "check": "bun check:tsc",
-    "db:generate": "drizzle-kit generate && bun scripts/gen-migrations.ts",
-    "gen-migrations": "bun scripts/gen-migrations.ts"
-  },
-  "dependencies": {
-    "@agentclientprotocol/sdk": "^0.22.1",
-    "@effect/platform": "^0.96.1",
-    "@effect/platform-bun": "^0.89.0",
-    "@orpc/server": "latest",
-    "drizzle-orm": "^0.45.2",
-    "effect": "^3.21.2",
-    "ff-effect": "latest",
-    "valibot": "^1.4.1"
-  },
-  "devDependencies": {
-    "@types/bun": "^1.3.13",
-    "drizzle-kit": "^0.31.10",
-    "typescript": "^6.0.3"
-  }
+	"name": "@oagent/engine",
+	"version": "0.1.0",
+	"type": "module",
+	"private": true,
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"types": "./src/index.ts",
+	"scripts": {
+		"check:tsc": "tsc --noEmit",
+		"check": "bun check:tsc",
+		"db:generate": "drizzle-kit generate && bun scripts/gen-migrations.ts",
+		"gen-migrations": "bun scripts/gen-migrations.ts"
+	},
+	"dependencies": {
+		"@agentclientprotocol/sdk": "^0.22.1",
+		"@effect/platform": "^0.96.1",
+		"@effect/platform-bun": "^0.89.0",
+		"@orpc/server": "latest",
+		"drizzle-orm": "^0.45.2",
+		"effect": "^3.21.2",
+		"ff-effect": "latest",
+		"valibot": "^1.4.1"
+	},
+	"devDependencies": {
+		"@types/bun": "^1.3.13",
+		"drizzle-kit": "^0.31.10",
+		"typescript": "^6.0.3"
+	}
 }
