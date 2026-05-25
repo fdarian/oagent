@@ -35,7 +35,9 @@ function isYesterday(d: Date, now: Date): boolean {
 }
 
 function formatMonthDay(d: Date): string {
-  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }).toUpperCase();
+  return d
+    .toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    .toUpperCase();
 }
 
 export function groupByDay<T extends { createdAt: number }>(
@@ -62,5 +64,8 @@ export function groupByDay<T extends { createdAt: number }>(
     }
   }
 
-  return Array.from(groups.entries()).map(([label, items]) => ({ label, items }));
+  return Array.from(groups.entries()).map(([label, items]) => ({
+    label,
+    items,
+  }));
 }

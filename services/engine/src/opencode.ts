@@ -1,9 +1,9 @@
 /// <reference types="bun" />
 import {
+  type Client,
   ClientSideConnection,
   ndJsonStream,
   PROTOCOL_VERSION,
-  type Client,
   type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect, Schema } from 'effect';

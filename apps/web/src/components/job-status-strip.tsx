@@ -25,9 +25,7 @@ export function JobStatusStrip({ status, isRunning }: JobStatusStripProps) {
       </span>
       <span className="font-light">{dots}</span>
       {status !== undefined && status !== '' && (
-        <span className="font-light text-graphite">
-          — {status}
-        </span>
+        <span className="font-light text-graphite">— {status}</span>
       )}
     </div>
   );

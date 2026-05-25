@@ -1,12 +1,12 @@
-"use client";
+'use client';
 
-import { useControllableState } from "@radix-ui/react-use-controllable-state";
-import { cn } from "@/lib/utils";
-import type { Experimental_TranscriptionResult as TranscriptionResult } from "ai";
-import type { ComponentProps, ReactNode } from "react";
-import { createContext, useCallback, useContext, useMemo } from "react";
+import { useControllableState } from '@radix-ui/react-use-controllable-state';
+import type { Experimental_TranscriptionResult as TranscriptionResult } from 'ai';
+import type { ComponentProps, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useMemo } from 'react';
+import { cn } from '@/lib/utils';
 
-type TranscriptionSegment = TranscriptionResult["segments"][number];
+type TranscriptionSegment = TranscriptionResult['segments'][number];
 
 interface TranscriptionContextValue {
   segments: TranscriptionSegment[];
@@ -16,20 +16,20 @@ interface TranscriptionContextValue {
 }
 
 const TranscriptionContext = createContext<TranscriptionContextValue | null>(
-  null
+  null,
 );
 
 const useTranscription = () => {
   const context = useContext(TranscriptionContext);
   if (!context) {
     throw new Error(
-      "Transcription components must be used within Transcription"
+      'Transcription components must be used within Transcription',
     );
   }
   return context;
 };
 
-export type TranscriptionProps = Omit<ComponentProps<"div">, "children"> & {
+export type TranscriptionProps = Omit<ComponentProps<'div'>, 'children'> & {
   segments: TranscriptionSegment[];
   currentTime?: number;
   onSeek?: (time: number) => void;
@@ -52,15 +52,15 @@ export const Transcription = ({
 
   const contextValue = useMemo(
     () => ({ currentTime, onSeek, onTimeUpdate: setCurrentTime, segments }),
-    [currentTime, onSeek, setCurrentTime, segments]
+    [currentTime, onSeek, setCurrentTime, segments],
   );
 
   return (
     <TranscriptionContext.Provider value={contextValue}>
       <div
         className={cn(
-          "flex flex-wrap gap-1 text-sm leading-relaxed",
-          className
+          'flex flex-wrap gap-1 text-sm leading-relaxed',
+          className,
         )}
         data-slot="transcription"
         {...props}
@@ -73,7 +73,7 @@ export const Transcription = ({
   );
 };
 
-export type TranscriptionSegmentProps = ComponentProps<"button"> & {
+export type TranscriptionSegmentProps = ComponentProps<'button'> & {
   segment: TranscriptionSegment;
   index: number;
 };
@@ -98,19 +98,19 @@ export const TranscriptionSegment = ({
       }
       onClick?.(event);
     },
-    [onSeek, segment.startSecond, onClick]
+    [onSeek, segment.startSecond, onClick],
   );
 
   return (
     <button
       className={cn(
-        "inline text-left",
-        isActive && "text-primary",
-        isPast && "text-muted-foreground",
-        !(isActive || isPast) && "text-muted-foreground/60",
-        onSeek && "cursor-pointer hover:text-foreground",
-        !onSeek && "cursor-default",
-        className
+        'inline text-left',
+        isActive && 'text-primary',
+        isPast && 'text-muted-foreground',
+        !(isActive || isPast) && 'text-muted-foreground/60',
+        onSeek && 'cursor-pointer hover:text-foreground',
+        !onSeek && 'cursor-default',
+        className,
       )}
       data-active={isActive}
       data-index={index}

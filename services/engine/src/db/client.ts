@@ -1,11 +1,11 @@
 /// <reference types="bun" />
 import { Database } from 'bun:sqlite';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { sql } from 'drizzle-orm';
+import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect, Schema } from 'effect';
-import * as schema from './schema.ts';
-import { resolveDbPath } from './path.ts';
 import { runMigrations } from './migrate.ts';
+import { resolveDbPath } from './path.ts';
+import * as schema from './schema.ts';
 
 class DbOpenError extends Schema.TaggedError<DbOpenError>()('DbOpenError', {
   cause: Schema.Defect,

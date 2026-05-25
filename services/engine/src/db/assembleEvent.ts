@@ -1,5 +1,12 @@
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import type { ContentBlock, ToolCallContent, ToolCallLocation, PlanEntry, AvailableCommand, SessionConfigOption } from '@agentclientprotocol/sdk';
+import type {
+  AvailableCommand,
+  ContentBlock,
+  PlanEntry,
+  SessionConfigOption,
+  SessionUpdate,
+  ToolCallContent,
+  ToolCallLocation,
+} from '@agentclientprotocol/sdk';
 
 type EventRow = {
   id: number;
@@ -30,7 +37,10 @@ type VariantRow = {
   cost_currency: string | null;
 };
 
-export function assembleEvent(event: EventRow, variant: VariantRow): SessionUpdate {
+export function assembleEvent(
+  event: EventRow,
+  variant: VariantRow,
+): SessionUpdate {
   const meta = event.meta ?? undefined;
 
   switch (event.type) {
@@ -80,7 +90,9 @@ export function assembleEvent(event: EventRow, variant: VariantRow): SessionUpda
 
     case 'available_commands_update': {
       if (variant.available_commands === null) {
-        throw new Error(`Missing available_commands for available_commands_update event ${event.id}`);
+        throw new Error(
+          `Missing available_commands for available_commands_update event ${event.id}`,
+        );
       }
       return {
         sessionUpdate: 'available_commands_update',
@@ -91,7 +103,9 @@ export function assembleEvent(event: EventRow, variant: VariantRow): SessionUpda
 
     case 'current_mode_update': {
       if (variant.current_mode_id === null) {
-        throw new Error(`Missing current_mode_id for current_mode_update event ${event.id}`);
+        throw new Error(
+          `Missing current_mode_id for current_mode_update event ${event.id}`,
+        );
       }
       return {
         sessionUpdate: 'current_mode_update',
@@ -102,7 +116,9 @@ export function assembleEvent(event: EventRow, variant: VariantRow): SessionUpda
 
     case 'config_option_update': {
       if (variant.config_options === null) {
-        throw new Error(`Missing config_options for config_option_update event ${event.id}`);
+        throw new Error(
+          `Missing config_options for config_option_update event ${event.id}`,
+        );
       }
       return {
         sessionUpdate: 'config_option_update',

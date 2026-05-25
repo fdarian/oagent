@@ -1,7 +1,8 @@
 /// <reference types="bun" />
-import { randomUUIDv7 } from 'bun';
+
 import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
+import { randomUUIDv7 } from 'bun';
 import { and, eq, gt, sql } from 'drizzle-orm';
 import { Duration, Effect, Fiber, Schema } from 'effect';
 import { assembleEvent } from './db/assembleEvent.ts';
@@ -67,72 +68,88 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
           case 'user_message_chunk':
           case 'agent_message_chunk':
           case 'agent_thought_chunk': {
-            tx.insert(schema.chunkEvents).values({
-              event_id: eventId,
-              message_id: event.messageId ?? null,
-              content: event.content,
-            }).run();
+            tx.insert(schema.chunkEvents)
+              .values({
+                event_id: eventId,
+                message_id: event.messageId ?? null,
+                content: event.content,
+              })
+              .run();
             break;
           }
           case 'tool_call':
           case 'tool_call_update': {
-            tx.insert(schema.toolCallEvents).values({
-              event_id: eventId,
-              tool_call_id: event.toolCallId,
-              title: event.title ?? null,
-              status: event.status ?? null,
-              kind: event.kind ?? null,
-              content: event.content ?? null,
-              locations: event.locations ?? null,
-              raw_input: event.rawInput ?? null,
-              raw_output: event.rawOutput ?? null,
-            }).run();
+            tx.insert(schema.toolCallEvents)
+              .values({
+                event_id: eventId,
+                tool_call_id: event.toolCallId,
+                title: event.title ?? null,
+                status: event.status ?? null,
+                kind: event.kind ?? null,
+                content: event.content ?? null,
+                locations: event.locations ?? null,
+                raw_input: event.rawInput ?? null,
+                raw_output: event.rawOutput ?? null,
+              })
+              .run();
             break;
           }
           case 'plan': {
-            tx.insert(schema.planEvents).values({
-              event_id: eventId,
-              entries: event.entries,
-            }).run();
+            tx.insert(schema.planEvents)
+              .values({
+                event_id: eventId,
+                entries: event.entries,
+              })
+              .run();
             break;
           }
           case 'available_commands_update': {
-            tx.insert(schema.availableCommandsEvents).values({
-              event_id: eventId,
-              available_commands: event.availableCommands,
-            }).run();
+            tx.insert(schema.availableCommandsEvents)
+              .values({
+                event_id: eventId,
+                available_commands: event.availableCommands,
+              })
+              .run();
             break;
           }
           case 'current_mode_update': {
-            tx.insert(schema.currentModeEvents).values({
-              event_id: eventId,
-              current_mode_id: event.currentModeId,
-            }).run();
+            tx.insert(schema.currentModeEvents)
+              .values({
+                event_id: eventId,
+                current_mode_id: event.currentModeId,
+              })
+              .run();
             break;
           }
           case 'config_option_update': {
-            tx.insert(schema.configOptionEvents).values({
-              event_id: eventId,
-              config_options: event.configOptions,
-            }).run();
+            tx.insert(schema.configOptionEvents)
+              .values({
+                event_id: eventId,
+                config_options: event.configOptions,
+              })
+              .run();
             break;
           }
           case 'session_info_update': {
-            tx.insert(schema.sessionInfoEvents).values({
-              event_id: eventId,
-              title: event.title ?? null,
-              updated_at: event.updatedAt ?? null,
-            }).run();
+            tx.insert(schema.sessionInfoEvents)
+              .values({
+                event_id: eventId,
+                title: event.title ?? null,
+                updated_at: event.updatedAt ?? null,
+              })
+              .run();
             break;
           }
           case 'usage_update': {
-            tx.insert(schema.usageEvents).values({
-              event_id: eventId,
-              size: event.size,
-              used: event.used,
-              cost_amount: event.cost?.amount ?? null,
-              cost_currency: event.cost?.currency ?? null,
-            }).run();
+            tx.insert(schema.usageEvents)
+              .values({
+                event_id: eventId,
+                size: event.size,
+                used: event.used,
+                cost_amount: event.cost?.amount ?? null,
+                cost_currency: event.cost?.currency ?? null,
+              })
+              .run();
             break;
           }
         }
@@ -141,19 +158,48 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
       });
     };
 
-    const readEventsSince = (jobId: number, sinceId: number): { event: SessionUpdate; sequence: number }[] => {
+    const readEventsSince = (
+      jobId: number,
+      sinceId: number,
+    ): { event: SessionUpdate; sequence: number }[] => {
       const rows = db
         .select()
         .from(schema.events)
-        .leftJoin(schema.chunkEvents, eq(schema.events.id, schema.chunkEvents.event_id))
-        .leftJoin(schema.toolCallEvents, eq(schema.events.id, schema.toolCallEvents.event_id))
-        .leftJoin(schema.planEvents, eq(schema.events.id, schema.planEvents.event_id))
-        .leftJoin(schema.availableCommandsEvents, eq(schema.events.id, schema.availableCommandsEvents.event_id))
-        .leftJoin(schema.currentModeEvents, eq(schema.events.id, schema.currentModeEvents.event_id))
-        .leftJoin(schema.configOptionEvents, eq(schema.events.id, schema.configOptionEvents.event_id))
-        .leftJoin(schema.sessionInfoEvents, eq(schema.events.id, schema.sessionInfoEvents.event_id))
-        .leftJoin(schema.usageEvents, eq(schema.events.id, schema.usageEvents.event_id))
-        .where(and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)))
+        .leftJoin(
+          schema.chunkEvents,
+          eq(schema.events.id, schema.chunkEvents.event_id),
+        )
+        .leftJoin(
+          schema.toolCallEvents,
+          eq(schema.events.id, schema.toolCallEvents.event_id),
+        )
+        .leftJoin(
+          schema.planEvents,
+          eq(schema.events.id, schema.planEvents.event_id),
+        )
+        .leftJoin(
+          schema.availableCommandsEvents,
+          eq(schema.events.id, schema.availableCommandsEvents.event_id),
+        )
+        .leftJoin(
+          schema.currentModeEvents,
+          eq(schema.events.id, schema.currentModeEvents.event_id),
+        )
+        .leftJoin(
+          schema.configOptionEvents,
+          eq(schema.events.id, schema.configOptionEvents.event_id),
+        )
+        .leftJoin(
+          schema.sessionInfoEvents,
+          eq(schema.events.id, schema.sessionInfoEvents.event_id),
+        )
+        .leftJoin(
+          schema.usageEvents,
+          eq(schema.events.id, schema.usageEvents.event_id),
+        )
+        .where(
+          and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)),
+        )
         .orderBy(schema.events.created_at, schema.events.id)
         .all();
 
@@ -177,7 +223,8 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
             raw_input: row.tool_call_events?.raw_input ?? null,
             raw_output: row.tool_call_events?.raw_output ?? null,
             entries: row.plan_events?.entries ?? null,
-            available_commands: row.available_commands_events?.available_commands ?? null,
+            available_commands:
+              row.available_commands_events?.available_commands ?? null,
             current_mode_id: row.current_mode_events?.current_mode_id ?? null,
             config_options: row.config_option_events?.config_options ?? null,
             updated_at: row.session_info_events?.updated_at ?? null,
@@ -299,10 +346,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
         const fiber = liveFibers.get(input.jobId);
 
         if (fiber !== undefined) {
-          yield* Fiber.join(fiber).pipe(
-            Effect.exit,
-            Effect.timeoutOption(cap),
-          );
+          yield* Fiber.join(fiber).pipe(Effect.exit, Effect.timeoutOption(cap));
 
           const updated = db
             .select()
@@ -349,7 +393,10 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
       const rows = db
         .select()
         .from(schema.jobs)
-        .orderBy(sql`(${schema.jobs.status} = 'running') DESC`, schema.jobs.created_at)
+        .orderBy(
+          sql`(${schema.jobs.status} = 'running') DESC`,
+          schema.jobs.created_at,
+        )
         .all();
 
       return rows.map((row) => ({
@@ -412,7 +459,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
       }
 
       const onEvent = (payload: { event: SessionUpdate; sequence: number }) =>
-        listener({ type: 'event', event: payload.event, sequence: payload.sequence });
+        listener({
+          type: 'event',
+          event: payload.event,
+          sequence: payload.sequence,
+        });
       const onTerminal = () => listener({ type: 'terminal' });
 
       emitter.on('event', onEvent);
@@ -424,25 +475,35 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
       };
     };
 
-    return { start, wait, list, getDetail, subscribe, readEventsSince: (jobId: string, sinceId: number) => {
-      const job = db.select().from(schema.jobs).where(eq(schema.jobs.uuid, jobId)).limit(1).get();
-      if (job === undefined) return [];
-      return readEventsSince(job.id, sinceId);
-    } };
+    return {
+      start,
+      wait,
+      list,
+      getDetail,
+      subscribe,
+      readEventsSince: (jobId: string, sinceId: number) => {
+        const job = db
+          .select()
+          .from(schema.jobs)
+          .where(eq(schema.jobs.uuid, jobId))
+          .limit(1)
+          .get();
+        if (job === undefined) return [];
+        return readEventsSince(job.id, sinceId);
+      },
+    };
   }),
   dependencies: [OpenCode.Default, Db.Default],
 }) {}
 
-function toWaitResult(
-  job: {
-    uuid: string;
-    status: 'running' | 'done' | 'error';
-    session_id: string | null;
-    text: string | null;
-    stop_reason: string | null;
-    error_message: string | null;
-  },
-): WaitResult {
+function toWaitResult(job: {
+  uuid: string;
+  status: 'running' | 'done' | 'error';
+  session_id: string | null;
+  text: string | null;
+  stop_reason: string | null;
+  error_message: string | null;
+}): WaitResult {
   if (job.status === 'running') return { status: 'running' };
   if (job.status === 'done') {
     if (job.session_id === null || job.text === null) {

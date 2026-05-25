@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { JobTimelineReasoning } from './job-timeline-reasoning';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { JobTimelineReasoning } from './job-timeline-reasoning';
 
 const meta: Meta<typeof JobTimelineReasoning> = {
   component: JobTimelineReasoning,

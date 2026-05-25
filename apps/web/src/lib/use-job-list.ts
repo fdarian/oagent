@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { orpc } from './orpc.ts';
+import { useMemo, useState } from 'react';
 import { groupByDay } from './format.ts';
+import { orpc } from './orpc.ts';
 
 export type JobListItem = {
   id: string;

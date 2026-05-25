@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { JobTimeline } from './job-timeline';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { JobTimeline } from './job-timeline';
 
 const meta: Meta<typeof JobTimeline> = {
   component: JobTimeline,
@@ -39,7 +39,12 @@ export const MidTool: Story = {
         toolCallId: 'tc-1',
         title: 'read_file',
         state: 'input-available',
-        content: [{ type: 'content', content: { type: 'text', text: '{"path": "src/index.ts"}' } }],
+        content: [
+          {
+            type: 'content',
+            content: { type: 'text', text: '{"path": "src/index.ts"}' },
+          },
+        ],
         locations: [{ path: 'src/index.ts' }],
         createdAt: Date.now() - 3000,
       },
@@ -105,7 +110,15 @@ export const FullMixed: Story = {
         toolCallId: 'tc-1',
         title: 'shell',
         state: 'output-available',
-        content: [{ type: 'content', content: { type: 'text', text: 'total 24\ndrwxr-xr-x  5 dev  staff  160 May  1 12:00 .\ndrwxr-xr-x  3 dev  staff   96 May  1 11:50 ..\n-rw-r--r--  1 dev  staff  234 May  1 12:00 index.ts' } }],
+        content: [
+          {
+            type: 'content',
+            content: {
+              type: 'text',
+              text: 'total 24\ndrwxr-xr-x  5 dev  staff  160 May  1 12:00 .\ndrwxr-xr-x  3 dev  staff   96 May  1 11:50 ..\n-rw-r--r--  1 dev  staff  234 May  1 12:00 index.ts',
+            },
+          },
+        ],
         locations: [],
         createdAt: Date.now() - 10_000,
         durationMs: 800,

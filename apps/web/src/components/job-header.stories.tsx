@@ -10,7 +10,8 @@ type Story = StoryObj<typeof meta>;
 
 const base = {
   id: '550e8400-e29b-41d4-a716-446655440000',
-  prompt: 'Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases',
+  prompt:
+    'Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases',
   cwd: '/Users/dev/project/apps/api',
   model: 'opencode-go/kimi-k2.6',
   createdAt: Date.now() - 120_000,
