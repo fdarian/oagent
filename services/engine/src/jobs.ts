@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, eq, gt, sql } from 'drizzle-orm';
-import { Duration, Effect, Fiber, Schema } from 'effect';
+import { Effect, Fiber, Schema } from 'effect';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';

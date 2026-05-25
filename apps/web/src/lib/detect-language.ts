@@ -1,4 +1,3 @@
-import { useMemo } from 'react';
 import type { BundledLanguage } from 'shiki';
 
 export function detectLanguage(body: string): BundledLanguage {

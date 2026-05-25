@@ -4,7 +4,6 @@ import type {
   PlanEntry,
   SessionConfigOption,
   SessionUpdate,
-  ToolCallContent,
   ToolCallLocation,
 } from '@agentclientprotocol/sdk';
 

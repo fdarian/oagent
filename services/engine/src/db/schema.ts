@@ -6,7 +6,6 @@ import type {
   ToolCallContent,
   ToolCallLocation,
 } from '@agentclientprotocol/sdk';
-import { sql } from 'drizzle-orm';
 import {
   index,
   integer,
