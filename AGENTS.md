@@ -22,7 +22,7 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 Quick commands:
 
 ```sh
-bun dev    # parallel: engine + vite; cli picks port and DB session, web polls for engine URL
+bun dev    # parallel: engine + vite; engine picks port and DB session, web polls for engine URL
 bun check  # typecheck + biome across all packages
 bun run build  # produce standalone binary at apps/cli/dist/oagent
 ```
@@ -33,7 +33,9 @@ For details see:
 
 ## Architecture
 
-- `apps/cli/src/index.ts` — Effect CLI with `serve` and `stdio` subcommands. `serve` defaults to port 17777 (overridable via `--port` or `OPENCODE_MCP_PORT`); `apps/cli/scripts/dev.ts` passes `--port <session port>` in dev. The `serve` Bun.serve fetch dispatcher routes, in order: `/mcp` → MCP transport, `/rpc/*` → engine oRPC handler, `/jobs/:id/events` → raw SSE, `/jobs/:id/wait` → long-poll JSON (used by `opencode_result` and shell callers), everything else → SPA fallback.
+- `apps/cli/src/index.ts` — Effect CLI with `serve` and `stdio` subcommands. `serve` loads the embedded SPA filemap from `.gen/web-ui.gen.ts` and delegates to engine's `createServer`. `stdio` registers MCP tools over the stdio transport via `registerTools`.
+- `services/engine/src/server.ts` — the actual HTTP dispatcher. `createServer({ port, serverInfo, filemap? })` builds the Bun.serve fetch handler and binds it. Routes, in order: `/mcp` → MCP transport (WebStandard streamable), `/rpc/*` → engine oRPC handler, `/jobs/:id/events` → raw SSE, `/jobs/:id/wait` → long-poll JSON. SPA fallback only fires when `filemap` is provided; otherwise returns 404. Defaults to port 17777 (overridable via `--port` or `OPENCODE_MCP_PORT`); falls back to port 0 on EADDRINUSE.
+- `services/engine/src/cli.ts` — dev-only `@effect/cli` entrypoint for the engine. Exposes a single `serve` subcommand that calls `createServer` without a filemap. Used by `services/engine/scripts/dev.ts`.
 - `apps/cli/scripts/build.ts` — runs `vite build` in `apps/web`, walks `apps/web/dist/`, generates `apps/cli/.gen/web-ui.gen.ts` with `import ... with { type: 'file' }` plus a default-export filemap, then `Bun.build({ compile: true })` listing both entrypoints so assets embed into the standalone binary.
 - `services/engine/src/db/schema.ts` — Drizzle SQLite schema. `jobs` table with UUIDv7 public ids + internal autoincrement PK; `events` polymorphic base with per-variant tables (`chunk_events`, `tool_call_events`, `plan_events`, etc.). All 11 `SessionUpdate` variants modeled. Opaque nested fields stay JSON; structured fields are decomposed. Property names are snake_case so they map verbatim to SQL.
 - `services/engine/src/db/client.ts` — `Db` Effect service with `scoped` lifecycle. Opens `~/.config/oagent/sqlite.db` with WAL + foreign_keys + busy_timeout pragmas. Runs embedded migrations and orphan recovery (`UPDATE jobs SET status='error' WHERE status='running'`) on acquire.

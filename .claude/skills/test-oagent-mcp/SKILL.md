@@ -25,8 +25,8 @@ Use `127.0.0.1`, not `localhost`, to avoid IPv6 resolution issues.
 Pick a free port and a throwaway DB path so the test instance has no shared state:
 
 ```sh
-cd /Users/farreldarian/code/fdarian/oagent/apps/cli && \
-  OAGENT_DB_PATH=/tmp/oagent-test/sqlite.db bun src/index.ts serve --port 17778 &
+cd /Users/farreldarian/code/fdarian/oagent/services/engine && \
+  OAGENT_DB_PATH=/tmp/oagent-test/sqlite.db bun src/cli.ts serve --port 17778 &
 sleep 2
 ```
 
@@ -63,7 +63,7 @@ Opens at http://localhost:6274. Connect to `$URL` (from `dev.json`) or your test
 ## Cleanup
 
 ```sh
-pkill -f "bun src/index.ts serve --port 17778"
+pkill -f "bun src/cli.ts serve --port 17778"
 rm -rf /tmp/oagent-test
 ```
 
