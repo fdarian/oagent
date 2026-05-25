@@ -1,5 +1,11 @@
+import { Agentation } from 'agentation';
 import { ConsolePage } from './pages/ConsolePage.tsx';
 
 export function App() {
-  return <ConsolePage />;
+  return (
+    <>
+      <ConsolePage />
+      {process.env.NODE_ENV === 'development' && <Agentation />}
+    </>
+  );
 }
