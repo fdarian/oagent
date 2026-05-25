@@ -6,7 +6,7 @@ dist
 .env
 .env.local
 bun.lock.bak
-/scripts/
+services/engine/.data/
 apps/cli/.gen/
 apps/cli/dist/
 apps/web/dist/

@@ -4,7 +4,7 @@
 	"type": "module",
 	"private": true,
 	"scripts": {
-		"dev": "vite",
+		"dev": "bun scripts/dev.ts",
 		"build": "vite build",
 		"check:type": "tsgo --noEmit",
 		"dev:storybook": "storybook dev -p 6006",
