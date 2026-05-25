@@ -97,17 +97,28 @@
         "typescript": "^6.0.3",
       },
     },
+    "packages/config": {
+      "name": "@oagent/config",
+      "version": "0.1.0",
+      "dependencies": {
+        "@total-typescript/tsconfig": "^1.0.4",
+      },
+    },
     "services/engine": {
       "name": "@oagent/engine",
       "version": "0.1.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^0.22.1",
+        "@effect/cli": "^0.75.1",
         "@effect/platform": "^0.96.1",
         "@effect/platform-bun": "^0.89.0",
+        "@modelcontextprotocol/sdk": "^1.29.0",
+        "@oagent/common": "workspace:*",
         "@orpc/server": "latest",
         "drizzle-orm": "^0.45.2",
         "effect": "^3.21.2",
         "ff-effect": "latest",
+        "get-port": "^7.2.0",
         "valibot": "^1.4.1",
       },
       "devDependencies": {
@@ -323,6 +334,8 @@
     "@oagent/cli": ["@oagent/cli@workspace:apps/cli"],
 
     "@oagent/common": ["@oagent/common@workspace:packages/common"],
+
+    "@oagent/config": ["@oagent/config@workspace:packages/config"],
 
     "@oagent/engine": ["@oagent/engine@workspace:services/engine"],
 
@@ -711,6 +724,8 @@
     "@tokenlens/helpers": ["@tokenlens/helpers@1.3.1", "", { "dependencies": { "@tokenlens/core": "1.3.0", "@tokenlens/fetch": "1.3.0" } }, "sha512-t6yL8N6ES8337E6eVSeH4hCKnPdWkZRFpupy9w5E66Q9IeqQ9IO7XQ6gh12JKjvWiRHuyyJ8MBP5I549Cr41EQ=="],
 
     "@tokenlens/models": ["@tokenlens/models@1.3.0", "", { "dependencies": { "@tokenlens/core": "1.3.0" } }, "sha512-9mx7ZGeewW4ndXAiD7AT1bbCk4OpJeortbjHHyNkgap+pMPPn1chY6R5zqe1ggXIUzZ2l8VOAKfPqOvpcrisJw=="],
+
+    "@total-typescript/tsconfig": ["@total-typescript/tsconfig@1.0.4", "", {}, "sha512-fO4ctMPGz1kOFOQ4RCPBRBfMy3gDn+pegUfrGyUFRMv/Rd0ZM3/SHH3hFCYG4u6bPLG8OlmOGcBLDexvyr3A5w=="],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.9.14", "", { "os": "darwin", "cpu": "x64" }, "sha512-t7QiPflaEyBE4oayeZtSmu4mEfjgIrcNlNNl1z1dmIVPqEdtA7+CfTf8d7KXsOGPh6aNgWjKxyvQg9uGfDQF+A=="],
 
