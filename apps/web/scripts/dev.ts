@@ -23,7 +23,7 @@ async function waitForDevJson(): Promise<string> {
 	}
 	console.error(
 		'[web] Timed out waiting for services/engine/.data/dev.json after 30s.\n' +
-			"      Start the engine first: bun --filter '@oagent/cli' dev",
+			"      Start the engine first: bun --filter '@oagent/engine' dev",
 	);
 	process.exit(1);
 }
