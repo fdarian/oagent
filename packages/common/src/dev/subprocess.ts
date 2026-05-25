@@ -16,9 +16,27 @@ export const runManagedSubprocess = (
 				CommandModule.env({ ...process.env, ...(opts?.env ?? {}) }),
 			);
 
+			const label = [cmd, ...args].join(' ');
+
 			const child = yield* Effect.acquireRelease(
-				CommandModule.start(command),
-				(c) => c.kill().pipe(Effect.catchAll(() => Effect.void)),
+				Effect.gen(function* () {
+					const proc = yield* CommandModule.start(command);
+					yield* Effect.logInfo(`[dev] started: ${label} (pid=${proc.pid})`);
+					return proc;
+				}),
+				(proc) =>
+					Effect.gen(function* () {
+						yield* Effect.logInfo(`[dev] stopping: ${label} (pid=${proc.pid})`);
+						yield* proc
+							.kill()
+							.pipe(
+								Effect.catchAll((err) =>
+									Effect.logError(
+										`[dev] failed to stop ${label} (pid=${proc.pid}): ${err}`,
+									),
+								),
+							);
+					}),
 			);
 
 			return yield* child.exitCode;
