@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { randomUUID } from 'node:crypto';
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Console, Effect, Layer, type Runtime } from 'effect';
 import { serveSPA } from './http/spa.ts';
@@ -23,7 +23,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 		return {
 			mcp: {
 				registerTools: (
-					server: Server,
+					server: McpServer,
 					rt: Runtime.Runtime<never>,
 					waitUrlBase: string | undefined,
 				) => registerTools(server, jobs, rt, waitUrlBase),
@@ -43,7 +43,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 						string,
 						{
 							transport: WebStandardStreamableHTTPServerTransport;
-							server: Server;
+							server: McpServer;
 						}
 					>();
 
@@ -74,7 +74,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 								},
 							});
 
-							const mcpServer = new Server(
+							const mcpServer = new McpServer(
 								{ name: serverInfo.name, version: serverInfo.version },
 								{ capabilities: { tools: {} } },
 							);

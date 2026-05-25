@@ -1,5 +1,5 @@
 import { Command } from '@effect/cli';
-import { Server } from '@modelcontextprotocol/sdk/server';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio';
 import { Engine } from '@oagent/engine';
 import { Effect } from 'effect';
@@ -10,7 +10,7 @@ function runStdio(version: Version) {
 		const engine = yield* Engine;
 		const rt = yield* Effect.runtime<never>();
 
-		const server = new Server(
+		const server = new McpServer(
 			{ name: 'oagent', version: version },
 			{ capabilities: { tools: {} } },
 		);

@@ -25,7 +25,8 @@
 		"effect": "^3.21.2",
 		"ff-effect": "latest",
 		"get-port": "^7.2.0",
-		"valibot": "^1.4.1"
+		"valibot": "^1.4.1",
+		"zod": "^4.4.3"
 	},
 	"devDependencies": {
 		"@oagent/config": "workspace:*",
