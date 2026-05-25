@@ -8,7 +8,6 @@ bun.lock.bak
 /scripts/
 apps/cli/.gen/
 apps/cli/dist/
-services/engine/.gen/
 apps/web/dist/
 apps/web/storybook-static/
 tmp/
