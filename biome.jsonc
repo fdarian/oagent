@@ -3,6 +3,7 @@
   "vcs": { "enabled": true, "clientKind": "git", "useIgnoreFile": true },
   "formatter": { "indentStyle": "space" },
   "javascript": { "formatter": { "quoteStyle": "single" } },
+  "files": { "includes": ["**", "!services/engine/drizzle"] },
   "css": { "parser": { "tailwindDirectives": true } },
   "linter": { "enabled": true, "rules": { "recommended": true } },
   "assist": { "actions": { "source": { "organizeImports": "on" } } }
