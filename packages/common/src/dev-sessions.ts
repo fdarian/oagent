@@ -1,6 +1,5 @@
 import * as platform from '@effect/platform';
 import { Array as A, Effect, Layer, Option } from 'effect';
-import * as S from 'effect/Schema';
 import { generateSlug } from 'random-word-slugs';
 
 namespace DevSession {
@@ -18,62 +17,6 @@ namespace DevSession {
 			path: (relativePath: string) =>
 				Effect.succeed(input.pathJoin(relativePath)),
 			toString: () => input.name,
-		};
-	}
-}
-
-export namespace DevSessionFile {
-	type Shape = S.Schema.Any;
-
-	function getPath(session: DevSession) {
-		return Effect.gen(function* () {
-			return yield* session.path('sess.json');
-		});
-	}
-
-	function read(filePath: string) {
-		return Effect.gen(function* () {
-			const fs = yield* platform.FileSystem.FileSystem;
-			if (!(yield* fs.exists(filePath))) {
-				return null;
-			}
-
-			return yield* fs.readFileString(filePath);
-		});
-	}
-
-	function get<T extends Shape>(session: DevSession, schema: T) {
-		return Effect.gen(function* () {
-			const filePath = yield* getPath(session);
-
-			const content = yield* read(filePath);
-			if (content == null) return null;
-
-			return yield* S.decode(S.parseJson(schema, {}))(content).pipe(
-				Effect.catchTag('ParseError', () => Effect.succeed(null)),
-			);
-		});
-	}
-	function set<T extends Shape>(session: DevSession, data: T['Type']) {
-		return Effect.gen(function* () {
-			const fs = yield* platform.FileSystem.FileSystem;
-			const path = yield* platform.Path.Path;
-			const filePath = yield* getPath(session);
-
-			yield* fs.makeDirectory(path.dirname(filePath), { recursive: true });
-
-			const existing = yield* read(filePath);
-			const parsed = JSON.parse(existing ?? '{}') as Record<string, unknown>;
-			const merged = { ...parsed, ...(data as Record<string, unknown>) };
-
-			yield* fs.writeFileString(filePath, JSON.stringify(merged));
-		});
-	}
-
-	export function make<T extends Shape>(schema: T) {
-		return {
-			get: (session: DevSession) => get(session, schema),
-			set: (session: DevSession, data: T['Type']) => set(session, data),
 		};
 	}
 }
