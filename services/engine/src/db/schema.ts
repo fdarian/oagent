@@ -20,7 +20,7 @@ export const jobs = sqliteTable(
 	{
 		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
 		uuid: text().notNull(),
-		status: text({ enum: ['running', 'done', 'error'] }).notNull(),
+		status: text({ enum: ['running', 'done', 'error', 'cancelled'] }).notNull(),
 		prompt: text().notNull(),
 		cwd: text().notNull(),
 		model: text(),
