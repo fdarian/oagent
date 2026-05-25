@@ -3,6 +3,7 @@ import { dirname, join, resolve } from 'node:path';
 import * as cli from '@effect/cli';
 import type { PlatformError } from '@effect/platform/Error';
 import type { FileSystem } from '@effect/platform/FileSystem';
+import type { Path } from '@effect/platform/Path';
 import { BunContext, BunRuntime } from '@effect/platform-bun';
 import { Effect, Layer, type Scope } from 'effect';
 import {
@@ -10,14 +11,13 @@ import {
 	DevSessions,
 	makeDevSessionsLayer,
 } from '../dev-sessions.ts';
-import { discoveryFile } from './discovery.ts';
+import { awaitRunningSignal, publishRunningSignal } from './running-signal.ts';
 import { getStickyPort } from './sticky-port.ts';
 import { runManagedSubprocess } from './subprocess.ts';
-import { waitForDiscovery } from './wait-discovery.ts';
 
-const DISCOVERY_FILE = '.data/dev.json';
+const RUNNING_SIGNAL_FILE = '.data/running.json';
 
-const discoveryPath = (dir: string) => join(dir, DISCOVERY_FILE);
+const runningSignalPath = (dir: string) => join(dir, RUNNING_SIGNAL_FILE);
 
 const resolveSiblingDir = (spec: string, fromDir: string) => {
 	if (spec.startsWith('.') || spec.startsWith('/')) {
@@ -30,11 +30,13 @@ const resolveSiblingDir = (spec: string, fromDir: string) => {
 type RunContext = {
 	session: Effect.Effect<DevSession, PlatformError>;
 	getStickyPort: () => ReturnType<typeof getStickyPort>;
-	setFile: (data: unknown) => ReturnType<typeof discoveryFile>;
-	sibling: (pkgOrPath: string) => {
-		getFile: <T>() => Effect.Effect<T, Error, FileSystem>;
-	};
 	runManagedSubprocess: typeof runManagedSubprocess;
+	publishRunning: (
+		data: unknown,
+	) => Effect.Effect<void, PlatformError, Scope.Scope | FileSystem | Path>;
+	awaitRunning: <T>(
+		pkg: string,
+	) => Effect.Effect<T, PlatformError, FileSystem | Path>;
 };
 
 type RunEffect = Effect.Effect<
@@ -56,14 +58,13 @@ export const defineDevCli = (config: {
 				session,
 				getStickyPort: () => Effect.flatMap(session, getStickyPort),
 				runManagedSubprocess,
-				setFile: (data) => discoveryFile(discoveryPath(config.dir), data),
-				sibling: (pkgOrPath) => ({
-					getFile: <T>() =>
-						waitForDiscovery<T>(
-							discoveryPath(resolveSiblingDir(pkgOrPath, config.dir)),
-							{ parse: (raw) => JSON.parse(raw) as T },
-						),
-				}),
+				publishRunning: (data) =>
+					publishRunningSignal(runningSignalPath(config.dir), data),
+				awaitRunning: <T>(pkg: string) =>
+					awaitRunningSignal<T>(
+						runningSignalPath(resolveSiblingDir(pkg, config.dir)),
+						{ parse: (raw) => JSON.parse(raw) as T },
+					),
 			});
 		}),
 	);

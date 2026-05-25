@@ -8,19 +8,16 @@ const REPO_ROOT = join(import.meta.dirname, '../../..');
 const main = defineDevCli({
 	name: webPackage.name,
 	dir: join(REPO_ROOT, 'apps/web'),
-	run: ({ session, sibling, runManagedSubprocess }) =>
+	run: (ctx) =>
 		Effect.gen(function* () {
-			const s = yield* session;
+			const s = yield* ctx.session;
 			yield* Effect.logInfo(`[dev] session: ${s.name}`);
 
-			const engine = sibling('@oagent/engine');
-			const { url: engineUrl } = yield* engine.getFile<{
-				url: string;
-			}>();
-			yield* Effect.logInfo(`[dev] using engine url: ${engineUrl}`);
+			const engine = yield* ctx.awaitRunning<{ url: string }>('@oagent/engine');
+			yield* Effect.logInfo(`[dev] using engine url: ${engine.url}`);
 
-			yield* runManagedSubprocess('bunx', ['vite'], {
-				env: { ENGINE_URL: engineUrl },
+			yield* ctx.runManagedSubprocess('bunx', ['vite'], {
+				env: { ENGINE_URL: engine.url },
 			});
 		}),
 });

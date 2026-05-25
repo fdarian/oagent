@@ -9,19 +9,19 @@ const REPO_ROOT = join(import.meta.dirname, '../../..');
 const main = defineDevCli({
 	name: enginePackage.name,
 	dir: join(REPO_ROOT, 'services/engine'),
-	run: ({ session, getStickyPort, setFile }) =>
+	run: (ctx) =>
 		Effect.gen(function* () {
 			const engine = yield* Engine;
-			const s = yield* session;
+			const s = yield* ctx.session;
 			yield* Effect.logInfo(`[dev] session: ${s.name}`);
 
 			process.env.OAGENT_DB_PATH = yield* s.path('sqlite.db');
 
-			const port = yield* getStickyPort();
+			const port = yield* ctx.getStickyPort();
 			const url = `http://127.0.0.1:${port}`;
 			yield* Effect.logInfo(`[dev] port: ${port} (${url})`);
 
-			yield* setFile({ url });
+			yield* ctx.publishRunning({ url });
 			yield* engine.startServer({
 				port,
 				serverInfo: { name: 'oagent', version: enginePackage.version },
