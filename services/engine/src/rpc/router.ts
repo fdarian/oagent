@@ -23,9 +23,7 @@ const program = Effect.gen(function* () {
             }),
           ),
         ),
-        Effect.fn(function* () {
-          return jobs.list();
-        }),
+        () => Effect.succeed(jobs.list()),
       ),
       get: yield* createHandler(
         os.input(v.object({ jobId: v.string() })).output(
@@ -41,10 +39,10 @@ const program = Effect.gen(function* () {
             }),
           ),
         ),
-        Effect.fn(function* (opt) {
+        (opt) => {
           const detail = jobs.getDetail(opt.input.jobId);
-          if (detail === undefined) return undefined;
-          return {
+          if (detail === undefined) return Effect.succeed(undefined);
+          return Effect.succeed({
             id: detail.id,
             status: detail.status,
             createdAt: detail.createdAt,
@@ -52,8 +50,8 @@ const program = Effect.gen(function* () {
             prompt: detail.prompt,
             cwd: detail.cwd,
             model: detail.model,
-          };
-        }),
+          });
+        },
       ),
       start: yield* createHandler(
         os
