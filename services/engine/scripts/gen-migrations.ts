@@ -2,33 +2,33 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const journalPath = path.join(
-  process.cwd(),
-  'drizzle',
-  'meta',
-  '_journal.json',
+	process.cwd(),
+	'drizzle',
+	'meta',
+	'_journal.json',
 );
 const outPath = path.join(process.cwd(), '.gen', 'migrations.gen.ts');
 
 const journal = JSON.parse(fs.readFileSync(journalPath, 'utf-8')) as {
-  entries: { idx: number; when: number; tag: string; breakpoints: boolean }[];
+	entries: { idx: number; when: number; tag: string; breakpoints: boolean }[];
 };
 
 const imports: string[] = [];
 const filesEntries: string[] = [];
 
 for (const entry of journal.entries) {
-  const relSqlPath = path.posix.join('..', 'drizzle', `${entry.tag}.sql`);
-  imports.push(
-    `import m${String(entry.idx).padStart(4, '0')} from '${relSqlPath}' with { type: 'text' };`,
-  );
-  filesEntries.push(`  '${entry.tag}': m${String(entry.idx).padStart(4, '0')}`);
+	const relSqlPath = path.posix.join('..', 'drizzle', `${entry.tag}.sql`);
+	imports.push(
+		`import m${String(entry.idx).padStart(4, '0')} from '${relSqlPath}' with { type: 'text' };`,
+	);
+	filesEntries.push(`  '${entry.tag}': m${String(entry.idx).padStart(4, '0')}`);
 }
 
 const relJournalPath = path.posix.join(
-  '..',
-  'drizzle',
-  'meta',
-  '_journal.json',
+	'..',
+	'drizzle',
+	'meta',
+	'_journal.json',
 );
 
 const content = `// @ts-nocheck

@@ -4,9 +4,9 @@ import path from 'node:path';
 // 1. Build the web SPA
 const webBuild = Bun.spawnSync(['bun', 'run', 'build'], { cwd: '../web' });
 if (webBuild.exitCode !== 0) {
-  console.error('Web build failed:');
-  console.error(webBuild.stderr.toString());
-  process.exit(1);
+	console.error('Web build failed:');
+	console.error(webBuild.stderr.toString());
+	process.exit(1);
 }
 
 // 2. Walk ../web/dist recursively and collect files
@@ -14,15 +14,15 @@ const distDir = '../web/dist';
 const files: { relPath: string; absPath: string }[] = [];
 
 function walk(dir: string, relPrefix: string): void {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    const rel = path.join(relPrefix, entry.name);
-    const abs = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(abs, rel);
-    } else if (entry.isFile()) {
-      files.push({ relPath: rel, absPath: abs });
-    }
-  }
+	for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+		const rel = path.join(relPrefix, entry.name);
+		const abs = path.join(dir, entry.name);
+		if (entry.isDirectory()) {
+			walk(abs, rel);
+		} else if (entry.isFile()) {
+			files.push({ relPath: rel, absPath: abs });
+		}
+	}
 }
 
 walk(distDir, '');
@@ -32,18 +32,18 @@ const genDir = '.gen';
 fs.mkdirSync(genDir, { recursive: true });
 
 const imports = files.map((f, i) => {
-  const importPath = path.posix.join('../../web/dist', f.relPath);
-  return `import file_${i} from '${importPath}' with { type: 'file' };`;
+	const importPath = path.posix.join('../../web/dist', f.relPath);
+	return `import file_${i} from '${importPath}' with { type: 'file' };`;
 });
 
 const mapEntries = files.map((f, i) => {
-  const urlPath = `/${f.relPath.replace(/\\/g, '/')}`;
-  return `  '${urlPath}': file_${i}`;
+	const urlPath = `/${f.relPath.replace(/\\/g, '/')}`;
+	return `  '${urlPath}': file_${i}`;
 });
 
 // Ensure /index.html is always present
 if (!files.some((f) => f.relPath.replace(/\\/g, '/') === 'index.html')) {
-  throw new Error('Expected index.html in web dist');
+	throw new Error('Expected index.html in web dist');
 }
 
 const genContent = `// @ts-nocheck
@@ -61,36 +61,36 @@ fs.writeFileSync(path.join(genDir, 'web-ui.gen.ts'), genContent, 'utf-8');
 
 // 4. Generate embedded migrations bundle
 const genMigrations = Bun.spawnSync([
-  'bun',
-  '--cwd',
-  '../../services/engine',
-  'gen-migrations',
+	'bun',
+	'--cwd',
+	'../../services/engine',
+	'gen-migrations',
 ]);
 if (genMigrations.exitCode !== 0) {
-  console.error('Migration bundle generation failed:');
-  console.error(genMigrations.stderr.toString());
-  process.exit(1);
+	console.error('Migration bundle generation failed:');
+	console.error(genMigrations.stderr.toString());
+	process.exit(1);
 }
 
 // 5. Build standalone binary
 const result = await Bun.build({
-  entrypoints: [
-    './src/index.ts',
-    '.gen/web-ui.gen.ts',
-    '../../services/engine/.gen/migrations.gen.ts',
-  ],
-  minify: true,
-  bytecode: true,
-  compile: { outfile: 'dist/oagent' },
-  target: 'bun',
+	entrypoints: [
+		'./src/index.ts',
+		'.gen/web-ui.gen.ts',
+		'../../services/engine/.gen/migrations.gen.ts',
+	],
+	minify: true,
+	bytecode: true,
+	compile: { outfile: 'dist/oagent' },
+	target: 'bun',
 });
 
 if (!result.success) {
-  console.error('Bun build failed:');
-  for (const log of result.logs) {
-    console.error(log);
-  }
-  process.exit(1);
+	console.error('Bun build failed:');
+	for (const log of result.logs) {
+		console.error(log);
+	}
+	process.exit(1);
 }
 
 console.log('Built dist/oagent');

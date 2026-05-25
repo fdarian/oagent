@@ -9,11 +9,11 @@ import './styles.css';
 const root = document.getElementById('root');
 if (root === null) throw new Error('Root element not found');
 createRoot(root).render(
-  <StrictMode>
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </ThemeProvider>
-  </StrictMode>,
+	<StrictMode>
+		<ThemeProvider>
+			<QueryClientProvider client={queryClient}>
+				<App />
+			</QueryClientProvider>
+		</ThemeProvider>
+	</StrictMode>,
 );

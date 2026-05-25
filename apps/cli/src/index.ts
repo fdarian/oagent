@@ -6,16 +6,16 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import {
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
+	CallToolRequestSchema,
+	ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
 import {
-  createEngineHandler,
-  handleJobEvents,
-  handleJobWait,
-  Jobs,
-  OpenCode,
-  serveSPA,
+	createEngineHandler,
+	handleJobEvents,
+	handleJobWait,
+	Jobs,
+	OpenCode,
+	serveSPA,
 } from '@oagent/engine';
 import { Cause, Console, Effect, Exit, Layer, Runtime } from 'effect';
 import * as v from 'valibot';
@@ -53,386 +53,386 @@ the job terminated with an error. Always poll until status is "done" or "error" 
 before treating the task as complete.`;
 
 const StartArgsSchema = v.object({
-  prompt: v.string(),
-  cwd: v.string(),
-  model: v.optional(v.string()),
-  sessionId: v.optional(v.string()),
+	prompt: v.string(),
+	cwd: v.string(),
+	model: v.optional(v.string()),
+	sessionId: v.optional(v.string()),
 });
 
 const ResultArgsSchema = v.object({
-  jobId: v.string(),
-  timeoutMs: v.optional(v.number()),
+	jobId: v.string(),
+	timeoutMs: v.optional(v.number()),
 });
 
 /** Register tools on a Server instance using the given jobs service and Effect runtime. */
 function registerTools(
-  server: Server,
-  jobs: Jobs,
-  rt: Runtime.Runtime<never>,
-  waitUrlBase: string | undefined,
+	server: Server,
+	jobs: Jobs,
+	rt: Runtime.Runtime<never>,
+	waitUrlBase: string | undefined,
 ): void {
-  /** Bridge an Effect into a plain Promise, re-throwing the real failure value. */
-  const runHandler = async <A, E>(
-    eff: Effect.Effect<A, E, never>,
-  ): Promise<A> => {
-    const exit = await Runtime.runPromiseExit(rt)(eff);
-    if (Exit.isFailure(exit)) {
-      const cause = exit.cause;
-      if (Cause.isFailType(cause)) {
-        throw cause.error instanceof Error
-          ? cause.error
-          : new Error(String(cause.error));
-      }
-      throw new Error(Cause.pretty(cause));
-    }
-    return exit.value;
-  };
+	/** Bridge an Effect into a plain Promise, re-throwing the real failure value. */
+	const runHandler = async <A, E>(
+		eff: Effect.Effect<A, E, never>,
+	): Promise<A> => {
+		const exit = await Runtime.runPromiseExit(rt)(eff);
+		if (Exit.isFailure(exit)) {
+			const cause = exit.cause;
+			if (Cause.isFailType(cause)) {
+				throw cause.error instanceof Error
+					? cause.error
+					: new Error(String(cause.error));
+			}
+			throw new Error(Cause.pretty(cause));
+		}
+		return exit.value;
+	};
 
-  server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: [
-      {
-        name: 'start',
-        description: OPENCODE_START_DESCRIPTION,
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            prompt: {
-              type: 'string',
-              description: 'The task or question to send to OpenCode.',
-            },
-            cwd: {
-              type: 'string',
-              description:
-                "Absolute path to the directory OpenCode should operate in — typically the parent agent's project root.",
-            },
-            model: {
-              type: 'string',
-              description:
-                'OpenCode model id (provider-prefixed, e.g. opencode-go/kimi-k2.6). Omit to use OpenCode default.',
-            },
-            sessionId: {
-              type: 'string',
-              description:
-                'Resume a prior OpenCode session. Pass the sessionId returned from a previous result done response.',
-            },
-          },
-          required: ['prompt', 'cwd'],
-        },
-      },
-      {
-        name: 'result',
-        description: OPENCODE_RESULT_DESCRIPTION,
-        inputSchema: {
-          type: 'object' as const,
-          properties: {
-            jobId: {
-              type: 'string',
-              description: 'The jobId returned by start.',
-            },
-            timeoutMs: {
-              type: 'number',
-              description:
-                'Max milliseconds to block (default 50000, capped at 55000).',
-            },
-          },
-          required: ['jobId'],
-        },
-      },
-    ],
-  }));
+	server.setRequestHandler(ListToolsRequestSchema, () => ({
+		tools: [
+			{
+				name: 'start',
+				description: OPENCODE_START_DESCRIPTION,
+				inputSchema: {
+					type: 'object' as const,
+					properties: {
+						prompt: {
+							type: 'string',
+							description: 'The task or question to send to OpenCode.',
+						},
+						cwd: {
+							type: 'string',
+							description:
+								"Absolute path to the directory OpenCode should operate in — typically the parent agent's project root.",
+						},
+						model: {
+							type: 'string',
+							description:
+								'OpenCode model id (provider-prefixed, e.g. opencode-go/kimi-k2.6). Omit to use OpenCode default.',
+						},
+						sessionId: {
+							type: 'string',
+							description:
+								'Resume a prior OpenCode session. Pass the sessionId returned from a previous result done response.',
+						},
+					},
+					required: ['prompt', 'cwd'],
+				},
+			},
+			{
+				name: 'result',
+				description: OPENCODE_RESULT_DESCRIPTION,
+				inputSchema: {
+					type: 'object' as const,
+					properties: {
+						jobId: {
+							type: 'string',
+							description: 'The jobId returned by start.',
+						},
+						timeoutMs: {
+							type: 'number',
+							description:
+								'Max milliseconds to block (default 50000, capped at 55000).',
+						},
+					},
+					required: ['jobId'],
+				},
+			},
+		],
+	}));
 
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    if (request.params.name === 'start') {
-      const parsed = v.safeParse(StartArgsSchema, request.params.arguments);
-      if (!parsed.success) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Invalid arguments: ${JSON.stringify(parsed.issues)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      const result = await runHandler(jobs.start(parsed.output));
-      const response =
-        waitUrlBase !== undefined
-          ? {
-              jobId: result.jobId,
-              waitUrl: `${waitUrlBase}/jobs/${result.jobId}/wait`,
-            }
-          : { jobId: result.jobId };
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-      };
-    }
+	server.setRequestHandler(CallToolRequestSchema, async (request) => {
+		if (request.params.name === 'start') {
+			const parsed = v.safeParse(StartArgsSchema, request.params.arguments);
+			if (!parsed.success) {
+				return {
+					content: [
+						{
+							type: 'text' as const,
+							text: `Invalid arguments: ${JSON.stringify(parsed.issues)}`,
+						},
+					],
+					isError: true,
+				};
+			}
+			const result = await runHandler(jobs.start(parsed.output));
+			const response =
+				waitUrlBase !== undefined
+					? {
+							jobId: result.jobId,
+							waitUrl: `${waitUrlBase}/jobs/${result.jobId}/wait`,
+						}
+					: { jobId: result.jobId };
+			return {
+				content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+			};
+		}
 
-    if (request.params.name === 'result') {
-      const parsed = v.safeParse(ResultArgsSchema, request.params.arguments);
-      if (!parsed.success) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Invalid arguments: ${JSON.stringify(parsed.issues)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
-      const WAIT_TIMEOUT_MAX_MS = 55_000;
-      const result = await runHandler(
-        jobs
-          .wait({
-            jobId: parsed.output.jobId,
-            timeoutMs: Math.min(
-              parsed.output.timeoutMs ?? WAIT_TIMEOUT_DEFAULT_MS,
-              WAIT_TIMEOUT_MAX_MS,
-            ),
-          })
-          .pipe(
-            Effect.catchTag('JobNotFound', (err) =>
-              Effect.succeed({
-                status: 'error' as const,
-                message: `Job not found: ${err.jobId}`,
-              }),
-            ),
-          ),
-      );
-      return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-      };
-    }
+		if (request.params.name === 'result') {
+			const parsed = v.safeParse(ResultArgsSchema, request.params.arguments);
+			if (!parsed.success) {
+				return {
+					content: [
+						{
+							type: 'text' as const,
+							text: `Invalid arguments: ${JSON.stringify(parsed.issues)}`,
+						},
+					],
+					isError: true,
+				};
+			}
+			const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
+			const WAIT_TIMEOUT_MAX_MS = 55_000;
+			const result = await runHandler(
+				jobs
+					.wait({
+						jobId: parsed.output.jobId,
+						timeoutMs: Math.min(
+							parsed.output.timeoutMs ?? WAIT_TIMEOUT_DEFAULT_MS,
+							WAIT_TIMEOUT_MAX_MS,
+						),
+					})
+					.pipe(
+						Effect.catchTag('JobNotFound', (err) =>
+							Effect.succeed({
+								status: 'error' as const,
+								message: `Job not found: ${err.jobId}`,
+							}),
+						),
+					),
+			);
+			return {
+				content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+			};
+		}
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Unknown tool: ${request.params.name}`,
-        },
-      ],
-      isError: true,
-    };
-  });
+		return {
+			content: [
+				{
+					type: 'text' as const,
+					text: `Unknown tool: ${request.params.name}`,
+				},
+			],
+			isError: true,
+		};
+	});
 }
 
 function runStdio() {
-  return Effect.gen(function* () {
-    const jobs = yield* Jobs;
-    const rt = yield* Effect.runtime<never>();
+	return Effect.gen(function* () {
+		const jobs = yield* Jobs;
+		const rt = yield* Effect.runtime<never>();
 
-    const server = new Server(
-      { name: 'oagent', version: cliPackage.version },
-      { capabilities: { tools: {} } },
-    );
-    registerTools(server, jobs, rt, undefined);
+		const server = new Server(
+			{ name: 'oagent', version: cliPackage.version },
+			{ capabilities: { tools: {} } },
+		);
+		registerTools(server, jobs, rt, undefined);
 
-    yield* Effect.tryPromise({
-      try: () => server.connect(new StdioServerTransport()),
-      catch: (cause) =>
-        new Error(
-          `Failed to connect MCP transport: ${cause instanceof Error ? cause.message : String(cause)}`,
-        ),
-    });
+		yield* Effect.tryPromise({
+			try: () => server.connect(new StdioServerTransport()),
+			catch: (cause) =>
+				new Error(
+					`Failed to connect MCP transport: ${cause instanceof Error ? cause.message : String(cause)}`,
+				),
+		});
 
-    yield* Effect.never;
-  });
+		yield* Effect.never;
+	});
 }
 
 function runServe(port: number) {
-  return Effect.gen(function* () {
-    const jobs = yield* Jobs;
-    const rt = yield* Effect.runtime<never>();
+	return Effect.gen(function* () {
+		const jobs = yield* Jobs;
+		const rt = yield* Effect.runtime<never>();
 
-    const resolvedPort =
-      process.env.OPENCODE_MCP_PORT !== undefined
-        ? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
-        : port;
+		const resolvedPort =
+			process.env.OPENCODE_MCP_PORT !== undefined
+				? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
+				: port;
 
-    /** Map of MCP session ID → { transport, server } */
-    const sessions = new Map<
-      string,
-      { transport: WebStandardStreamableHTTPServerTransport; server: Server }
-    >();
+		/** Map of MCP session ID → { transport, server } */
+		const sessions = new Map<
+			string,
+			{ transport: WebStandardStreamableHTTPServerTransport; server: Server }
+		>();
 
-    // Build engine handler (oRPC)
-    const engineHandler = yield* createEngineHandler;
+		// Build engine handler (oRPC)
+		const engineHandler = yield* createEngineHandler;
 
-    // Load SPA filemap dynamically
-    let webFilemap: Record<string, string> = {};
-    const mod = yield* Effect.tryPromise({
-      // biome-ignore lint/suspicious/noTsIgnore: generated module missing in dev
-      // @ts-ignore Generated at build time; missing in dev
-      try: () =>
-        import('../.gen/web-ui.gen.ts') as Promise<{
-          default?: Record<string, string>;
-        }>,
-      catch: () => undefined,
-    });
-    if (
-      mod !== undefined &&
-      mod.default !== undefined &&
-      typeof mod.default === 'object'
-    ) {
-      webFilemap = mod.default;
-    }
+		// Load SPA filemap dynamically
+		let webFilemap: Record<string, string> = {};
+		const mod = yield* Effect.tryPromise({
+			// biome-ignore lint/suspicious/noTsIgnore: generated module missing in dev
+			// @ts-ignore Generated at build time; missing in dev
+			try: () =>
+				import('../.gen/web-ui.gen.ts') as Promise<{
+					default?: Record<string, string>;
+				}>,
+			catch: () => undefined,
+		});
+		if (
+			mod !== undefined &&
+			mod.default !== undefined &&
+			typeof mod.default === 'object'
+		) {
+			webFilemap = mod.default;
+		}
 
-    const fetchHandler = async (request: Request) => {
-      const url = new URL(request.url);
+		const fetchHandler = async (request: Request) => {
+			const url = new URL(request.url);
 
-      // 1. MCP endpoint
-      if (url.pathname === '/mcp') {
-        const sessionId = request.headers.get('mcp-session-id');
+			// 1. MCP endpoint
+			if (url.pathname === '/mcp') {
+				const sessionId = request.headers.get('mcp-session-id');
 
-        if (sessionId !== null) {
-          const session = sessions.get(sessionId);
-          if (session === undefined) {
-            return new Response('Session not found', { status: 404 });
-          }
-          return session.transport.handleRequest(request);
-        }
+				if (sessionId !== null) {
+					const session = sessions.get(sessionId);
+					if (session === undefined) {
+						return new Response('Session not found', { status: 404 });
+					}
+					return session.transport.handleRequest(request);
+				}
 
-        const transport = new WebStandardStreamableHTTPServerTransport({
-          sessionIdGenerator: () => randomUUID(),
-          onsessioninitialized: (sid) => {
-            sessions.set(sid, { transport, server: mcpServer });
-          },
-          onsessionclosed: (sid) => {
-            sessions.delete(sid);
-          },
-        });
+				const transport = new WebStandardStreamableHTTPServerTransport({
+					sessionIdGenerator: () => randomUUID(),
+					onsessioninitialized: (sid) => {
+						sessions.set(sid, { transport, server: mcpServer });
+					},
+					onsessionclosed: (sid) => {
+						sessions.delete(sid);
+					},
+				});
 
-        const mcpServer = new Server(
-          { name: 'oagent', version: cliPackage.version },
-          { capabilities: { tools: {} } },
-        );
-        registerTools(mcpServer, jobs, rt, url.origin);
+				const mcpServer = new Server(
+					{ name: 'oagent', version: cliPackage.version },
+					{ capabilities: { tools: {} } },
+				);
+				registerTools(mcpServer, jobs, rt, url.origin);
 
-        await mcpServer.connect(transport);
-        return transport.handleRequest(request);
-      }
+				await mcpServer.connect(transport);
+				return transport.handleRequest(request);
+			}
 
-      // 2. oRPC endpoint
-      if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
-        const result = await engineHandler.handle(request, {
-          prefix: '/rpc',
-        });
-        if (result.matched) {
-          return result.response;
-        }
-      }
+			// 2. oRPC endpoint
+			if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
+				const result = await engineHandler.handle(request, {
+					prefix: '/rpc',
+				});
+				if (result.matched) {
+					return result.response;
+				}
+			}
 
-      // 3. SSE events endpoint
-      const eventsJobId = url.pathname.match(/^\/jobs\/([^/]+)\/events$/)?.[1];
-      if (eventsJobId !== undefined)
-        return handleJobEvents(jobs, eventsJobId, request.signal);
+			// 3. SSE events endpoint
+			const eventsJobId = url.pathname.match(/^\/jobs\/([^/]+)\/events$/)?.[1];
+			if (eventsJobId !== undefined)
+				return handleJobEvents(jobs, eventsJobId, request.signal);
 
-      // 4. Wait endpoint
-      const waitJobId = url.pathname.match(/^\/jobs\/([^/]+)\/wait$/)?.[1];
-      if (waitJobId !== undefined) {
-        const timeoutParam = url.searchParams.get('timeoutMs');
-        const timeoutMs =
-          timeoutParam !== null ? Number.parseInt(timeoutParam, 10) : 600_000;
-        return handleJobWait(jobs, waitJobId, timeoutMs, rt);
-      }
+			// 4. Wait endpoint
+			const waitJobId = url.pathname.match(/^\/jobs\/([^/]+)\/wait$/)?.[1];
+			if (waitJobId !== undefined) {
+				const timeoutParam = url.searchParams.get('timeoutMs');
+				const timeoutMs =
+					timeoutParam !== null ? Number.parseInt(timeoutParam, 10) : 600_000;
+				return handleJobWait(jobs, waitJobId, timeoutMs, rt);
+			}
 
-      // 5. SPA fallback
-      const spaResponse = serveSPA(webFilemap, url.pathname);
-      if (spaResponse !== undefined) {
-        return spaResponse;
-      }
+			// 5. SPA fallback
+			const spaResponse = serveSPA(webFilemap, url.pathname);
+			if (spaResponse !== undefined) {
+				return spaResponse;
+			}
 
-      return new Response('Not Found', { status: 404 });
-    };
+			return new Response('Not Found', { status: 404 });
+		};
 
-    function tryBind(targetPort: number) {
-      try {
-        return {
-          server: Bun.serve({
-            hostname: '127.0.0.1',
-            port: targetPort,
-            idleTimeout: 0,
-            fetch: fetchHandler,
-          }),
-          didFallback: false,
-        };
-      } catch (cause) {
-        const msg = cause instanceof Error ? cause.message : String(cause);
-        const code =
-          cause instanceof Error
-            ? (cause as { code?: string }).code
-            : undefined;
-        if (
-          code === 'EADDRINUSE' ||
-          msg.includes('EADDRINUSE') ||
-          msg.includes('address already in use')
-        ) {
-          return {
-            server: Bun.serve({
-              hostname: '127.0.0.1',
-              port: 0,
-              idleTimeout: 0,
-              fetch: fetchHandler,
-            }),
-            didFallback: true,
-          };
-        }
-        throw cause;
-      }
-    }
+		function tryBind(targetPort: number) {
+			try {
+				return {
+					server: Bun.serve({
+						hostname: '127.0.0.1',
+						port: targetPort,
+						idleTimeout: 0,
+						fetch: fetchHandler,
+					}),
+					didFallback: false,
+				};
+			} catch (cause) {
+				const msg = cause instanceof Error ? cause.message : String(cause);
+				const code =
+					cause instanceof Error
+						? (cause as { code?: string }).code
+						: undefined;
+				if (
+					code === 'EADDRINUSE' ||
+					msg.includes('EADDRINUSE') ||
+					msg.includes('address already in use')
+				) {
+					return {
+						server: Bun.serve({
+							hostname: '127.0.0.1',
+							port: 0,
+							idleTimeout: 0,
+							fetch: fetchHandler,
+						}),
+						didFallback: true,
+					};
+				}
+				throw cause;
+			}
+		}
 
-    const bindResult = yield* Effect.try({
-      try: () => tryBind(resolvedPort),
-      catch: (cause) =>
-        new Error(
-          `Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
-        ),
-    });
+		const bindResult = yield* Effect.try({
+			try: () => tryBind(resolvedPort),
+			catch: (cause) =>
+				new Error(
+					`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
+				),
+		});
 
-    if (bindResult.didFallback) {
-      console.warn(`port ${resolvedPort} in use, falling back to a free port`);
-    }
+		if (bindResult.didFallback) {
+			console.warn(`port ${resolvedPort} in use, falling back to a free port`);
+		}
 
-    yield* Console.error(
-      `oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
-    );
+		yield* Console.error(
+			`oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
+		);
 
-    yield* Effect.never;
-  });
+		yield* Effect.never;
+	});
 }
 
 const serve = Command.make(
-  'serve',
-  {
-    port: Options.integer('port').pipe(
-      Options.withAlias('p'),
-      Options.withDefault(17_777),
-      Options.withDescription('Port to listen on (default: 17777)'),
-    ),
-  },
-  ({ port }) => runServe(port),
+	'serve',
+	{
+		port: Options.integer('port').pipe(
+			Options.withAlias('p'),
+			Options.withDefault(17_777),
+			Options.withDescription('Port to listen on (default: 17777)'),
+		),
+	},
+	({ port }) => runServe(port),
 );
 
 const stdio = Command.make('stdio', {}, () => runStdio());
 
 const cli = Command.make('oagent').pipe(
-  Command.withDescription(
-    'MCP server that exposes OpenCode to Claude Code as a subagent via ACP',
-  ),
-  Command.withSubcommands([serve, stdio]),
+	Command.withDescription(
+		'MCP server that exposes OpenCode to Claude Code as a subagent via ACP',
+	),
+	Command.withSubcommands([serve, stdio]),
 );
 
 const layerMain = Layer.mergeAll(
-  Jobs.Default,
-  OpenCode.Default,
-  BunContext.layer,
+	Jobs.Default,
+	OpenCode.Default,
+	BunContext.layer,
 ).pipe(Layer.provideMerge(Layer.scope));
 
 const program = Command.run(cli, {
-  name: 'oagent',
-  version: cliPackage.version,
+	name: 'oagent',
+	version: cliPackage.version,
 })(process.argv).pipe(Effect.provide(layerMain));
 
 Effect.runPromise(program);
