@@ -15,6 +15,6 @@
     "build": "bun --filter '@oagent/cli' build"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.13"
+    "@biomejs/biome": "^2.4.15"
   }
 }
