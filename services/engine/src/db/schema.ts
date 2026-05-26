@@ -164,3 +164,16 @@ export const usageEvents = sqliteTable('usage_events', {
 	cost_amount: real(),
 	cost_currency: text(),
 });
+
+export const modelAliases = sqliteTable('model_aliases', {
+	name: text().primaryKey(),
+	backend: text().notNull(),
+	model_id: text().notNull(),
+	description: text(),
+	created_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updated_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
