@@ -3,9 +3,9 @@ import {
 	applyEvent,
 	createInitialState,
 	finalizeState,
-	toDisplayState,
 	type ReduceState,
 	type TimelinePart,
+	toDisplayState,
 } from './event-adapter.ts';
 
 export type JobEventsState = {

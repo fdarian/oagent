@@ -169,7 +169,11 @@ function flushOpenReasoning(
 }
 
 function isRunningToolState(
-	state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error',
+	state:
+		| 'input-streaming'
+		| 'input-available'
+		| 'output-available'
+		| 'output-error',
 ): boolean {
 	return state === 'input-streaming' || state === 'input-available';
 }
@@ -341,9 +345,7 @@ export function applyEvent(
 					},
 				],
 				runningToolId: isRunning ? toolCallId : nextState.runningToolId,
-				runningToolTitle: isRunning
-					? event.title
-					: nextState.runningToolTitle,
+				runningToolTitle: isRunning ? event.title : nextState.runningToolTitle,
 			};
 		}
 		const existing = nextState.parts[existingIndex];
@@ -370,7 +372,10 @@ export function applyEvent(
 		const isRunning = isRunningToolState(newState);
 		const wasRunning =
 			nextState.runningToolId === toolCallId && !isRunning
-				? { runningToolId: undefined as string | undefined, runningToolTitle: undefined as string | undefined }
+				? {
+						runningToolId: undefined as string | undefined,
+						runningToolTitle: undefined as string | undefined,
+					}
 				: null;
 		if (wasRunning !== null) {
 			return {
@@ -442,7 +447,10 @@ export function applyEvent(
 		const isRunning = isRunningToolState(nextState_);
 		const wasRunning =
 			nextState.runningToolId === toolCallId && !isRunning
-				? { runningToolId: undefined as string | undefined, runningToolTitle: undefined as string | undefined }
+				? {
+						runningToolId: undefined as string | undefined,
+						runningToolTitle: undefined as string | undefined,
+					}
 				: null;
 		if (wasRunning !== null) {
 			return {
@@ -522,7 +530,7 @@ export function toDisplayState(state: ReduceState): DisplayState {
 					id: state.openText.id,
 					text: state.openText.text,
 					createdAt: state.openText.createdAt,
-			  }
+				}
 			: state.openReasoning !== null
 				? {
 						kind: 'reasoning',
@@ -530,7 +538,7 @@ export function toDisplayState(state: ReduceState): DisplayState {
 						text: state.openReasoning.text,
 						isStreaming: true,
 						createdAt: state.openReasoning.createdAt,
-				  }
+					}
 				: null;
 
 	return {
