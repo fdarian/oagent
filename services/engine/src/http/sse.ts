@@ -39,6 +39,12 @@ export function handleJobEvents(
 				safeClose();
 			};
 
+			signal.addEventListener('abort', onAbort, { once: true });
+			if (signal.aborted) {
+				onAbort();
+				return;
+			}
+
 			const listener = (
 				payload:
 					| { type: 'event'; event: SessionUpdate; sequence: number }
@@ -66,6 +72,11 @@ export function handleJobEvents(
 			// Read history from DB
 			const history = jobs.readEventsSince(jobId, 0);
 			for (const item of history) {
+				if (signal.aborted) {
+					unsubscribe();
+					safeClose();
+					return;
+				}
 				safeEnqueue(encode(item.event));
 				if (item.sequence > maxSequence) maxSequence = item.sequence;
 			}
@@ -74,6 +85,11 @@ export function handleJobEvents(
 			live = true;
 			let sawTerminal = false;
 			for (const payload of buffer) {
+				if (signal.aborted) {
+					unsubscribe();
+					safeClose();
+					return;
+				}
 				if (payload.type === 'terminal') {
 					sawTerminal = true;
 					safeEnqueue(encode('__terminal__'));
@@ -101,8 +117,6 @@ export function handleJobEvents(
 				signal.removeEventListener('abort', onAbort);
 				return;
 			}
-
-			signal.addEventListener('abort', onAbort, { once: true });
 		},
 	});
 
