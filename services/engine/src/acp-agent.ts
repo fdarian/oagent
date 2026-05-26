@@ -207,10 +207,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 					});
 
 					if (input.onExtensionEvent !== undefined) {
-						extNotificationHandlers.set(
-							sessionId,
-							input.onExtensionEvent,
-						);
+						extNotificationHandlers.set(sessionId, input.onExtensionEvent);
 					}
 
 					const cleanup = Effect.sync(() => {
@@ -252,13 +249,13 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 										signal.removeEventListener('abort', onAbort);
 									});
 							},
-								catch: (cause) =>
-									new AcpTurnFailed({
-										code: 'PROMPT_REJECTED',
-										message: 'prompt rejected',
-										cause,
-									}),
-							});
+							catch: (cause) =>
+								new AcpTurnFailed({
+									code: 'PROMPT_REJECTED',
+									message: 'prompt rejected',
+									cause,
+								}),
+						});
 					}).pipe(Effect.ensuring(cleanup));
 
 					return {

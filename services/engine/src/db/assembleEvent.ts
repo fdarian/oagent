@@ -155,8 +155,7 @@ export function assembleEvent(
 			return {
 				sessionUpdate: 'cursor_extension',
 				...(meta !== undefined ? { _meta: meta } : {}),
-				method:
-					typeof meta?.method === 'string' ? meta.method : '',
+				method: typeof meta?.method === 'string' ? meta.method : '',
 				params: meta?.params,
 			} as unknown as SessionUpdate;
 		}

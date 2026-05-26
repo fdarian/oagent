@@ -5,10 +5,10 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
+import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { Cursor } from './cursor.ts';
 import { OpenCode } from './opencode.ts';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
@@ -271,9 +271,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 				const model = input.model;
 				if (model === undefined) {
-					throw new Error(
-						'model is required: specify `<backend>:<modelId>`',
-					);
+					throw new Error('model is required: specify `<backend>:<modelId>`');
 				}
 
 				const colonIdx = model.indexOf(':');
