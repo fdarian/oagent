@@ -3,7 +3,7 @@
 import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
-import { and, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
@@ -395,7 +395,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				.from(schema.jobs)
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
-					schema.jobs.created_at,
+					desc(schema.jobs.created_at),
 				)
 				.all();
 
