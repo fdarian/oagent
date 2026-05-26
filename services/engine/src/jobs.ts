@@ -28,7 +28,8 @@ type WaitResult =
 			readonly text: string;
 			readonly stopReason: string | undefined;
 	  }
-	| { readonly status: 'error'; readonly message: string };
+	| { readonly status: 'error'; readonly message: string }
+	| { readonly status: 'cancelled' };
 
 const TIMEOUT_DEFAULT_MS = 50_000;
 
@@ -322,6 +323,36 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				return { jobId: uuid };
 			});
 
+		const cancel = (input: {
+			jobId: string;
+		}): Effect.Effect<void, JobNotFound, never> =>
+			Effect.gen(function* () {
+				const job = db
+					.select()
+					.from(schema.jobs)
+					.where(eq(schema.jobs.uuid, input.jobId))
+					.limit(1)
+					.get();
+
+				if (job === undefined) {
+					return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
+				}
+
+				if (job.status !== 'running') {
+					return;
+				}
+
+				db.update(schema.jobs)
+					.set({ status: 'cancelled', terminated_at: new Date() })
+					.where(eq(schema.jobs.id, job.id))
+					.run();
+
+				const fiber = liveFibers.get(input.jobId);
+				if (fiber !== undefined) {
+					yield* Fiber.interrupt(fiber);
+				}
+			});
+
 		const wait = (input: {
 			jobId: string;
 			timeoutMs?: number;
@@ -383,7 +414,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 		const list = (): {
 			id: string;
-			status: 'running' | 'done' | 'error';
+			status: 'running' | 'done' | 'error' | 'cancelled';
 			createdAt: number;
 			terminatedAt?: number;
 			prompt: string;
@@ -415,7 +446,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 		):
 			| {
 					id: string;
-					status: 'running' | 'done' | 'error';
+					status: 'running' | 'done' | 'error' | 'cancelled';
 					createdAt: number;
 					terminatedAt?: number;
 					prompt: string;
@@ -477,6 +508,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 		return {
 			start,
+			cancel,
 			wait,
 			list,
 			getDetail,
@@ -498,13 +530,14 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 function toWaitResult(job: {
 	uuid: string;
-	status: 'running' | 'done' | 'error';
+	status: 'running' | 'done' | 'error' | 'cancelled';
 	session_id: string | null;
 	text: string | null;
 	stop_reason: string | null;
 	error_message: string | null;
 }): WaitResult {
 	if (job.status === 'running') return { status: 'running' };
+	if (job.status === 'cancelled') return { status: 'cancelled' };
 	if (job.status === 'done') {
 		if (job.session_id === null || job.text === null) {
 			throw new Error(
