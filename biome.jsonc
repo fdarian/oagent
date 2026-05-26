@@ -14,7 +14,7 @@
 		}
 	},
 	"files": {
-		"includes": ["**", "!services/engine/drizzle"]
+		"includes": ["**", "!services/engine/drizzle", "!**/.gen"]
 	},
 	"css": {
 		"parser": {
