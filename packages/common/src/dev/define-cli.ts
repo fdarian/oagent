@@ -45,27 +45,39 @@ type RunEffect = Effect.Effect<
 	DevSessions | BunContext.BunContext | Scope.Scope
 >;
 
+type CommandConfig = typeof cli.Command.make extends (
+	name: string,
+	config: infer C,
+	...rest: Array<unknown>
+) => unknown
+	? C
+	: never;
+
 export const defineDevCli = (config: {
 	name: string;
 	dir: string;
-	run: (ctx: RunContext) => RunEffect;
+	options?: CommandConfig;
+	run: (ctx: RunContext, opts: Record<string, unknown>) => RunEffect;
 }): ((argv: string[]) => void) => {
-	const command = cli.Command.make(config.name, {}, () =>
+	const command = cli.Command.make(config.name, config.options ?? {}, (opts) =>
 		Effect.gen(function* () {
 			const sessions = yield* DevSessions;
 			const session = yield* Effect.cached(sessions.getLatestOrCreate);
-			return yield* config.run({
-				session,
-				getStickyPort: () => Effect.flatMap(session, getStickyPort),
-				runManagedSubprocess,
-				publishRunning: (data) =>
-					publishRunningSignal(runningSignalPath(config.dir), data),
-				awaitRunning: <T>(pkg: string) =>
-					awaitRunningSignal<T>(
-						runningSignalPath(resolveSiblingDir(pkg, config.dir)),
-						{ parse: (raw) => JSON.parse(raw) as T },
-					),
-			});
+			return yield* config.run(
+				{
+					session,
+					getStickyPort: () => Effect.flatMap(session, getStickyPort),
+					runManagedSubprocess,
+					publishRunning: (data) =>
+						publishRunningSignal(runningSignalPath(config.dir), data),
+					awaitRunning: <T>(pkg: string) =>
+						awaitRunningSignal<T>(
+							runningSignalPath(resolveSiblingDir(pkg, config.dir)),
+							{ parse: (raw) => JSON.parse(raw) as T },
+						),
+				},
+				opts as Record<string, unknown>,
+			);
 		}),
 	);
 
