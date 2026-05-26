@@ -27,6 +27,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 		binary: string;
 		args: readonly string[];
 		clientInfoName: string;
+		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 	}) =>
 		Effect.gen(function* () {
 			const subprocess = yield* Effect.acquireRelease(
@@ -52,6 +53,10 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 			);
 
 			const listeners = new Map<string, (e: SessionUpdate) => void>();
+			const extNotificationHandlers = new Map<
+				string,
+				(method: string, params: unknown) => void
+			>();
 
 			const registerListener = (
 				sessionId: string,
@@ -113,6 +118,32 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 						await Bun.write(params.path, params.content);
 						return {};
 					},
+					extMethod: async (method, params) => {
+						const handler = config.extensionHandlers?.[method];
+						if (handler !== undefined) {
+							return (await handler(params)) as Record<string, unknown>;
+						}
+						throw new Error(`Unhandled extension method: ${method}`);
+					},
+					extNotification: async (method, params) => {
+						const sid =
+							typeof params === 'object' && params !== null
+								? (params as Record<string, unknown>).sessionId
+								: undefined;
+						if (typeof sid === 'string') {
+							const h = extNotificationHandlers.get(sid);
+							if (h !== undefined) {
+								h(method, params);
+								return;
+							}
+						}
+						if (extNotificationHandlers.size === 1) {
+							const h = extNotificationHandlers.values().next().value;
+							if (h !== undefined) {
+								h(method, params);
+							}
+						}
+					},
 				}),
 				stream,
 			);
@@ -136,6 +167,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				sessionId?: string;
 				cwd: string;
 				onEvent?: (event: SessionUpdate) => void;
+				onExtensionEvent?: (method: string, params: unknown) => void;
 			}) =>
 				Effect.gen(function* () {
 					const sessionId = yield* (() => {
@@ -174,6 +206,18 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 						}
 					});
 
+					if (input.onExtensionEvent !== undefined) {
+						extNotificationHandlers.set(
+							sessionId,
+							input.onExtensionEvent,
+						);
+					}
+
+					const cleanup = Effect.sync(() => {
+						unregister();
+						extNotificationHandlers.delete(sessionId);
+					});
+
 					const response = yield* Effect.gen(function* () {
 						const model = input.model;
 						if (model !== undefined) {
@@ -208,14 +252,14 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 										signal.removeEventListener('abort', onAbort);
 									});
 							},
-							catch: (cause) =>
-								new AcpTurnFailed({
-									code: 'PROMPT_REJECTED',
-									message: 'prompt rejected',
-									cause,
-								}),
-						});
-					}).pipe(Effect.ensuring(Effect.sync(unregister)));
+								catch: (cause) =>
+									new AcpTurnFailed({
+										code: 'PROMPT_REJECTED',
+										message: 'prompt rejected',
+										cause,
+									}),
+							});
+					}).pipe(Effect.ensuring(cleanup));
 
 					return {
 						sessionId,
