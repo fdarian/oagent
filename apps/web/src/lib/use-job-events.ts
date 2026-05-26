@@ -1,5 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { reduceEvents, type TimelinePart } from './event-adapter.ts';
+import {
+	applyEvent,
+	createInitialState,
+	finalizeState,
+	toDisplayState,
+	type ReduceState,
+	type TimelinePart,
+} from './event-adapter.ts';
 
 export type JobEventsState = {
 	parts: TimelinePart[];
@@ -14,10 +21,10 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 		terminal: false,
 		isLoading: false,
 	});
-	const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
+	const stateRef = useRef<ReduceState>(createInitialState());
 
 	useEffect(() => {
-		eventsRef.current = [];
+		stateRef.current = createInitialState();
 		setResult({
 			parts: [],
 			terminal: false,
@@ -34,18 +41,20 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 			const data = JSON.parse(e.data);
 			if (data === '__terminal__') {
 				source.close();
-				setResult((prev) => ({
-					...prev,
+				const final = finalizeState(stateRef.current);
+				setResult({
+					parts: final.parts,
+					lastStatus: final.lastStatus,
 					terminal: true,
 					isLoading: false,
-				}));
+				});
 				return;
 			}
-			eventsRef.current = [...eventsRef.current, data];
-			const next = reduceEvents(eventsRef.current);
+			stateRef.current = applyEvent(stateRef.current, data, Date.now());
+			const display = toDisplayState(stateRef.current);
 			setResult({
-				parts: next.parts,
-				lastStatus: next.lastStatus,
+				parts: display.parts,
+				lastStatus: display.lastStatus,
 				terminal: false,
 				isLoading: false,
 			});
