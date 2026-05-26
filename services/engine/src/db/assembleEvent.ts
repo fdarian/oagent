@@ -151,6 +151,16 @@ export function assembleEvent(
 			} as SessionUpdate;
 		}
 
+		case 'cursor_extension': {
+			return {
+				sessionUpdate: 'cursor_extension',
+				...(meta !== undefined ? { _meta: meta } : {}),
+				method:
+					typeof meta?.method === 'string' ? meta.method : '',
+				params: meta?.params,
+			} as SessionUpdate;
+		}
+
 		default:
 			throw new Error(`Unknown event type: ${event.type}`);
 	}

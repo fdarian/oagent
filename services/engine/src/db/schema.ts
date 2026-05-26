@@ -24,6 +24,7 @@ export const jobs = sqliteTable(
 		prompt: text().notNull(),
 		cwd: text().notNull(),
 		model: text(),
+		backend: text().notNull(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),
@@ -62,6 +63,7 @@ export const events = sqliteTable(
 				'config_option_update',
 				'session_info_update',
 				'usage_update',
+				'cursor_extension',
 			],
 		}).notNull(),
 		meta: text({ mode: 'json' }).$type<Record<string, unknown> | null>(),
