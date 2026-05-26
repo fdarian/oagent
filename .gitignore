@@ -4,7 +4,7 @@ dist
 *.log
 .DS_Store
 .env
-.env.local
+**.local*
 bun.lock.bak
 services/engine/.data/
 apps/cli/dist/
