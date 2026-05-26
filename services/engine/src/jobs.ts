@@ -18,7 +18,7 @@ class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
 	{
-		code: Schema.Literal('MISSING', 'INVALID_FORMAT', 'UNKNOWN_BACKEND'),
+		code: Schema.Literal('MISSING', 'INVALID_FORMAT', 'UNKNOWN_BACKEND', 'UNKNOWN_ALIAS'),
 		message: Schema.String,
 	},
 ) {}
@@ -55,6 +55,40 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 		const opencode = yield* OpenCode;
 		const cursor = yield* Cursor;
 		const { db } = yield* Db;
+
+		const resolveModel = (
+			model: string,
+		): Effect.Effect<{ backend: string; modelId: string }, ModelResolutionError, never> =>
+			Effect.gen(function* () {
+				const colonIdx = model.indexOf(':');
+				if (colonIdx !== -1) {
+					const backend = model.slice(0, colonIdx);
+					const modelId = model.slice(colonIdx + 1);
+					if (backend !== 'opencode' && backend !== 'cursor') {
+						return yield* new ModelResolutionError({
+							code: 'UNKNOWN_BACKEND',
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor.`,
+						});
+					}
+					return { backend, modelId };
+				}
+
+				const alias = db
+					.select()
+					.from(schema.modelAliases)
+					.where(eq(schema.modelAliases.name, model))
+					.limit(1)
+					.get();
+
+				if (alias === undefined) {
+					return yield* new ModelResolutionError({
+						code: 'UNKNOWN_ALIAS',
+						message: `Model "${model}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
+					});
+				}
+
+				return { backend: alias.backend, modelId: alias.model_id };
+			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, unknown>>();
@@ -281,27 +315,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				if (model === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'MISSING',
-						message: 'model is required: specify `<backend>:<modelId>`',
+						message: 'model is required: specify `<backend>:<modelId>` or an alias name',
 					});
 				}
 
-				const colonIdx = model.indexOf(':');
-				if (colonIdx === -1) {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `Invalid model "${model}". Expected format: <backend>:<modelId>. Valid backends: opencode, cursor.`,
-					});
-				}
-
-				const backend = model.slice(0, colonIdx);
-				const rest = model.slice(colonIdx + 1);
-
-				if (backend !== 'opencode' && backend !== 'cursor') {
-					return yield* new ModelResolutionError({
-						code: 'UNKNOWN_BACKEND',
-						message: `Unknown backend "${backend}". Valid backends: opencode, cursor.`,
-					});
-				}
+				const { backend, modelId: rest } = yield* resolveModel(model);
 
 				const jobRow = db
 					.insert(schema.jobs)
@@ -588,6 +606,64 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			};
 		};
 
+		const listAliases = () => {
+			return db
+				.select()
+				.from(schema.modelAliases)
+				.orderBy(schema.modelAliases.name)
+				.all();
+		};
+
+		const saveAlias = (input: {
+			name: string;
+			backend: string;
+			model_id: string;
+			description?: string | null;
+		}) => {
+			const now = new Date();
+			db.insert(schema.modelAliases)
+				.values({
+					name: input.name,
+					backend: input.backend,
+					model_id: input.model_id,
+					description: input.description ?? null,
+					created_at: now,
+					updated_at: now,
+				})
+				.onConflictDoUpdate({
+					target: schema.modelAliases.name,
+					set: {
+						backend: input.backend,
+						model_id: input.model_id,
+						description: input.description ?? null,
+						updated_at: now,
+					},
+				})
+				.run();
+			return {
+				name: input.name,
+				backend: input.backend,
+				model_id: input.model_id,
+				description: input.description ?? undefined,
+			};
+		};
+
+		const deleteAlias = (name: string): boolean => {
+			const existing = db
+				.select()
+				.from(schema.modelAliases)
+				.where(eq(schema.modelAliases.name, name))
+				.limit(1)
+				.get();
+			if (existing === undefined) {
+				return false;
+			}
+			db.delete(schema.modelAliases)
+				.where(eq(schema.modelAliases.name, name))
+				.run();
+			return true;
+		};
+
 		return {
 			start,
 			cancel,
@@ -595,6 +671,9 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			list,
 			getDetail,
 			subscribe,
+			listAliases,
+			saveAlias,
+			deleteAlias,
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
 					.select()
