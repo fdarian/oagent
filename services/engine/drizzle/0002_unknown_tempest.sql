@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `backend` text NOT NULL DEFAULT 'opencode';
