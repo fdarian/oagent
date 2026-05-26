@@ -2,7 +2,7 @@ import { Effect } from 'effect';
 import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
-const description = `\
+const BASE_DESCRIPTION = `\
 Delegate a task to the coding agent, running as a subprocess. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
 agent is the coding agent. Supports two backends: OpenCode and Cursor CLI. \
@@ -19,7 +19,32 @@ into a subsequent start call to continue the same conversation. The cwd \
 parameter is required: an absolute path to the directory the agent should \
 operate in — typically the parent agent's project root.`;
 
-const inputSchema = {
+export function buildDescription(
+	aliases: {
+		name: string;
+		backend: string;
+		model_id: string;
+		description: string | null;
+	}[],
+): string {
+	if (aliases.length === 0) {
+		return BASE_DESCRIPTION;
+	}
+
+	const maxNameLen = Math.max(...aliases.map((a) => a.name.length));
+	const lines = aliases.map((a) => {
+		const padded = a.name.padEnd(maxNameLen, ' ');
+		const desc =
+			a.description !== null && a.description !== ''
+				? ` — ${a.description}`
+				: '';
+		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${desc}`;
+	});
+
+	return `${BASE_DESCRIPTION}\n\nAvailable presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form):\n${lines.join('\n')}\n\nPresets are loaded at engine startup. Adding or editing an alias requires restarting the engine for the new list to appear here.`;
+}
+
+export const inputSchema = {
 	prompt: z.string().describe('The task or question to send to the agent.'),
 	cwd: z
 		.string()
@@ -30,7 +55,7 @@ const inputSchema = {
 		.string()
 		.optional()
 		.describe(
-			'Model id in `<backend>:<modelId>` format. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `cursor:sonnet`. For Cursor, friendly names map to the actual bracketed model ids; raw bracketed ids (e.g. `cursor:composer-2.5[fast=true]`) also work. If the user has not specified a model, ask them which model and backend to use.',
+			'Model id in `<backend>:<modelId>` format or a preset alias name. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `cursor:sonnet`. For Cursor, friendly names map to the actual bracketed model ids; raw bracketed ids (e.g. `cursor:composer-2.5[fast=true]`) also work. If the user has not specified a model, ask them which model and backend to use.',
 		),
 	sessionId: z
 		.string()
@@ -43,7 +68,6 @@ const inputSchema = {
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
 
 export const startTool = {
-	description,
 	inputSchema,
 	handle(args: Args, ctx: { jobs: Jobs; waitUrlBase: string | undefined }) {
 		return ctx.jobs.start(args).pipe(
