@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
 	Reasoning,
 	ReasoningContent,
@@ -9,7 +10,9 @@ export type JobTimelineReasoningProps = {
 	part: Extract<TimelinePart, { kind: 'reasoning' }>;
 };
 
-export function JobTimelineReasoning({ part }: JobTimelineReasoningProps) {
+export const JobTimelineReasoning = memo(function JobTimelineReasoning({
+	part,
+}: JobTimelineReasoningProps) {
 	const durationSeconds =
 		part.durationMs !== undefined
 			? Math.ceil(part.durationMs / 1000)
@@ -21,4 +24,4 @@ export function JobTimelineReasoning({ part }: JobTimelineReasoningProps) {
 			<ReasoningContent>{part.text}</ReasoningContent>
 		</Reasoning>
 	);
-}
+});

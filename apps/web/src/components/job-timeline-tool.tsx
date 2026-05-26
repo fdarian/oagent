@@ -1,5 +1,6 @@
 import type { ToolCallContent, ToolCallLocation } from '@oagent/engine';
 import { TerminalIcon, WrenchIcon } from 'lucide-react';
+import { memo } from 'react';
 import { CodeBlock } from '@/components/ai-elements/code-block';
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool';
 import { detectLanguage } from '@/lib/detect-language';
@@ -19,7 +20,9 @@ function capitalize(s: string): string {
 	return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export function JobTimelineTool(props: JobTimelineToolProps) {
+export const JobTimelineTool = memo(function JobTimelineTool(
+	props: JobTimelineToolProps,
+) {
 	const part = props.part;
 	const icon =
 		part.toolKind === 'execute' ? (
@@ -45,7 +48,7 @@ export function JobTimelineTool(props: JobTimelineToolProps) {
 			</ToolContent>
 		</Tool>
 	);
-}
+});
 
 function ToolCallContentBlock(props: { content: ToolCallContent }) {
 	const content = props.content;

@@ -19,6 +19,7 @@ export const Minimal: Story = {
 				createdAt: Date.now(),
 			},
 		] as TimelinePart[],
+		streamingTail: null,
 	},
 };
 
@@ -49,6 +50,7 @@ export const MidTool: Story = {
 				createdAt: Date.now() - 3000,
 			},
 		] as TimelinePart[],
+		streamingTail: null,
 	},
 };
 
@@ -70,6 +72,7 @@ export const WithReasoning: Story = {
 				createdAt: Date.now() - 5000,
 			},
 		] as TimelinePart[],
+		streamingTail: null,
 	},
 };
 
@@ -90,6 +93,7 @@ export const WithError: Story = {
 				createdAt: Date.now(),
 			},
 		] as TimelinePart[],
+		streamingTail: null,
 	},
 };
 
@@ -130,5 +134,6 @@ export const FullMixed: Story = {
 				createdAt: Date.now() - 5000,
 			},
 		] as TimelinePart[],
+		streamingTail: null,
 	},
 };

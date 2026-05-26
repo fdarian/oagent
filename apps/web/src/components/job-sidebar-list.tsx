@@ -1,4 +1,5 @@
 import { formatAge } from '@/lib/format';
+import { warmUpJobEvents } from '@/lib/job-warmup';
 import type { JobListItem } from '@/lib/use-job-list';
 import { cn } from '@/lib/utils';
 
@@ -39,6 +40,7 @@ export function JobSidebarList({
 							key={job.id}
 							type="button"
 							onClick={() => onSelect(job.id)}
+							onMouseEnter={() => warmUpJobEvents(job.id, selectedId)}
 							className={cn(
 								'flex flex-col gap-[6px] border-l px-22 py-15 text-left transition-colors',
 								isSelected

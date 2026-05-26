@@ -11,11 +11,13 @@ export function handleJobEvents(
 		return new Response('Job not found', { status: 404 });
 	}
 
+	let unsubscribe = (): void => {};
+	let closed = false;
+
 	const stream = new ReadableStream({
 		start(controller) {
 			const encode = (data: unknown) => `data: ${JSON.stringify(data)}\n\n`;
 
-			let closed = false;
 			const safeClose = () => {
 				if (closed) return;
 				closed = true;
@@ -33,11 +35,16 @@ export function handleJobEvents(
 			let maxSequence = 0;
 			let live = false;
 
-			let unsubscribe = (): void => {};
 			const onAbort = (): void => {
 				unsubscribe();
 				safeClose();
 			};
+
+			signal.addEventListener('abort', onAbort, { once: true });
+			if (signal.aborted) {
+				onAbort();
+				return;
+			}
 
 			const listener = (
 				payload:
@@ -63,46 +70,68 @@ export function handleJobEvents(
 
 			unsubscribe = jobs.subscribe(jobId, listener);
 
-			// Read history from DB
-			const history = jobs.readEventsSince(jobId, 0);
-			for (const item of history) {
-				safeEnqueue(encode(item.event));
-				if (item.sequence > maxSequence) maxSequence = item.sequence;
-			}
+			// Kick off history replay asynchronously so HTTP headers flush immediately.
+			(async () => {
+				const BATCH_SIZE = 100;
+				let cursor = 0;
+				while (true) {
+					if (signal.aborted) {
+						onAbort();
+						return;
+					}
+					const page = jobs.readEventsPage(jobId, cursor, BATCH_SIZE);
+					for (const item of page.events) {
+						if (signal.aborted) {
+							onAbort();
+							return;
+						}
+						safeEnqueue(encode(item.event));
+						if (item.sequence > maxSequence) maxSequence = item.sequence;
+					}
+					if (page.nextCursor === null) break;
+					cursor = page.nextCursor;
+					await new Promise<void>((r) => setImmediate(r));
+				}
 
-			// Atomically switch to live and drain buffer
-			live = true;
-			let sawTerminal = false;
-			for (const payload of buffer) {
-				if (payload.type === 'terminal') {
-					sawTerminal = true;
-					safeEnqueue(encode('__terminal__'));
+				// Atomically switch to live and drain buffer
+				live = true;
+				let sawTerminal = false;
+				for (const payload of buffer) {
+					if (signal.aborted) {
+						onAbort();
+						return;
+					}
+					if (payload.type === 'terminal') {
+						sawTerminal = true;
+						safeEnqueue(encode('__terminal__'));
+						safeClose();
+						unsubscribe();
+						signal.removeEventListener('abort', onAbort);
+						return;
+					}
+					if (payload.sequence > maxSequence) {
+						maxSequence = payload.sequence;
+						safeEnqueue(encode(payload.event));
+					}
+				}
+				buffer.length = 0;
+
+				// Race fix: if job became terminal between subscribe and drain,
+				// we may have missed the emitter event. Re-check status; if terminal, close now.
+				const current = jobs.getDetail(jobId);
+				if (current !== undefined && current.status !== 'running') {
+					if (!sawTerminal) {
+						safeEnqueue(encode('__terminal__'));
+					}
 					safeClose();
 					unsubscribe();
 					signal.removeEventListener('abort', onAbort);
-					return;
 				}
-				if (payload.sequence > maxSequence) {
-					maxSequence = payload.sequence;
-					safeEnqueue(encode(payload.event));
-				}
-			}
-			buffer.length = 0;
-
-			// Race fix: if job became terminal between subscribe and drain, we may have missed the emitter event.
-			// Re-check status; if terminal, close now.
-			const current = jobs.getDetail(jobId);
-			if (current !== undefined && current.status !== 'running') {
-				if (!sawTerminal) {
-					safeEnqueue(encode('__terminal__'));
-				}
-				safeClose();
-				unsubscribe();
-				signal.removeEventListener('abort', onAbort);
-				return;
-			}
-
-			signal.addEventListener('abort', onAbort, { once: true });
+			})();
+		},
+		cancel(_reason) {
+			closed = true;
+			unsubscribe();
 		},
 	});
 

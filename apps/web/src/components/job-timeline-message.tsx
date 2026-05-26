@@ -1,3 +1,4 @@
+import { memo } from 'react';
 import {
 	Message,
 	MessageContent,
@@ -9,7 +10,9 @@ export type JobTimelineMessageProps = {
 	part: Extract<TimelinePart, { kind: 'text' }>;
 };
 
-export function JobTimelineMessage({ part }: JobTimelineMessageProps) {
+export const JobTimelineMessage = memo(function JobTimelineMessage({
+	part,
+}: JobTimelineMessageProps) {
 	return (
 		<Message from="assistant">
 			<MessageContent>
@@ -17,4 +20,4 @@ export function JobTimelineMessage({ part }: JobTimelineMessageProps) {
 			</MessageContent>
 		</Message>
 	);
-}
+});

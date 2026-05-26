@@ -1,23 +1,40 @@
 import { useEffect, useRef, useState } from 'react';
-import { reduceEvents, type TimelinePart } from './event-adapter.ts';
+import {
+	applyEvent,
+	createInitialState,
+	finalizeState,
+	type ReduceState,
+	type TimelinePart,
+	toDisplayState,
+} from './event-adapter.ts';
 
 export type JobEventsState = {
 	parts: TimelinePart[];
+	streamingTail: TimelinePart | null;
 	lastStatus?: string;
 	terminal: boolean;
+	isLoading: boolean;
 };
 
 export function useJobEvents(jobId: string | undefined): JobEventsState {
 	const [result, setResult] = useState<JobEventsState>({
 		parts: [],
+		streamingTail: null,
 		terminal: false,
+		isLoading: false,
 	});
-	const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
+	const stateRef = useRef<ReduceState>(createInitialState());
 
 	useEffect(() => {
+		stateRef.current = createInitialState();
+		setResult({
+			parts: [],
+			streamingTail: null,
+			terminal: false,
+			isLoading: jobId !== undefined,
+		});
+
 		if (jobId === undefined) {
-			eventsRef.current = [];
-			setResult({ parts: [], terminal: false });
 			return;
 		}
 
@@ -27,23 +44,30 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 			const data = JSON.parse(e.data);
 			if (data === '__terminal__') {
 				source.close();
-				setResult((prev) => ({
-					...prev,
+				const final = finalizeState(stateRef.current);
+				setResult({
+					parts: final.parts,
+					streamingTail: null,
+					lastStatus: final.lastStatus,
 					terminal: true,
-				}));
+					isLoading: false,
+				});
 				return;
 			}
-			eventsRef.current = [...eventsRef.current, data];
-			const next = reduceEvents(eventsRef.current);
+			stateRef.current = applyEvent(stateRef.current, data, Date.now());
+			const display = toDisplayState(stateRef.current);
 			setResult({
-				parts: next.parts,
-				lastStatus: next.lastStatus,
+				parts: display.parts,
+				streamingTail: display.streamingTail,
+				lastStatus: display.lastStatus,
 				terminal: false,
+				isLoading: false,
 			});
 		};
 
 		source.onerror = () => {
 			source.close();
+			setResult((prev) => ({ ...prev, isLoading: false }));
 		};
 
 		return () => {

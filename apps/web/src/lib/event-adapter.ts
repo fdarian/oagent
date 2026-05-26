@@ -45,8 +45,14 @@ export type AdapterResult = {
 	lastStatus?: string;
 };
 
-function makeId(prefix: string, index: number): string {
-	return `${prefix}-${index}`;
+export type DisplayState = {
+	parts: TimelinePart[];
+	streamingTail: TimelinePart | null;
+	lastStatus?: string;
+};
+
+function makeId(prefix: string, counter: number): string {
+	return `${prefix}-${counter}`;
 }
 
 function mapToolState(
@@ -100,289 +106,461 @@ function shouldContinueAccumulating(
 	return true;
 }
 
-export function reduceEvents(events: SessionUpdate[]): AdapterResult {
-	const parts: TimelinePart[] = [];
-	let lastStatus: string | undefined;
+export type ReduceState = {
+	parts: TimelinePart[];
+	openText: OpenText | null;
+	openReasoning: OpenReasoning | null;
+	toolIndices: Map<string, number>;
+	idCounter: number;
+	runningToolId: string | undefined;
+	runningToolTitle: string | undefined;
+};
 
-	let openText: OpenText | null = null;
-	let openReasoning: OpenReasoning | null = null;
-	const toolIndices = new Map<string, number>();
+export function createInitialState(): ReduceState {
+	return {
+		parts: [],
+		openText: null,
+		openReasoning: null,
+		toolIndices: new Map(),
+		idCounter: 0,
+		runningToolId: undefined,
+		runningToolTitle: undefined,
+	};
+}
 
-	const now = Date.now();
+function flushOpenText(state: ReduceState): ReduceState {
+	if (state.openText === null) return state;
+	return {
+		...state,
+		parts: [
+			...state.parts,
+			{
+				kind: 'text',
+				id: state.openText.id,
+				text: state.openText.text,
+				createdAt: state.openText.createdAt,
+			},
+		],
+		openText: null,
+	};
+}
 
-	for (let i = 0; i < events.length; i++) {
-		const update = events[i];
-		if (update === undefined) continue;
-		const createdAt = now - (events.length - 1 - i) * 100;
+function flushOpenReasoning(
+	state: ReduceState,
+	createdAt: number,
+): ReduceState {
+	if (state.openReasoning === null) return state;
+	const durationMs = createdAt - state.openReasoning.createdAt;
+	return {
+		...state,
+		parts: [
+			...state.parts,
+			{
+				kind: 'reasoning',
+				id: state.openReasoning.id,
+				text: state.openReasoning.text,
+				isStreaming: false,
+				createdAt: state.openReasoning.createdAt,
+				durationMs,
+			},
+		],
+		openReasoning: null,
+	};
+}
 
-		const isAccumulatingChunk =
-			update.sessionUpdate === 'agent_message_chunk' ||
-			update.sessionUpdate === 'agent_thought_chunk';
-		const isFlushOnlyChunk = update.sessionUpdate === 'user_message_chunk';
+function isRunningToolState(
+	state:
+		| 'input-streaming'
+		| 'input-available'
+		| 'output-available'
+		| 'output-error',
+): boolean {
+	return state === 'input-streaming' || state === 'input-available';
+}
 
-		if (!isAccumulatingChunk) {
-			if (openText !== null) {
-				parts.push(openText);
-				openText = null;
-			}
-			if (openReasoning !== null) {
-				const durationMs = createdAt - openReasoning.createdAt;
-				parts.push({
-					kind: 'reasoning',
-					id: openReasoning.id,
-					text: openReasoning.text,
-					isStreaming: false,
-					createdAt: openReasoning.createdAt,
-					durationMs,
-				});
-				openReasoning = null;
-			}
+export function applyEvent(
+	state: ReduceState,
+	event: SessionUpdate,
+	createdAt: number,
+): ReduceState {
+	const isAccumulatingChunk =
+		event.sessionUpdate === 'agent_message_chunk' ||
+		event.sessionUpdate === 'agent_thought_chunk';
+	const isFlushOnlyChunk = event.sessionUpdate === 'user_message_chunk';
+
+	let nextState = state;
+
+	if (!isAccumulatingChunk) {
+		nextState = flushOpenText(nextState);
+		nextState = flushOpenReasoning(nextState, createdAt);
+	}
+
+	if (isFlushOnlyChunk) {
+		return nextState;
+	}
+
+	if (event.sessionUpdate === 'agent_message_chunk') {
+		const chunkMessageId = event.messageId;
+		const contentBlock = event.content;
+		const chunkText =
+			contentBlock.type === 'text' ? contentBlock.text : undefined;
+
+		// Flush reasoning if open (different kind of chunk)
+		nextState = flushOpenReasoning(nextState, createdAt);
+
+		const shouldContinue = shouldContinueAccumulating(
+			nextState.openText,
+			chunkMessageId,
+		);
+		if (!shouldContinue && nextState.openText !== null) {
+			nextState = flushOpenText(nextState);
 		}
 
-		if (isFlushOnlyChunk) {
-			continue;
-		}
-
-		if (update.sessionUpdate === 'agent_message_chunk') {
-			const chunkMessageId = update.messageId;
-			const contentBlock = update.content;
-			const chunkText =
-				contentBlock.type === 'text' ? contentBlock.text : undefined;
-
-			if (openReasoning !== null) {
-				const durationMs = createdAt - openReasoning.createdAt;
-				parts.push({
-					kind: 'reasoning',
-					id: openReasoning.id,
-					text: openReasoning.text,
-					isStreaming: false,
-					createdAt: openReasoning.createdAt,
-					durationMs,
-				});
-				openReasoning = null;
-			}
-
-			const shouldContinue = shouldContinueAccumulating(
-				openText,
-				chunkMessageId,
-			);
-			if (!shouldContinue && openText !== null) {
-				parts.push(openText);
-				openText = null;
-			}
-
-			if (chunkText !== undefined) {
-				if (openText === null) {
-					openText = {
+		if (chunkText !== undefined) {
+			if (nextState.openText === null) {
+				nextState = {
+					...nextState,
+					openText: {
 						kind: 'text',
-						id: makeId('text', i),
+						id: makeId('text', nextState.idCounter),
 						text: chunkText,
 						createdAt,
 						messageId: chunkMessageId,
-					};
-				} else {
-					openText = {
+					},
+					idCounter: nextState.idCounter + 1,
+				};
+			} else {
+				nextState = {
+					...nextState,
+					openText: {
 						kind: 'text',
-						id: openText.id,
-						text: openText.text + chunkText,
-						createdAt: openText.createdAt,
+						id: nextState.openText.id,
+						text: nextState.openText.text + chunkText,
+						createdAt: nextState.openText.createdAt,
 						messageId: chunkMessageId,
-					};
-				}
-			} else if (openText !== null) {
-				openText = {
-					kind: 'text',
-					id: openText.id,
-					text: openText.text,
-					createdAt: openText.createdAt,
-					messageId: chunkMessageId,
+					},
 				};
 			}
-
-			continue;
+		} else if (nextState.openText !== null) {
+			nextState = {
+				...nextState,
+				openText: {
+					kind: 'text',
+					id: nextState.openText.id,
+					text: nextState.openText.text,
+					createdAt: nextState.openText.createdAt,
+					messageId: chunkMessageId,
+				},
+			};
 		}
 
-		if (update.sessionUpdate === 'agent_thought_chunk') {
-			const chunkMessageId = update.messageId;
-			const contentBlock = update.content;
-			const chunkText =
-				contentBlock.type === 'text' ? contentBlock.text : undefined;
+		return nextState;
+	}
 
-			if (openText !== null) {
-				parts.push(openText);
-				openText = null;
-			}
+	if (event.sessionUpdate === 'agent_thought_chunk') {
+		const chunkMessageId = event.messageId;
+		const contentBlock = event.content;
+		const chunkText =
+			contentBlock.type === 'text' ? contentBlock.text : undefined;
 
-			const shouldContinue = shouldContinueAccumulating(
-				openReasoning,
-				chunkMessageId,
-			);
-			if (!shouldContinue && openReasoning !== null) {
-				const durationMs = createdAt - openReasoning.createdAt;
-				parts.push({
-					kind: 'reasoning',
-					id: openReasoning.id,
-					text: openReasoning.text,
-					isStreaming: false,
-					createdAt: openReasoning.createdAt,
-					durationMs,
-				});
-				openReasoning = null;
-			}
+		// Flush text if open (different kind of chunk)
+		nextState = flushOpenText(nextState);
 
-			if (chunkText !== undefined) {
-				if (openReasoning === null) {
-					openReasoning = {
+		const shouldContinue = shouldContinueAccumulating(
+			nextState.openReasoning,
+			chunkMessageId,
+		);
+		if (!shouldContinue && nextState.openReasoning !== null) {
+			nextState = flushOpenReasoning(nextState, createdAt);
+		}
+
+		if (chunkText !== undefined) {
+			if (nextState.openReasoning === null) {
+				nextState = {
+					...nextState,
+					openReasoning: {
 						kind: 'reasoning',
-						id: makeId('reasoning', i),
+						id: makeId('reasoning', nextState.idCounter),
 						text: chunkText,
 						isStreaming: true,
 						createdAt,
 						messageId: chunkMessageId,
-					};
-				} else {
-					openReasoning = {
-						kind: 'reasoning',
-						id: openReasoning.id,
-						text: openReasoning.text + chunkText,
-						isStreaming: openReasoning.isStreaming,
-						createdAt: openReasoning.createdAt,
-						messageId: chunkMessageId,
-					};
-				}
-			} else if (openReasoning !== null) {
-				openReasoning = {
-					kind: 'reasoning',
-					id: openReasoning.id,
-					text: openReasoning.text,
-					isStreaming: openReasoning.isStreaming,
-					createdAt: openReasoning.createdAt,
-					messageId: chunkMessageId,
+					},
+					idCounter: nextState.idCounter + 1,
 				};
-			}
-
-			continue;
-		}
-
-		if (update.sessionUpdate === 'tool_call') {
-			const toolCallId = update.toolCallId;
-			const existingIndex = toolIndices.get(toolCallId);
-			const newState = mapToolState(update.status);
-			if (existingIndex === undefined) {
-				toolIndices.set(toolCallId, parts.length);
-				parts.push({
-					kind: 'tool',
-					id: `tool-${toolCallId}`,
-					toolCallId,
-					toolName: update.title,
-					title: update.title,
-					state: newState,
-					toolKind: update.kind ?? undefined,
-					content: update.content ?? [],
-					locations: update.locations ?? [],
-					createdAt,
-				});
 			} else {
-				const existing = parts[existingIndex];
-				if (existing === undefined || existing.kind !== 'tool') continue;
-				const durationMs =
-					(newState === 'output-available' || newState === 'output-error') &&
-					existing.durationMs === undefined
-						? createdAt - existing.createdAt
-						: existing.durationMs;
-				parts[existingIndex] = {
-					kind: 'tool',
-					id: existing.id,
-					toolCallId: existing.toolCallId,
-					toolName: existing.toolName,
-					title: update.title,
-					state: newState,
-					toolKind: update.kind ?? existing.toolKind,
-					content: update.content ?? existing.content,
-					locations: update.locations ?? existing.locations,
-					createdAt: existing.createdAt,
-					durationMs,
+				nextState = {
+					...nextState,
+					openReasoning: {
+						kind: 'reasoning',
+						id: nextState.openReasoning.id,
+						text: nextState.openReasoning.text + chunkText,
+						isStreaming: nextState.openReasoning.isStreaming,
+						createdAt: nextState.openReasoning.createdAt,
+						messageId: chunkMessageId,
+					},
 				};
 			}
-			continue;
-		}
-
-		if (update.sessionUpdate === 'tool_call_update') {
-			const toolCallId = update.toolCallId;
-			const existingIndex = toolIndices.get(toolCallId);
-			if (existingIndex === undefined) continue;
-			const existing = parts[existingIndex];
-			if (existing === undefined || existing.kind !== 'tool') continue;
-			const nextTitle =
-				update.title !== null && update.title !== undefined
-					? update.title
-					: existing.title;
-			const nextState =
-				update.status !== null && update.status !== undefined
-					? mapToolState(update.status)
-					: existing.state;
-			const nextToolKind =
-				update.kind !== null && update.kind !== undefined
-					? update.kind
-					: existing.toolKind;
-			const nextContent =
-				update.content !== null && update.content !== undefined
-					? update.content
-					: existing.content;
-			const nextLocations =
-				update.locations !== null && update.locations !== undefined
-					? update.locations
-					: existing.locations;
-			const durationMs =
-				(nextState === 'output-available' || nextState === 'output-error') &&
-				existing.durationMs === undefined
-					? createdAt - existing.createdAt
-					: existing.durationMs;
-			parts[existingIndex] = {
-				kind: 'tool',
-				id: existing.id,
-				toolCallId: existing.toolCallId,
-				toolName: existing.toolName,
-				title: nextTitle,
-				state: nextState,
-				toolKind: nextToolKind,
-				content: nextContent,
-				locations: nextLocations,
-				createdAt: existing.createdAt,
-				durationMs,
+		} else if (nextState.openReasoning !== null) {
+			nextState = {
+				...nextState,
+				openReasoning: {
+					kind: 'reasoning',
+					id: nextState.openReasoning.id,
+					text: nextState.openReasoning.text,
+					isStreaming: nextState.openReasoning.isStreaming,
+					createdAt: nextState.openReasoning.createdAt,
+					messageId: chunkMessageId,
+				},
 			};
 		}
 
-		// Ignored variants: plan, available_commands_update, current_mode_update,
-		// config_option_update, session_info_update, usage_update
-		// Open text/reasoning already flushed above.
+		return nextState;
 	}
+
+	if (event.sessionUpdate === 'tool_call') {
+		const toolCallId = event.toolCallId;
+		const existingIndex = nextState.toolIndices.get(toolCallId);
+		const newState = mapToolState(event.status);
+		if (existingIndex === undefined) {
+			const toolIndices = new Map(nextState.toolIndices);
+			toolIndices.set(toolCallId, nextState.parts.length);
+			const isRunning = isRunningToolState(newState);
+			return {
+				...nextState,
+				toolIndices,
+				parts: [
+					...nextState.parts,
+					{
+						kind: 'tool',
+						id: `tool-${toolCallId}`,
+						toolCallId,
+						toolName: event.title,
+						title: event.title,
+						state: newState,
+						toolKind: event.kind ?? undefined,
+						content: event.content ?? [],
+						locations: event.locations ?? [],
+						createdAt,
+					},
+				],
+				runningToolId: isRunning ? toolCallId : nextState.runningToolId,
+				runningToolTitle: isRunning ? event.title : nextState.runningToolTitle,
+			};
+		}
+		const existing = nextState.parts[existingIndex];
+		if (existing === undefined || existing.kind !== 'tool') return nextState;
+		const durationMs =
+			(newState === 'output-available' || newState === 'output-error') &&
+			existing.durationMs === undefined
+				? createdAt - existing.createdAt
+				: existing.durationMs;
+		const nextParts = [...nextState.parts];
+		nextParts[existingIndex] = {
+			kind: 'tool',
+			id: existing.id,
+			toolCallId: existing.toolCallId,
+			toolName: existing.toolName,
+			title: event.title,
+			state: newState,
+			toolKind: event.kind ?? existing.toolKind,
+			content: event.content ?? existing.content,
+			locations: event.locations ?? existing.locations,
+			createdAt: existing.createdAt,
+			durationMs,
+		};
+		const isRunning = isRunningToolState(newState);
+		const wasRunning =
+			nextState.runningToolId === toolCallId && !isRunning
+				? {
+						runningToolId: undefined as string | undefined,
+						runningToolTitle: undefined as string | undefined,
+					}
+				: null;
+		if (wasRunning !== null) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: wasRunning.runningToolId,
+				runningToolTitle: wasRunning.runningToolTitle,
+			};
+		}
+		if (isRunning) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: toolCallId,
+				runningToolTitle: event.title,
+			};
+		}
+		return {
+			...nextState,
+			parts: nextParts,
+		};
+	}
+
+	if (event.sessionUpdate === 'tool_call_update') {
+		const toolCallId = event.toolCallId;
+		const existingIndex = nextState.toolIndices.get(toolCallId);
+		if (existingIndex === undefined) return nextState;
+		const existing = nextState.parts[existingIndex];
+		if (existing === undefined || existing.kind !== 'tool') return nextState;
+		const nextTitle =
+			event.title !== null && event.title !== undefined
+				? event.title
+				: existing.title;
+		const nextState_ =
+			event.status !== null && event.status !== undefined
+				? mapToolState(event.status)
+				: existing.state;
+		const nextToolKind =
+			event.kind !== null && event.kind !== undefined
+				? event.kind
+				: existing.toolKind;
+		const nextContent =
+			event.content !== null && event.content !== undefined
+				? event.content
+				: existing.content;
+		const nextLocations =
+			event.locations !== null && event.locations !== undefined
+				? event.locations
+				: existing.locations;
+		const durationMs =
+			(nextState_ === 'output-available' || nextState_ === 'output-error') &&
+			existing.durationMs === undefined
+				? createdAt - existing.createdAt
+				: existing.durationMs;
+		const nextParts = [...nextState.parts];
+		nextParts[existingIndex] = {
+			kind: 'tool',
+			id: existing.id,
+			toolCallId: existing.toolCallId,
+			toolName: existing.toolName,
+			title: nextTitle,
+			state: nextState_,
+			toolKind: nextToolKind,
+			content: nextContent,
+			locations: nextLocations,
+			createdAt: existing.createdAt,
+			durationMs,
+		};
+		const isRunning = isRunningToolState(nextState_);
+		const wasRunning =
+			nextState.runningToolId === toolCallId && !isRunning
+				? {
+						runningToolId: undefined as string | undefined,
+						runningToolTitle: undefined as string | undefined,
+					}
+				: null;
+		if (wasRunning !== null) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: wasRunning.runningToolId,
+				runningToolTitle: wasRunning.runningToolTitle,
+			};
+		}
+		if (isRunning) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: toolCallId,
+				runningToolTitle: nextTitle,
+			};
+		}
+		return {
+			...nextState,
+			parts: nextParts,
+		};
+	}
+
+	// Ignored variants: plan, available_commands_update, current_mode_update,
+	// config_option_update, session_info_update, usage_update
+	// Open text/reasoning already flushed above.
+	return nextState;
+}
+
+export function finalizeState(state: ReduceState): AdapterResult {
+	let parts = state.parts;
+	let openText = state.openText;
+	let openReasoning = state.openReasoning;
 
 	if (openText !== null) {
-		parts.push(openText);
+		parts = [
+			...parts,
+			{
+				kind: 'text',
+				id: openText.id,
+				text: openText.text,
+				createdAt: openText.createdAt,
+			},
+		];
+		openText = null;
 	}
 	if (openReasoning !== null) {
-		const durationMs = now - openReasoning.createdAt;
-		parts.push({
-			kind: 'reasoning',
-			id: openReasoning.id,
-			text: openReasoning.text,
-			isStreaming: false,
-			createdAt: openReasoning.createdAt,
-			durationMs,
-		});
-	}
-	for (let j = parts.length - 1; j >= 0; j--) {
-		const part = parts[j];
-		if (part === undefined) continue;
-		if (
-			part.kind === 'tool' &&
-			(part.state === 'input-streaming' || part.state === 'input-available')
-		) {
-			lastStatus = `Running tool: ${part.title}`;
-			break;
-		}
+		const durationMs = Date.now() - openReasoning.createdAt;
+		parts = [
+			...parts,
+			{
+				kind: 'reasoning',
+				id: openReasoning.id,
+				text: openReasoning.text,
+				isStreaming: false,
+				createdAt: openReasoning.createdAt,
+				durationMs,
+			},
+		];
+		openReasoning = null;
 	}
 
-	return { parts, lastStatus };
+	return {
+		parts,
+		lastStatus:
+			state.runningToolTitle !== undefined
+				? `Running tool: ${state.runningToolTitle}`
+				: undefined,
+	};
+}
+
+export function toDisplayState(state: ReduceState): DisplayState {
+	const streamingTail: TimelinePart | null =
+		state.openText !== null
+			? {
+					kind: 'text',
+					id: state.openText.id,
+					text: state.openText.text,
+					createdAt: state.openText.createdAt,
+				}
+			: state.openReasoning !== null
+				? {
+						kind: 'reasoning',
+						id: state.openReasoning.id,
+						text: state.openReasoning.text,
+						isStreaming: true,
+						createdAt: state.openReasoning.createdAt,
+					}
+				: null;
+
+	return {
+		parts: state.parts,
+		streamingTail,
+		lastStatus:
+			state.runningToolTitle !== undefined
+				? `Running tool: ${state.runningToolTitle}`
+				: undefined,
+	};
+}
+
+export function reduceEvents(events: SessionUpdate[]): AdapterResult {
+	let state = createInitialState();
+	const now = Date.now();
+
+	for (let i = 0; i < events.length; i++) {
+		const event = events[i];
+		if (event === undefined) continue;
+		const createdAt = now - (events.length - 1 - i) * 100;
+		state = applyEvent(state, event, createdAt);
+	}
+
+	return finalizeState(state);
 }

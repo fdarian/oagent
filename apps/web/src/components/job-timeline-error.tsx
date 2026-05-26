@@ -1,11 +1,14 @@
 import { AlertCircleIcon } from 'lucide-react';
+import { memo } from 'react';
 import type { TimelinePart } from '@/lib/event-adapter';
 
 export type JobTimelineErrorProps = {
 	part: Extract<TimelinePart, { kind: 'error' }>;
 };
 
-export function JobTimelineError({ part }: JobTimelineErrorProps) {
+export const JobTimelineError = memo(function JobTimelineError({
+	part,
+}: JobTimelineErrorProps) {
 	return (
 		<div className="flex flex-col gap-15 border border-destructive bg-[color-mix(in_srgb,var(--color-terracotta)_5%,var(--color-canvas))] p-22 dark:bg-[color-mix(in_srgb,var(--color-terracotta)_10%,var(--color-canvas))]">
 			<div className="flex items-center gap-15 text-destructive">
@@ -24,4 +27,4 @@ export function JobTimelineError({ part }: JobTimelineErrorProps) {
 			</p>
 		</div>
 	);
-}
+});
