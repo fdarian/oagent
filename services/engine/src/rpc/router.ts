@@ -112,6 +112,73 @@ const program = Effect.gen(function* () {
 				}),
 			),
 		},
+		aliases: {
+			list: yield* createHandler(
+				os
+					.input(v.void_())
+					.output(
+						v.array(
+							v.object({
+								name: v.string(),
+								backend: v.string(),
+								model_id: v.string(),
+								description: v.optional(v.string()),
+							}),
+						),
+					),
+				() => {
+					return Effect.succeed(
+						jobs.listAliases().map((row) => ({
+							name: row.name,
+							backend: row.backend,
+							model_id: row.model_id,
+							description: row.description ?? undefined,
+						})),
+					);
+				},
+			),
+			save: yield* createHandler(
+				os
+					.input(
+						v.object({
+							name: v.pipe(
+								v.string(),
+								v.nonEmpty(),
+								v.regex(/^[a-z0-9-]+$/),
+							),
+							backend: v.picklist(['opencode', 'cursor']),
+							model_id: v.pipe(v.string(), v.nonEmpty()),
+							description: v.optional(v.string()),
+						}),
+					)
+					.output(
+						v.object({
+							name: v.string(),
+							backend: v.string(),
+							model_id: v.string(),
+							description: v.optional(v.string()),
+						}),
+					),
+				(opt) => {
+					return Effect.succeed(
+						jobs.saveAlias({
+							name: opt.input.name,
+							backend: opt.input.backend,
+							model_id: opt.input.model_id,
+							description: opt.input.description,
+						}),
+					);
+				},
+			),
+			delete: yield* createHandler(
+				os
+					.input(v.object({ name: v.string() }))
+					.output(v.object({ ok: v.boolean() })),
+				(opt) => {
+					return Effect.succeed({ ok: jobs.deleteAlias(opt.input.name) });
+				},
+			),
+		},
 	};
 });
 
