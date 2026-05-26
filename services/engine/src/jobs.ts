@@ -30,6 +30,11 @@ type WaitResult =
 	  }
 	| { readonly status: 'error'; readonly message: string };
 
+type EventPage = {
+	events: { event: SessionUpdate; sequence: number }[];
+	nextCursor: number | null;
+};
+
 const TIMEOUT_DEFAULT_MS = 50_000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
@@ -158,10 +163,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			});
 		};
 
-		const readEventsSince = (
+		const readEventsPage = (
 			jobId: number,
 			sinceId: number,
-		): { event: SessionUpdate; sequence: number }[] => {
+			limit: number,
+		): EventPage => {
 			const rows = db
 				.select()
 				.from(schema.events)
@@ -201,9 +207,13 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)),
 				)
 				.orderBy(schema.events.created_at, schema.events.id)
+				.limit(limit + 1)
 				.all();
 
-			return rows.map((row) => {
+			const hasMore = rows.length === limit + 1;
+			const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
+			const events = pageRows.map((row) => {
 				const event = assembleEvent(
 					{
 						id: row.events.id,
@@ -236,6 +246,15 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				);
 				return { event, sequence: row.events.id };
 			});
+
+			const nextCursor = (() => {
+				if (!hasMore) return null;
+				const last = pageRows[pageRows.length - 1];
+				if (last === undefined) return null;
+				return last.events.id;
+			})();
+
+			return { events, nextCursor };
 		};
 
 		const start = (input: {
@@ -432,7 +451,16 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				.get();
 			if (job === undefined) return undefined;
 
-			const events = readEventsSince(job.id, 0);
+			const allEvents: SessionUpdate[] = [];
+			let cursor = 0;
+			while (true) {
+				const page = readEventsPage(job.id, cursor, 100);
+				for (const item of page.events) {
+					allEvents.push(item.event);
+				}
+				if (page.nextCursor === null) break;
+				cursor = page.nextCursor;
+			}
 			return {
 				id: job.uuid,
 				status: job.status,
@@ -441,7 +469,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				prompt: job.prompt,
 				cwd: job.cwd,
 				model: job.model ?? undefined,
-				recentEvents: events.map((e) => e.event),
+				recentEvents: allEvents,
 			};
 		};
 
@@ -481,15 +509,15 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			list,
 			getDetail,
 			subscribe,
-			readEventsSince: (jobId: string, sinceId: number) => {
+			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
 					.select()
 					.from(schema.jobs)
 					.where(eq(schema.jobs.uuid, jobId))
 					.limit(1)
 					.get();
-				if (job === undefined) return [];
-				return readEventsSince(job.id, sinceId);
+				if (job === undefined) return { events: [], nextCursor: null };
+				return readEventsPage(job.id, sinceId, limit);
 			},
 		};
 	}),

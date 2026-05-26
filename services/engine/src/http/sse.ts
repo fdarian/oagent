@@ -72,15 +72,25 @@ export function handleJobEvents(
 
 			// Kick off history replay asynchronously so HTTP headers flush immediately.
 			(async () => {
-				// Read history from DB
-				const history = jobs.readEventsSince(jobId, 0);
-				for (const item of history) {
+				const BATCH_SIZE = 100;
+				let cursor = 0;
+				while (true) {
 					if (signal.aborted) {
 						onAbort();
 						return;
 					}
-					safeEnqueue(encode(item.event));
-					if (item.sequence > maxSequence) maxSequence = item.sequence;
+					const page = jobs.readEventsPage(jobId, cursor, BATCH_SIZE);
+					for (const item of page.events) {
+						if (signal.aborted) {
+							onAbort();
+							return;
+						}
+						safeEnqueue(encode(item.event));
+						if (item.sequence > maxSequence) maxSequence = item.sequence;
+					}
+					if (page.nextCursor === null) break;
+					cursor = page.nextCursor;
+					await new Promise<void>((r) => setImmediate(r));
 				}
 
 				// Atomically switch to live and drain buffer
