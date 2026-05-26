@@ -5,18 +5,24 @@ export type JobEventsState = {
 	parts: TimelinePart[];
 	lastStatus?: string;
 	terminal: boolean;
+	isLoading: boolean;
 };
 
 export function useJobEvents(jobId: string | undefined): JobEventsState {
 	const [result, setResult] = useState<JobEventsState>({
 		parts: [],
 		terminal: false,
+		isLoading: false,
 	});
 	const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
 
 	useEffect(() => {
 		eventsRef.current = [];
-		setResult({ parts: [], terminal: false });
+		setResult({
+			parts: [],
+			terminal: false,
+			isLoading: jobId !== undefined,
+		});
 
 		if (jobId === undefined) {
 			return;
@@ -31,6 +37,7 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 				setResult((prev) => ({
 					...prev,
 					terminal: true,
+					isLoading: false,
 				}));
 				return;
 			}
@@ -40,11 +47,13 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 				parts: next.parts,
 				lastStatus: next.lastStatus,
 				terminal: false,
+				isLoading: false,
 			});
 		};
 
 		source.onerror = () => {
 			source.close();
+			setResult((prev) => ({ ...prev, isLoading: false }));
 		};
 
 		return () => {

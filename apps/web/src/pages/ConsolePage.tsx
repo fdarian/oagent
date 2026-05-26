@@ -73,7 +73,13 @@ export function ConsolePage() {
 										onExpandPrompt={() => setIsPromptExpanded(true)}
 									/>
 									<div className="mt-22">
-										<JobTimeline parts={events.parts} />
+										{events.isLoading && events.parts.length === 0 ? (
+											<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
+												Loading events…
+											</div>
+										) : (
+											<JobTimeline parts={events.parts} />
+										)}
 									</div>
 								</div>
 							</div>
