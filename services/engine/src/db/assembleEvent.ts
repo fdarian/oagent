@@ -158,7 +158,7 @@ export function assembleEvent(
 				method:
 					typeof meta?.method === 'string' ? meta.method : '',
 				params: meta?.params,
-			} as SessionUpdate;
+			} as unknown as SessionUpdate;
 		}
 
 		default:

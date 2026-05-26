@@ -5,7 +5,8 @@ import type { Jobs } from '../../jobs.ts';
 const description = `\
 Delegate a task to the coding agent, running as a subprocess. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
-agent is the coding agent. Returns immediately with {jobId, waitUrl?}. If waitUrl is \
+agent is the coding agent. Supports two backends: OpenCode and Cursor CLI. \
+Returns immediately with {jobId, waitUrl?}. If waitUrl is \
 present, the recommended way to wait is to run \`curl -sS <waitUrl>\` as a \
 background Bash command (run_in_background=true), then read the result with \
 BashOutput when ready. The curl returns the same JSON shape as result. \
@@ -14,11 +15,9 @@ will block until the job is terminal or the timeout fires; on timeout the respon
 is {status:"running"} and you can curl again. If waitUrl is absent (stdio mode), \
 fall back to repeatedly calling result. The first successful response \
 with status "done" will include the agent sessionId; pass that sessionId back \
-into a subsequent start call to continue the same conversation. The model \
-parameter takes a model id for the agent backend. If the user hasn't specified a \
-model, ask them which one to use. The cwd parameter is required: an absolute \
-path to the directory the agent should operate in — typically the parent agent's \
-project root.`;
+into a subsequent start call to continue the same conversation. The cwd \
+parameter is required: an absolute path to the directory the agent should \
+operate in — typically the parent agent's project root.`;
 
 const inputSchema = {
 	prompt: z.string().describe('The task or question to send to the agent.'),
@@ -31,7 +30,7 @@ const inputSchema = {
 		.string()
 		.optional()
 		.describe(
-			'Model id for the agent backend. Omit only if the user has not specified one; in that case, ask the user.',
+			'Model id in `<backend>:<modelId>` format. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:composer-2.5`. If the user has not specified a model, ask them which model and backend to use.',
 		),
 	sessionId: z
 		.string()
