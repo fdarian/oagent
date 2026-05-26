@@ -15,9 +15,10 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 	const eventsRef = useRef<Parameters<typeof reduceEvents>[0]>([]);
 
 	useEffect(() => {
+		eventsRef.current = [];
+		setResult({ parts: [], terminal: false });
+
 		if (jobId === undefined) {
-			eventsRef.current = [];
-			setResult({ parts: [], terminal: false });
 			return;
 		}
 
