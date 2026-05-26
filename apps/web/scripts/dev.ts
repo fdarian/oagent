@@ -25,7 +25,9 @@ const main = defineDevCli({
 			let engineUrl: string;
 
 			if (localEngine === 'engine') {
-				const engine = yield* ctx.awaitRunning<{ url: string }>('@oagent/engine');
+				const engine = yield* ctx.awaitRunning<{ url: string }>(
+					'@oagent/engine',
+				);
 				engineUrl = engine.url;
 				yield* Effect.logInfo(`[dev] using local engine url: ${engineUrl}`);
 			} else {
