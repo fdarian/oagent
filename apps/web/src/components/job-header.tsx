@@ -1,4 +1,4 @@
-import { CopyIcon, XCircleIcon } from 'lucide-react';
+import { CopyIcon, MaximizeIcon, XCircleIcon } from 'lucide-react';
 import { useCallback, useState } from 'react';
 import { formatAge, formatElapsed } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -12,6 +12,7 @@ export type JobHeaderProps = {
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
+	onExpandPrompt?: () => void;
 };
 
 export function JobHeader({
@@ -23,6 +24,7 @@ export function JobHeader({
 	createdAt,
 	terminatedAt,
 	onCancel,
+	onExpandPrompt,
 }: JobHeaderProps) {
 	const [copied, setCopied] = useState(false);
 
@@ -45,13 +47,28 @@ export function JobHeader({
 			<span className="inline-block h-[6px] w-[6px] bg-destructive" />
 		);
 
+	const isPromptTruncated =
+		prompt.split('\n').length > 2 || prompt !== promptLines;
+
 	return (
 		<div className="flex flex-col gap-15 border-b border-border pb-22">
 			<div className="flex items-start justify-between gap-15">
 				<div className="flex min-w-0 flex-1 flex-col gap-15">
-					<pre className="whitespace-pre-wrap text-body font-light text-foreground">
-						{promptLines}
-					</pre>
+					<div className="group relative">
+						<pre className="whitespace-pre-wrap text-body font-light text-foreground">
+							{promptLines}
+						</pre>
+						{isPromptTruncated && onExpandPrompt !== undefined && (
+							<button
+								type="button"
+								onClick={onExpandPrompt}
+								className="mt-1 flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
+							>
+								<MaximizeIcon className="h-3 w-3" />
+								View full prompt
+							</button>
+						)}
+					</div>
 					<div className="flex items-center gap-15 text-caption text-muted-foreground">
 						<span className="truncate">{cwd}</span>
 						<span>·</span>
