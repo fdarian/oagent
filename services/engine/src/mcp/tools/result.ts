@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
 const description = `\
-Fetch the result of an OpenCode job (started via start). In HTTP daemon \
+Fetch the result of an agent job (started via start). In HTTP daemon \
 mode, prefer the waitUrl from start; this tool is the stdio-mode \
 fallback. Blocks up to timeoutMs (default 50000, capped at 55000 to stay under \
 Claude Code's tool timeout). Returns a discriminated union: { status: "running" } \
