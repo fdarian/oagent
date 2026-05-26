@@ -1,11 +1,12 @@
-import { Agentation } from 'agentation';
+import { Link, Route, Routes } from 'react-router-dom';
+import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsolePage } from './pages/ConsolePage.tsx';
 
 export function App() {
 	return (
-		<>
-			<ConsolePage />
-			{process.env.NODE_ENV === 'development' && <Agentation />}
-		</>
+		<Routes>
+			<Route path="/" element={<ConsolePage />} />
+			<Route path="/aliases" element={<AliasesPage />} />
+		</Routes>
 	);
 }

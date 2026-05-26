@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { JobListItem } from '@/lib/use-job-list';
 import { JobSidebarFilters } from './job-sidebar-filters';
 import { JobSidebarList } from './job-sidebar-list';
@@ -27,6 +28,14 @@ export function JobSidebar({
 					oagent
 				</span>
 				<ThemeToggle />
+			</div>
+			<div className="flex items-center justify-between border-b border-border px-22 py-15">
+				<Link
+					to="/aliases"
+					className="text-caption text-muted-foreground hover:text-foreground"
+				>
+					Aliases
+				</Link>
 			</div>
 			<JobSidebarFilters
 				cwdFilter={cwdFilter}
