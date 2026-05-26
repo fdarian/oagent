@@ -45,6 +45,12 @@ export type AdapterResult = {
 	lastStatus?: string;
 };
 
+export type DisplayState = {
+	parts: TimelinePart[];
+	streamingTail: TimelinePart | null;
+	lastStatus?: string;
+};
+
 function makeId(prefix: string, counter: number): string {
 	return `${prefix}-${counter}`;
 }
@@ -106,6 +112,8 @@ export type ReduceState = {
 	openReasoning: OpenReasoning | null;
 	toolIndices: Map<string, number>;
 	idCounter: number;
+	runningToolId: string | undefined;
+	runningToolTitle: string | undefined;
 };
 
 export function createInitialState(): ReduceState {
@@ -115,6 +123,8 @@ export function createInitialState(): ReduceState {
 		openReasoning: null,
 		toolIndices: new Map(),
 		idCounter: 0,
+		runningToolId: undefined,
+		runningToolTitle: undefined,
 	};
 }
 
@@ -156,6 +166,12 @@ function flushOpenReasoning(
 		],
 		openReasoning: null,
 	};
+}
+
+function isRunningToolState(
+	state: 'input-streaming' | 'input-available' | 'output-available' | 'output-error',
+): boolean {
+	return state === 'input-streaming' || state === 'input-available';
 }
 
 export function applyEvent(
@@ -305,6 +321,7 @@ export function applyEvent(
 		if (existingIndex === undefined) {
 			const toolIndices = new Map(nextState.toolIndices);
 			toolIndices.set(toolCallId, nextState.parts.length);
+			const isRunning = isRunningToolState(newState);
 			return {
 				...nextState,
 				toolIndices,
@@ -323,6 +340,10 @@ export function applyEvent(
 						createdAt,
 					},
 				],
+				runningToolId: isRunning ? toolCallId : nextState.runningToolId,
+				runningToolTitle: isRunning
+					? event.title
+					: nextState.runningToolTitle,
 			};
 		}
 		const existing = nextState.parts[existingIndex];
@@ -346,6 +367,27 @@ export function applyEvent(
 			createdAt: existing.createdAt,
 			durationMs,
 		};
+		const isRunning = isRunningToolState(newState);
+		const wasRunning =
+			nextState.runningToolId === toolCallId && !isRunning
+				? { runningToolId: undefined as string | undefined, runningToolTitle: undefined as string | undefined }
+				: null;
+		if (wasRunning !== null) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: wasRunning.runningToolId,
+				runningToolTitle: wasRunning.runningToolTitle,
+			};
+		}
+		if (isRunning) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: toolCallId,
+				runningToolTitle: event.title,
+			};
+		}
 		return {
 			...nextState,
 			parts: nextParts,
@@ -397,6 +439,27 @@ export function applyEvent(
 			createdAt: existing.createdAt,
 			durationMs,
 		};
+		const isRunning = isRunningToolState(nextState_);
+		const wasRunning =
+			nextState.runningToolId === toolCallId && !isRunning
+				? { runningToolId: undefined as string | undefined, runningToolTitle: undefined as string | undefined }
+				: null;
+		if (wasRunning !== null) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: wasRunning.runningToolId,
+				runningToolTitle: wasRunning.runningToolTitle,
+			};
+		}
+		if (isRunning) {
+			return {
+				...nextState,
+				parts: nextParts,
+				runningToolId: toolCallId,
+				runningToolTitle: nextTitle,
+			};
+		}
 		return {
 			...nextState,
 			parts: nextParts,
@@ -407,20 +470,6 @@ export function applyEvent(
 	// config_option_update, session_info_update, usage_update
 	// Open text/reasoning already flushed above.
 	return nextState;
-}
-
-function computeLastStatus(parts: TimelinePart[]): string | undefined {
-	for (let j = parts.length - 1; j >= 0; j--) {
-		const part = parts[j];
-		if (part === undefined) continue;
-		if (
-			part.kind === 'tool' &&
-			(part.state === 'input-streaming' || part.state === 'input-available')
-		) {
-			return `Running tool: ${part.title}`;
-		}
-	}
-	return undefined;
 }
 
 export function finalizeState(state: ReduceState): AdapterResult {
@@ -458,32 +507,39 @@ export function finalizeState(state: ReduceState): AdapterResult {
 
 	return {
 		parts,
-		lastStatus: computeLastStatus(parts),
+		lastStatus:
+			state.runningToolTitle !== undefined
+				? `Running tool: ${state.runningToolTitle}`
+				: undefined,
 	};
 }
 
-export function toDisplayState(state: ReduceState): AdapterResult {
-	const effectiveParts: TimelinePart[] = [...state.parts];
-	if (state.openText !== null) {
-		effectiveParts.push({
-			kind: 'text',
-			id: state.openText.id,
-			text: state.openText.text,
-			createdAt: state.openText.createdAt,
-		});
-	}
-	if (state.openReasoning !== null) {
-		effectiveParts.push({
-			kind: 'reasoning',
-			id: state.openReasoning.id,
-			text: state.openReasoning.text,
-			isStreaming: true,
-			createdAt: state.openReasoning.createdAt,
-		});
-	}
+export function toDisplayState(state: ReduceState): DisplayState {
+	const streamingTail: TimelinePart | null =
+		state.openText !== null
+			? {
+					kind: 'text',
+					id: state.openText.id,
+					text: state.openText.text,
+					createdAt: state.openText.createdAt,
+			  }
+			: state.openReasoning !== null
+				? {
+						kind: 'reasoning',
+						id: state.openReasoning.id,
+						text: state.openReasoning.text,
+						isStreaming: true,
+						createdAt: state.openReasoning.createdAt,
+				  }
+				: null;
+
 	return {
-		parts: effectiveParts,
-		lastStatus: computeLastStatus(effectiveParts),
+		parts: state.parts,
+		streamingTail,
+		lastStatus:
+			state.runningToolTitle !== undefined
+				? `Running tool: ${state.runningToolTitle}`
+				: undefined,
 	};
 }
 

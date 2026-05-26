@@ -10,6 +10,7 @@ import {
 
 export type JobEventsState = {
 	parts: TimelinePart[];
+	streamingTail: TimelinePart | null;
 	lastStatus?: string;
 	terminal: boolean;
 	isLoading: boolean;
@@ -18,6 +19,7 @@ export type JobEventsState = {
 export function useJobEvents(jobId: string | undefined): JobEventsState {
 	const [result, setResult] = useState<JobEventsState>({
 		parts: [],
+		streamingTail: null,
 		terminal: false,
 		isLoading: false,
 	});
@@ -27,6 +29,7 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 		stateRef.current = createInitialState();
 		setResult({
 			parts: [],
+			streamingTail: null,
 			terminal: false,
 			isLoading: jobId !== undefined,
 		});
@@ -44,6 +47,7 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 				const final = finalizeState(stateRef.current);
 				setResult({
 					parts: final.parts,
+					streamingTail: null,
 					lastStatus: final.lastStatus,
 					terminal: true,
 					isLoading: false,
@@ -54,6 +58,7 @@ export function useJobEvents(jobId: string | undefined): JobEventsState {
 			const display = toDisplayState(stateRef.current);
 			setResult({
 				parts: display.parts,
+				streamingTail: display.streamingTail,
 				lastStatus: display.lastStatus,
 				terminal: false,
 				isLoading: false,

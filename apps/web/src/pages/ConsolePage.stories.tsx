@@ -149,6 +149,7 @@ export const RunningSession: Story = {
 										createdAt: Date.now() - 5000,
 									},
 								]}
+								streamingTail={null}
 							/>
 						</div>
 					</div>
