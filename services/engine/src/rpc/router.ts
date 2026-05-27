@@ -2,10 +2,12 @@ import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
-import { Jobs } from '../jobs.ts';
+import { Jobs, ModelNotAvailableError } from '../jobs.ts';
+import { ModelCatalog } from '../model-catalog.ts';
 
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
+	const modelCatalog = yield* ModelCatalog;
 
 	return {
 		jobs: {
@@ -146,23 +148,65 @@ const program = Effect.gen(function* () {
 						}),
 					)
 					.output(
-						v.object({
-							name: v.string(),
-							backend: v.string(),
-							model_id: v.string(),
-							description: v.optional(v.string()),
-						}),
+						v.union([
+							v.object({
+								ok: v.literal(true),
+								name: v.string(),
+								backend: v.string(),
+								model_id: v.string(),
+								description: v.optional(v.string()),
+							}),
+							v.object({
+								ok: v.literal(false),
+								error: v.object({ code: v.string(), message: v.string() }),
+							}),
+						]),
 					),
-				(opt) => {
-					return Effect.succeed(
-						jobs.saveAlias({
+				Effect.fn(function* (opt) {
+					return yield* Effect.gen(function* () {
+						const models = yield* modelCatalog.list(opt.input.backend);
+						if (!models.includes(opt.input.model_id)) {
+							return yield* new ModelNotAvailableError({
+								model_id: opt.input.model_id,
+								backend: opt.input.backend,
+								known_count: models.length,
+								message: `model '${opt.input.model_id}' not available for ${opt.input.backend} (${models.length} known) — pick from the combobox or refresh`,
+							});
+						}
+						const saved = jobs.saveAlias({
 							name: opt.input.name,
 							backend: opt.input.backend,
 							model_id: opt.input.model_id,
 							description: opt.input.description,
-						}),
+						});
+						return {
+							ok: true as const,
+							name: saved.name,
+							backend: saved.backend,
+							model_id: saved.model_id,
+							description: saved.description,
+						};
+					}).pipe(
+						Effect.catchTag('ModelNotAvailableError', (err) =>
+							Effect.succeed({
+								ok: false as const,
+								error: {
+									code: 'MODEL_NOT_AVAILABLE',
+									message: err.message,
+								},
+							}),
+						),
+						Effect.catchTag('ModelCatalogError', (err) =>
+							Effect.succeed({
+								ok: false as const,
+								error: {
+									code: 'MODEL_CATALOG_UNAVAILABLE',
+									message: err.message,
+								},
+							}),
+						),
 					);
-				},
+				}),
 			),
 			delete: yield* createHandler(
 				os
@@ -171,6 +215,17 @@ const program = Effect.gen(function* () {
 				(opt) => {
 					return Effect.succeed({ ok: jobs.deleteAlias(opt.input.name) });
 				},
+			),
+		},
+		models: {
+			list: yield* createHandler(
+				os
+					.input(v.object({ backend: v.picklist(['opencode', 'cursor']) }))
+					.output(v.array(v.string())),
+				Effect.fn(function* (opt) {
+					const models = yield* modelCatalog.list(opt.input.backend);
+					return [...models];
+				}),
 			),
 		},
 	};

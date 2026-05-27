@@ -15,6 +15,16 @@ class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 	jobId: Schema.String,
 }) {}
 
+export class ModelNotAvailableError extends Schema.TaggedError<ModelNotAvailableError>()(
+	'ModelNotAvailableError',
+	{
+		model_id: Schema.String,
+		backend: Schema.String,
+		known_count: Schema.Number,
+		message: Schema.String,
+	},
+) {}
+
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
 	{
