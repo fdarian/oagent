@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { UIMessage } from 'ai';
 import { ArrowDownIcon, DownloadIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
-import { createContext, useCallback, useContext, useRef } from 'react';
+import { createContext, useCallback, useContext, useLayoutEffect, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -53,7 +53,12 @@ export const Conversation = ({
 		anchorTo: 'end',
 		followOnAppend: true,
 		scrollEndThreshold: 80,
+		overscan: 6,
 	});
+
+	useLayoutEffect(() => {
+		virtualizer.scrollToEnd();
+	}, [virtualizer]);
 
 	return (
 		<div
