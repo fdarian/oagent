@@ -97,7 +97,7 @@ function ModelCombobox(props: ModelComboboxProps) {
 					aria-expanded={open}
 					aria-invalid={props.invalid}
 					className={cn(
-						'w-full justify-between font-mono',
+						'w-full justify-between font-mono text-foreground',
 						props.value.trim() === '' && 'font-sans text-muted-foreground',
 					)}
 				>
