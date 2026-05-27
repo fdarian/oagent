@@ -87,6 +87,8 @@ export const ConversationContent = ({
 			{virtualItems.map((virtualItem) => (
 				<div
 					key={virtualItem.key}
+					ref={virtualizer.measureElement}
+					data-index={virtualItem.index}
 					style={{
 						position: 'absolute',
 						top: 0,
