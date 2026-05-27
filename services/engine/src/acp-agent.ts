@@ -170,7 +170,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				onExtensionEvent?: (method: string, params: unknown) => void;
 			}) =>
 				Effect.gen(function* () {
-					const sessionId = yield* (() => {
+					const sessionResult = yield* (() => {
 						if (input.sessionId !== undefined) {
 							const sid = input.sessionId;
 							return Effect.tryPromise({
@@ -181,20 +181,33 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 										mcpServers: [],
 									}),
 								catch: (cause) => new AcpSessionError({ cause }),
-							}).pipe(Effect.map(() => sid));
+							}).pipe(
+								Effect.map((res) => ({
+									sessionId: sid,
+									availableModels:
+										res.models === undefined || res.models === null
+											? undefined
+											: res.models.availableModels.map((m) => m.modelId),
+								})),
+							);
 						}
 						return Effect.tryPromise({
-							try: () =>
-								conn
-									.newSession({ cwd: input.cwd, mcpServers: [] })
-									.then((res) => res.sessionId),
+							try: () => conn.newSession({ cwd: input.cwd, mcpServers: [] }),
 							catch: (cause) => new AcpSessionError({ cause }),
-						});
+						}).pipe(
+							Effect.map((res) => ({
+								sessionId: res.sessionId,
+								availableModels:
+									res.models === undefined || res.models === null
+										? undefined
+										: res.models.availableModels.map((m) => m.modelId),
+							})),
+						);
 					})();
 
 					let buffer = '';
 
-					const unregister = registerListener(sessionId, (update) => {
+					const unregister = registerListener(sessionResult.sessionId, (update) => {
 						if (input.onEvent !== undefined) {
 							input.onEvent(update);
 						}
@@ -207,12 +220,15 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 					});
 
 					if (input.onExtensionEvent !== undefined) {
-						extNotificationHandlers.set(sessionId, input.onExtensionEvent);
+						extNotificationHandlers.set(
+							sessionResult.sessionId,
+							input.onExtensionEvent,
+						);
 					}
 
 					const cleanup = Effect.sync(() => {
 						unregister();
-						extNotificationHandlers.delete(sessionId);
+						extNotificationHandlers.delete(sessionResult.sessionId);
 					});
 
 					const response = yield* Effect.gen(function* () {
@@ -221,32 +237,88 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 							yield* Effect.tryPromise({
 								try: () =>
 									conn.setSessionConfigOption({
-										sessionId,
+										sessionId: sessionResult.sessionId,
 										configId: 'model',
 										value: model,
 									}),
-								catch: (cause) =>
-									new AcpTurnFailed({
+								catch: (cause) => {
+									const rpcMessage = (() => {
+										if (
+											typeof cause === 'object' &&
+											cause !== null
+										) {
+											const c = cause as Record<
+												string,
+												unknown
+											>;
+											if (
+												typeof c.data === 'object' &&
+												c.data !== null
+											) {
+												const d = c.data as Record<
+													string,
+													unknown
+												>;
+												if (
+													typeof d.message ===
+													'string'
+												) {
+													return d.message;
+												}
+											}
+											if (
+												typeof c.message === 'string'
+											) {
+												return c.message;
+											}
+										}
+										return undefined;
+									})();
+
+									const modelsHint =
+										sessionResult.availableModels !==
+											undefined &&
+										sessionResult.availableModels.length >
+											0
+											? ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`
+											: '';
+
+									const message =
+										rpcMessage !== undefined
+											? `${rpcMessage}${modelsHint}`
+											: `setConfigOption failed${modelsHint}`;
+
+									return new AcpTurnFailed({
 										code: 'SET_CONFIG_OPTION',
-										message: 'setConfigOption failed',
+										message,
 										cause,
-									}),
+									});
+								},
 							});
 						}
 
 						return yield* Effect.tryPromise({
 							try: (signal) => {
 								const onAbort = () => {
-									void conn.cancel({ sessionId });
+									void conn.cancel({
+										sessionId: sessionResult.sessionId,
+									});
 								};
-								signal.addEventListener('abort', onAbort, { once: true });
+								signal.addEventListener('abort', onAbort, {
+									once: true,
+								});
 								return conn
 									.prompt({
-										sessionId,
-										prompt: [{ type: 'text', text: input.prompt }],
+										sessionId: sessionResult.sessionId,
+										prompt: [
+											{ type: 'text', text: input.prompt },
+										],
 									})
 									.finally(() => {
-										signal.removeEventListener('abort', onAbort);
+										signal.removeEventListener(
+											'abort',
+											onAbort,
+										);
 									});
 							},
 							catch: (cause) =>
@@ -259,7 +331,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 					}).pipe(Effect.ensuring(cleanup));
 
 					return {
-						sessionId,
+						sessionId: sessionResult.sessionId,
 						text: buffer,
 						stopReason: response.stopReason,
 					};
