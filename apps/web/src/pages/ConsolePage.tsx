@@ -61,8 +61,8 @@ export function ConsolePage() {
 								onClose={() => setIsPromptExpanded(false)}
 							/>
 						) : (
-							<div className="min-h-0 flex-1 overflow-y-auto px-33 py-22">
-								<div className="mx-auto max-w-[900px]">
+							<div className="flex min-h-0 flex-1 flex-col px-33 py-22">
+								<div className="mx-auto flex w-full max-w-[900px] flex-col">
 									<JobHeader
 										id={selectedJob.id}
 										status={
@@ -84,7 +84,7 @@ export function ConsolePage() {
 										}}
 										onExpandPrompt={() => setIsPromptExpanded(true)}
 									/>
-									<div className="mt-22">
+									<div className="mt-22 min-h-0 flex-1">
 										{events.isLoading &&
 										events.parts.length === 0 &&
 										events.streamingTail === null ? (
