@@ -1,38 +1,106 @@
 'use client';
 
+import type { VirtualItem, Virtualizer } from '@tanstack/react-virtual';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import type { UIMessage } from 'ai';
 import { ArrowDownIcon, DownloadIcon } from 'lucide-react';
-import type { ComponentProps } from 'react';
-import { useCallback } from 'react';
-import { StickToBottom, useStickToBottomContext } from 'use-stick-to-bottom';
+import type { ComponentProps, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-export type ConversationProps = ComponentProps<typeof StickToBottom>;
+type ConversationContextValue = {
+	virtualizer: Virtualizer<HTMLDivElement, Element>;
+	scrollRef: React.RefObject<HTMLDivElement | null>;
+};
 
-export const Conversation = ({ className, ...props }: ConversationProps) => (
-	<StickToBottom
-		className={cn('relative flex-1 overflow-y-hidden', className)}
-		initial="smooth"
-		resize="smooth"
-		role="log"
-		{...props}
-	/>
+const ConversationContext = createContext<ConversationContextValue | null>(
+	null,
 );
 
-export type ConversationContentProps = ComponentProps<
-	typeof StickToBottom.Content
->;
+function useConversationContext(): ConversationContextValue {
+	const value = useContext(ConversationContext);
+	if (value === null) {
+		throw new Error(
+			'Conversation sub-components must be rendered inside <Conversation>',
+		);
+	}
+	return value;
+}
+
+export type ConversationProps = ComponentProps<'div'> & {
+	count: number;
+	getItemKey: (index: number) => string;
+	estimateSize?: () => number;
+};
+
+export const Conversation = ({
+	count,
+	getItemKey,
+	estimateSize = () => 72,
+	className,
+	children,
+	...props
+}: ConversationProps) => {
+	const scrollRef = useRef<HTMLDivElement>(null);
+	const virtualizer = useVirtualizer({
+		count,
+		getScrollElement: () => scrollRef.current,
+		estimateSize,
+		getItemKey,
+		anchorTo: 'end',
+		followOnAppend: true,
+		scrollEndThreshold: 80,
+	});
+
+	return (
+		<div
+			ref={scrollRef}
+			className={cn('relative flex-1 overflow-y-auto', className)}
+			role="log"
+			{...props}
+		>
+			<ConversationContext.Provider value={{ virtualizer, scrollRef }}>
+				{children}
+			</ConversationContext.Provider>
+		</div>
+	);
+};
+
+export type ConversationContentProps = {
+	className?: string;
+	children: (virtualItem: VirtualItem) => ReactNode;
+};
 
 export const ConversationContent = ({
 	className,
-	...props
-}: ConversationContentProps) => (
-	<StickToBottom.Content
-		className={cn('flex flex-col gap-8 p-4', className)}
-		{...props}
-	/>
-);
+	children,
+}: ConversationContentProps) => {
+	const { virtualizer } = useConversationContext();
+	const virtualItems = virtualizer.getVirtualItems();
+
+	return (
+		<div
+			className={cn('relative w-full', className)}
+			style={{ height: `${virtualizer.getTotalSize()}px` }}
+		>
+			{virtualItems.map((virtualItem) => (
+				<div
+					key={virtualItem.key}
+					style={{
+						position: 'absolute',
+						top: 0,
+						left: 0,
+						width: '100%',
+						transform: `translateY(${virtualItem.start}px)`,
+					}}
+				>
+					{children(virtualItem)}
+				</div>
+			))}
+		</div>
+	);
+};
 
 export type ConversationEmptyStateProps = ComponentProps<'div'> & {
 	title?: string;
@@ -75,28 +143,26 @@ export const ConversationScrollButton = ({
 	className,
 	...props
 }: ConversationScrollButtonProps) => {
-	const { isAtBottom, scrollToBottom } = useStickToBottomContext();
+	const { virtualizer } = useConversationContext();
 
-	const handleScrollToBottom = useCallback(() => {
-		scrollToBottom();
-	}, [scrollToBottom]);
+	if (virtualizer.isAtEnd()) {
+		return null;
+	}
 
 	return (
-		!isAtBottom && (
-			<Button
-				className={cn(
-					'absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted',
-					className,
-				)}
-				onClick={handleScrollToBottom}
-				size="icon"
-				type="button"
-				variant="outline"
-				{...props}
-			>
-				<ArrowDownIcon className="size-4" />
-			</Button>
-		)
+		<Button
+			className={cn(
+				'absolute bottom-4 left-[50%] translate-x-[-50%] rounded-full dark:bg-background dark:hover:bg-muted',
+				className,
+			)}
+			onClick={() => virtualizer.scrollToEnd()}
+			size="icon"
+			type="button"
+			variant="outline"
+			{...props}
+		>
+			<ArrowDownIcon className="size-4" />
+		</Button>
 	);
 };
 
