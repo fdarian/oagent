@@ -49,6 +49,7 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 						: input.model;
 				return acpAgent.runTurn({ ...input, model });
 			},
+			listModels: acpAgent.listModels,
 		};
 	}),
 }) {}
