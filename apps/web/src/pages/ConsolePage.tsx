@@ -61,44 +61,45 @@ export function ConsolePage() {
 								onClose={() => setIsPromptExpanded(false)}
 							/>
 						) : (
-							<div className="flex min-h-0 flex-1 flex-col px-33 py-22">
-								<div className="mx-auto flex w-full max-w-[900px] flex-col">
-									<JobHeader
-										id={selectedJob.id}
-										status={
-											selectedJob.status !== 'running'
-												? selectedJob.status
-												: events.terminal
-													? events.parts.some((p) => p.kind === 'error')
-														? 'error'
-														: 'done'
-													: selectedJob.status
-										}
-										prompt={selectedJob.prompt}
-										cwd={selectedJob.cwd}
-										model={selectedJob.model}
-										createdAt={selectedJob.createdAt}
-										terminatedAt={selectedJob.terminatedAt}
-										onCancel={() => {
-											cancelJob.mutate(selectedJob.id);
-										}}
-										onExpandPrompt={() => setIsPromptExpanded(true)}
-									/>
-									<div className="mt-22 min-h-0 flex-1">
-										{events.isLoading &&
+							<div className="flex min-h-0 flex-1 flex-col">
+								<JobTimeline
+									parts={events.parts}
+									streamingTail={events.streamingTail}
+									isLoading={
+										events.isLoading &&
 										events.parts.length === 0 &&
-										events.streamingTail === null ? (
-											<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
-												Loading events…
+										events.streamingTail === null
+									}
+									header={
+										<div className="px-33 py-22">
+											<div className="mx-auto max-w-[900px]">
+												<JobHeader
+													id={selectedJob.id}
+													status={
+														selectedJob.status !== 'running'
+															? selectedJob.status
+															: events.terminal
+																? events.parts.some(
+																		(p) => p.kind === 'error',
+																	)
+																	? 'error'
+																	: 'done'
+																: selectedJob.status
+													}
+													prompt={selectedJob.prompt}
+													cwd={selectedJob.cwd}
+													model={selectedJob.model}
+													createdAt={selectedJob.createdAt}
+													terminatedAt={selectedJob.terminatedAt}
+													onCancel={() => {
+														cancelJob.mutate(selectedJob.id);
+													}}
+													onExpandPrompt={() => setIsPromptExpanded(true)}
+												/>
 											</div>
-										) : (
-											<JobTimeline
-												parts={events.parts}
-												streamingTail={events.streamingTail}
-											/>
-										)}
-									</div>
-								</div>
+										</div>
+									}
+								/>
 							</div>
 						)}
 					</>

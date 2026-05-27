@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
 	Conversation,
 	ConversationContent,
@@ -12,6 +13,8 @@ import { JobTimelineTool } from './job-timeline-tool';
 export type JobTimelineProps = {
 	parts: TimelinePart[];
 	streamingTail: TimelinePart | null;
+	header?: ReactNode;
+	isLoading?: boolean;
 };
 
 function renderPart(part: TimelinePart) {
@@ -29,16 +32,13 @@ function renderPart(part: TimelinePart) {
 	}
 }
 
-export function JobTimeline({ parts, streamingTail }: JobTimelineProps) {
+export function JobTimeline({
+	parts,
+	streamingTail,
+	header,
+	isLoading,
+}: JobTimelineProps) {
 	const allParts = streamingTail !== null ? [...parts, streamingTail] : parts;
-
-	if (allParts.length === 0) {
-		return (
-			<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
-				Waiting for events…
-			</div>
-		);
-	}
 
 	function partAt(index: number): TimelinePart {
 		const part = allParts[index];
@@ -56,10 +56,23 @@ export function JobTimeline({ parts, streamingTail }: JobTimelineProps) {
 			getItemKey={(index) => partAt(index).id}
 			estimateSize={() => 72}
 			className="min-h-0 flex-1"
+			header={header}
 		>
-			<ConversationContent>
-				{(virtualItem) => renderPart(partAt(virtualItem.index))}
-			</ConversationContent>
+			{allParts.length === 0 ? (
+				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
+					{isLoading ? 'Loading events…' : 'Waiting for events…'}
+				</div>
+			) : (
+				<ConversationContent>
+					{(virtualItem) => (
+						<div className="px-33">
+							<div className="mx-auto max-w-[900px]">
+								{renderPart(partAt(virtualItem.index))}
+							</div>
+						</div>
+					)}
+				</ConversationContent>
+			)}
 			<ConversationScrollButton />
 		</Conversation>
 	);

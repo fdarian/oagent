@@ -32,12 +32,14 @@ export type ConversationProps = ComponentProps<'div'> & {
 	count: number;
 	getItemKey: (index: number) => string;
 	estimateSize?: () => number;
+	header?: ReactNode;
 };
 
 export const Conversation = ({
 	count,
 	getItemKey,
 	estimateSize = () => 72,
+	header,
 	className,
 	children,
 	...props
@@ -61,6 +63,11 @@ export const Conversation = ({
 			{...props}
 		>
 			<ConversationContext.Provider value={{ virtualizer, scrollRef }}>
+				{header !== undefined && (
+					<div className="sticky top-0 z-10 bg-background">
+						{header}
+					</div>
+				)}
 				{children}
 			</ConversationContext.Provider>
 		</div>
