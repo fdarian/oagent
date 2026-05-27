@@ -18,7 +18,12 @@ class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
 	{
-		code: Schema.Literal('MISSING', 'INVALID_FORMAT', 'UNKNOWN_BACKEND', 'UNKNOWN_ALIAS'),
+		code: Schema.Literal(
+			'MISSING',
+			'INVALID_FORMAT',
+			'UNKNOWN_BACKEND',
+			'UNKNOWN_ALIAS',
+		),
 		message: Schema.String,
 	},
 ) {}
@@ -58,7 +63,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 		const resolveModel = (
 			model: string,
-		): Effect.Effect<{ backend: string; modelId: string }, ModelResolutionError, never> =>
+		): Effect.Effect<
+			{ backend: string; modelId: string },
+			ModelResolutionError,
+			never
+		> =>
 			Effect.gen(function* () {
 				const colonIdx = model.indexOf(':');
 				if (colonIdx !== -1) {
@@ -315,7 +324,8 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				if (model === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'MISSING',
-						message: 'model is required: specify `<backend>:<modelId>` or an alias name',
+						message:
+							'model is required: specify `<backend>:<modelId>` or an alias name',
 					});
 				}
 

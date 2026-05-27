@@ -114,18 +114,16 @@ const program = Effect.gen(function* () {
 		},
 		aliases: {
 			list: yield* createHandler(
-				os
-					.input(v.void_())
-					.output(
-						v.array(
-							v.object({
-								name: v.string(),
-								backend: v.string(),
-								model_id: v.string(),
-								description: v.optional(v.string()),
-							}),
-						),
+				os.input(v.void_()).output(
+					v.array(
+						v.object({
+							name: v.string(),
+							backend: v.string(),
+							model_id: v.string(),
+							description: v.optional(v.string()),
+						}),
 					),
+				),
 				() => {
 					return Effect.succeed(
 						jobs.listAliases().map((row) => ({
@@ -141,11 +139,7 @@ const program = Effect.gen(function* () {
 				os
 					.input(
 						v.object({
-							name: v.pipe(
-								v.string(),
-								v.nonEmpty(),
-								v.regex(/^[a-z0-9-]+$/),
-							),
+							name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
 							backend: v.picklist(['opencode', 'cursor']),
 							model_id: v.pipe(v.string(), v.nonEmpty()),
 							description: v.optional(v.string()),
