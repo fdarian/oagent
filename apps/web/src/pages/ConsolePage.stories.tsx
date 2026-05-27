@@ -81,8 +81,8 @@ export const RunningSession: Story = {
 			/>
 			<div className="flex min-w-0 flex-1 flex-col">
 				<JobStatusStrip status="Running tool: read_file" isRunning />
-				<div className="min-h-0 flex-1 overflow-y-auto px-33 py-22">
-					<div className="mx-auto max-w-[900px]">
+				<div className="flex min-h-0 flex-1 flex-col px-33 py-22">
+					<div className="mx-auto flex w-full max-w-[900px] flex-col">
 						<JobHeader
 							id="job-run"
 							status="running"
@@ -92,7 +92,7 @@ export const RunningSession: Story = {
 							createdAt={Date.now() - 120_000}
 							onCancel={() => {}}
 						/>
-						<div className="mt-22">
+						<div className="mt-22 min-h-0 flex-1">
 							<JobTimeline
 								parts={[
 									{
@@ -147,6 +147,7 @@ export const RunningSession: Story = {
 										],
 										locations: [{ path: 'src/middleware/auth.ts' }],
 										createdAt: Date.now() - 5000,
+										durationMs: undefined,
 									},
 								]}
 								streamingTail={null}
