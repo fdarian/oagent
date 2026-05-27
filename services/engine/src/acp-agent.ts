@@ -162,7 +162,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 			});
 
 			const listModels = (): Effect.Effect<
-				ReadonlyArray<string>,
+				ReadonlyArray<{ id: string }>,
 				AcpSessionError,
 				never
 			> =>
@@ -173,7 +173,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 					Effect.map((res) =>
 						res.models === undefined || res.models === null
 							? []
-							: res.models.availableModels.map((m) => m.modelId),
+							: res.models.availableModels.map((m) => ({ id: m.modelId })),
 					),
 				);
 

@@ -13,6 +13,11 @@ const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	'gpt-5.5': 'gpt-5.5[context=272k,reasoning=medium,fast=false]',
 };
 
+// Inverse map: canonical id → friendly alias label, built once at module load.
+const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
+	Object.entries(CURSOR_MODEL_ALIASES).map(([label, id]) => [id, label]),
+);
+
 export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 	effect: Effect.gen(function* () {
 		const binary =
@@ -49,7 +54,15 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 						: input.model;
 				return acpAgent.runTurn({ ...input, model });
 			},
-			listModels: acpAgent.listModels,
+			listModels: () =>
+				acpAgent.listModels().pipe(
+					Effect.map((models) =>
+						models.map((entry) => ({
+							id: entry.id,
+							label: CURSOR_ID_TO_LABEL.get(entry.id),
+						})),
+					),
+				),
 		};
 	}),
 }) {}

@@ -165,7 +165,7 @@ const program = Effect.gen(function* () {
 				Effect.fn(function* (opt) {
 					return yield* Effect.gen(function* () {
 						const models = yield* modelCatalog.list(opt.input.backend);
-						if (!models.includes(opt.input.model_id)) {
+						if (!models.some((entry) => entry.id === opt.input.model_id)) {
 							return yield* new ModelNotAvailableError({
 								model_id: opt.input.model_id,
 								backend: opt.input.backend,
@@ -221,10 +221,17 @@ const program = Effect.gen(function* () {
 			list: yield* createHandler(
 				os
 					.input(v.object({ backend: v.picklist(['opencode', 'cursor']) }))
-					.output(v.array(v.string())),
+					.output(
+						v.array(
+							v.object({ id: v.string(), label: v.optional(v.string()) }),
+						),
+					),
 				Effect.fn(function* (opt) {
 					const models = yield* modelCatalog.list(opt.input.backend);
-					return [...models];
+					return models.map((entry) => ({
+						id: entry.id,
+						label: entry.label,
+					}));
 				}),
 			),
 		},

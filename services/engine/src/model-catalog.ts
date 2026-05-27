@@ -4,8 +4,10 @@ import { OpenCode } from './opencode.ts';
 
 type Backend = 'opencode' | 'cursor';
 
+export type ModelEntry = { id: string; label?: string };
+
 type CacheEntry = {
-	models: ReadonlyArray<string>;
+	models: ReadonlyArray<ModelEntry>;
 	fetchedAt: number;
 };
 
@@ -29,7 +31,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			const fetch = (
 				backend: Backend,
-			): Effect.Effect<ReadonlyArray<string>, ModelCatalogError> => {
+			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
 				const inner =
 					backend === 'opencode' ? opencode.listModels() : cursor.listModels();
 				return inner.pipe(
@@ -46,7 +48,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			const list = (
 				backend: Backend,
-			): Effect.Effect<ReadonlyArray<string>, ModelCatalogError> =>
+			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
 				Effect.gen(function* () {
 					const now = Date.now();
 					const current = yield* Ref.get(cache);
@@ -65,7 +67,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			const refresh = (
 				backend: Backend,
-			): Effect.Effect<ReadonlyArray<string>, ModelCatalogError> =>
+			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
 				Effect.gen(function* () {
 					const models = yield* fetch(backend);
 					yield* Ref.update(cache, (m) => {
