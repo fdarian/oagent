@@ -30,7 +30,7 @@ const inputSchema = {
 		.string()
 		.optional()
 		.describe(
-			'Model id in `<backend>:<modelId>` format. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:composer-2.5`. If the user has not specified a model, ask them which model and backend to use.',
+			'Model id in `<backend>:<modelId>` format. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `cursor:sonnet`. For Cursor, friendly names map to the actual bracketed model ids; raw bracketed ids (e.g. `cursor:composer-2.5[fast=true]`) also work. If the user has not specified a model, ask them which model and backend to use.',
 		),
 	sessionId: z
 		.string()

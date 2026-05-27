@@ -1,6 +1,18 @@
 import { Effect } from 'effect';
 import { AcpAgent } from './acp-agent.ts';
 
+const CURSOR_MODEL_ALIASES: Record<string, string> = {
+	auto: 'default[]',
+	'composer-2.5': 'composer-2.5[fast=true]',
+	'composer-2': 'composer-2[fast=true]',
+	sonnet: 'claude-sonnet-4-6[thinking=true,context=200k,effort=medium]',
+	opus: 'claude-opus-4-7[thinking=true,context=300k,effort=xhigh,fast=false]',
+	'kimi-k2.5': 'kimi-k2.5[]',
+	'gemini-3.1-pro': 'gemini-3.1-pro[]',
+	'grok-4.3': 'grok-4.3[context=200k]',
+	'gpt-5.5': 'gpt-5.5[context=272k,reasoning=medium,fast=false]',
+};
+
 export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 	effect: Effect.gen(function* () {
 		const binary =
@@ -29,6 +41,14 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 				}),
 			),
 		);
-		return { runTurn: acpAgent.runTurn };
+		return {
+			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
+				const model =
+					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
+						? CURSOR_MODEL_ALIASES[input.model]
+						: input.model;
+				return acpAgent.runTurn({ ...input, model });
+			},
+		};
 	}),
 }) {}
