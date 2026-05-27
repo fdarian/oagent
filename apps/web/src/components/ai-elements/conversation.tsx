@@ -5,7 +5,13 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { UIMessage } from 'ai';
 import { ArrowDownIcon, DownloadIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
-import { createContext, useCallback, useContext, useLayoutEffect, useRef } from 'react';
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useLayoutEffect,
+	useRef,
+} from 'react';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
@@ -69,9 +75,7 @@ export const Conversation = ({
 		>
 			<ConversationContext.Provider value={{ virtualizer, scrollRef }}>
 				{header !== undefined && (
-					<div className="sticky top-0 z-10 bg-background">
-						{header}
-					</div>
+					<div className="sticky top-0 z-10 bg-background">{header}</div>
 				)}
 				{children}
 			</ConversationContext.Provider>

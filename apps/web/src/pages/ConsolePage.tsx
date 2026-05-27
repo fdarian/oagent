@@ -79,9 +79,7 @@ export function ConsolePage() {
 														selectedJob.status !== 'running'
 															? selectedJob.status
 															: events.terminal
-																? events.parts.some(
-																		(p) => p.kind === 'error',
-																	)
+																? events.parts.some((p) => p.kind === 'error')
 																	? 'error'
 																	: 'done'
 																: selectedJob.status
