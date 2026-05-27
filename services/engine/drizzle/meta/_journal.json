@@ -15,6 +15,13 @@
       "when": 1778154739562,
       "tag": "0001_mute_inertia",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1779772441768,
+      "tag": "0002_unknown_tempest",
+      "breakpoints": true
     }
   ]
 }

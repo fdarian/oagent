@@ -5,6 +5,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
+import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -13,6 +14,14 @@ import { OpenCode } from './opencode.ts';
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 	jobId: Schema.String,
 }) {}
+
+export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
+	'ModelResolutionError',
+	{
+		code: Schema.Literal('MISSING', 'INVALID_FORMAT', 'UNKNOWN_BACKEND'),
+		message: Schema.String,
+	},
+) {}
 
 type JobOk = {
 	readonly sessionId: string;
@@ -44,6 +53,7 @@ const TERMINAL_EVENT = '__terminal__';
 export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 	effect: Effect.gen(function* () {
 		const opencode = yield* OpenCode;
+		const cursor = yield* Cursor;
 		const { db } = yield* Db;
 
 		const liveEmitters = new Map<string, EventEmitter>();
@@ -263,9 +273,35 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			model?: string;
 			sessionId?: string;
 			cwd: string;
-		}): Effect.Effect<{ jobId: string }, never, never> =>
+		}): Effect.Effect<{ jobId: string }, ModelResolutionError, never> =>
 			Effect.gen(function* () {
 				const uuid = randomUUIDv7();
+
+				const model = input.model;
+				if (model === undefined) {
+					return yield* new ModelResolutionError({
+						code: 'MISSING',
+						message: 'model is required: specify `<backend>:<modelId>`',
+					});
+				}
+
+				const colonIdx = model.indexOf(':');
+				if (colonIdx === -1) {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `Invalid model "${model}". Expected format: <backend>:<modelId>. Valid backends: opencode, cursor.`,
+					});
+				}
+
+				const backend = model.slice(0, colonIdx);
+				const rest = model.slice(colonIdx + 1);
+
+				if (backend !== 'opencode' && backend !== 'cursor') {
+					return yield* new ModelResolutionError({
+						code: 'UNKNOWN_BACKEND',
+						message: `Unknown backend "${backend}". Valid backends: opencode, cursor.`,
+					});
+				}
 
 				const jobRow = db
 					.insert(schema.jobs)
@@ -274,7 +310,8 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 						status: 'running',
 						prompt: input.prompt,
 						cwd: input.cwd,
-						model: input.model ?? null,
+						model: rest,
+						backend,
 					})
 					.returning({ id: schema.jobs.id })
 					.get();
@@ -298,44 +335,61 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					emitter.emit(TERMINAL_EVENT);
 				});
 
-				const fiber = yield* Effect.forkDaemon(
-					opencode
-						.runTurn({
+				const runTurnEffect = (() => {
+					if (backend === 'opencode') {
+						return opencode.runTurn({
 							prompt: input.prompt,
-							model: input.model,
+							model: rest,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
 							onEvent,
-						})
-						.pipe(
-							Effect.tap((result) =>
-								Effect.sync(() => {
-									db.update(schema.jobs)
-										.set({
-											status: 'done',
-											session_id: result.sessionId,
-											text: result.text,
-											stop_reason: result.stopReason ?? null,
-											terminated_at: new Date(),
-										})
-										.where(eq(schema.jobs.id, internalId))
-										.run();
-								}),
-							),
-							Effect.tapError((error) =>
-								Effect.sync(() => {
-									db.update(schema.jobs)
-										.set({
-											status: 'error',
-											error_message: formatJobError(error),
-											terminated_at: new Date(),
-										})
-										.where(eq(schema.jobs.id, internalId))
-										.run();
-								}),
-							),
-							Effect.ensuring(closeResources),
+						});
+					}
+					return cursor.runTurn({
+						prompt: input.prompt,
+						model: rest,
+						sessionId: input.sessionId,
+						cwd: input.cwd,
+						onEvent,
+						onExtensionEvent: (method, params) => {
+							onEvent({
+								sessionUpdate: 'cursor_extension',
+								_meta: { method, params },
+							} as unknown as SessionUpdate);
+						},
+					});
+				})();
+
+				const fiber = yield* Effect.forkDaemon(
+					runTurnEffect.pipe(
+						Effect.tap((result) =>
+							Effect.sync(() => {
+								db.update(schema.jobs)
+									.set({
+										status: 'done',
+										session_id: result.sessionId,
+										text: result.text,
+										stop_reason: result.stopReason ?? null,
+										terminated_at: new Date(),
+									})
+									.where(eq(schema.jobs.id, internalId))
+									.run();
+							}),
 						),
+						Effect.tapError((error) =>
+							Effect.sync(() => {
+								db.update(schema.jobs)
+									.set({
+										status: 'error',
+										error_message: formatJobError(error),
+										terminated_at: new Date(),
+									})
+									.where(eq(schema.jobs.id, internalId))
+									.run();
+							}),
+						),
+						Effect.ensuring(closeResources),
+					),
 				);
 
 				liveFibers.set(uuid, fiber);
@@ -553,7 +607,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			},
 		};
 	}),
-	dependencies: [OpenCode.Default, Db.Default],
+	dependencies: [OpenCode.Default, Cursor.Default, Db.Default],
 }) {}
 
 function toWaitResult(job: {
