@@ -1,7 +1,16 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Check, ChevronsUpDown } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
+import {
+	Command,
+	CommandEmpty,
+	CommandGroup,
+	CommandInput,
+	CommandItem,
+	CommandList,
+} from '@/components/ui/command';
 import {
 	Dialog,
 	DialogContent,
@@ -12,6 +21,11 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from '@/components/ui/popover';
+import {
 	Select,
 	SelectContent,
 	SelectItem,
@@ -20,6 +34,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { orpc } from '@/lib/orpc';
+import { cn } from '@/lib/utils';
 
 type Backend = 'opencode' | 'cursor';
 
@@ -39,6 +54,7 @@ type FormState = {
 
 type FormError = {
 	name?: string;
+	model_id?: string;
 	server?: string;
 };
 
@@ -50,6 +66,98 @@ function validateName(name: string): string | undefined {
 		return 'Name must be lowercase letters, numbers, or dashes only';
 	}
 	return undefined;
+}
+
+type ModelComboboxProps = {
+	backend: Backend;
+	value: string;
+	onChange: (modelId: string) => void;
+	invalid: boolean;
+};
+
+function ModelCombobox(props: ModelComboboxProps) {
+	const [open, setOpen] = useState(false);
+	const modelsQuery = useQuery({
+		queryKey: ['models', props.backend],
+		queryFn: () => orpc.models.list({ backend: props.backend }),
+		staleTime: 5 * 60 * 1000,
+	});
+
+	const models = modelsQuery.data ?? [];
+	const showButtonLabel =
+		props.value.trim() === '' ? 'Select model…' : props.value;
+
+	return (
+		<Popover open={open} onOpenChange={setOpen}>
+			<PopoverTrigger asChild>
+				<Button
+					type="button"
+					variant="outline"
+					role="combobox"
+					aria-expanded={open}
+					aria-invalid={props.invalid}
+					className={cn(
+						'w-full justify-between font-mono',
+						props.value.trim() === '' && 'font-sans text-muted-foreground',
+					)}
+				>
+					<span className="truncate">{showButtonLabel}</span>
+					<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+				</Button>
+			</PopoverTrigger>
+			<PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+				<Command>
+					<CommandInput placeholder="Search models…" />
+					<CommandList>
+						{modelsQuery.isLoading ? (
+							<div className="py-6 text-center text-sm text-muted-foreground">
+								Loading models…
+							</div>
+						) : modelsQuery.isError ? (
+							<div className="flex flex-col items-center gap-2 py-6 text-sm">
+								<p className="text-destructive">
+									Failed to load models for {props.backend}
+								</p>
+								<Button
+									type="button"
+									variant="outline"
+									size="sm"
+									onClick={() => modelsQuery.refetch()}
+								>
+									Retry
+								</Button>
+							</div>
+						) : (
+							<>
+								<CommandEmpty>No matching models.</CommandEmpty>
+								<CommandGroup>
+									{models.map((modelId) => (
+										<CommandItem
+											key={modelId}
+											value={modelId}
+											onSelect={(selected) => {
+												props.onChange(selected);
+												setOpen(false);
+											}}
+											className="font-mono"
+										>
+											<Check
+												className={cn(
+													'mr-2 h-4 w-4',
+													props.value === modelId ? 'opacity-100' : 'opacity-0',
+												)}
+											/>
+											<span className="truncate">{modelId}</span>
+										</CommandItem>
+									))}
+								</CommandGroup>
+							</>
+						)}
+					</CommandList>
+				</Command>
+			</PopoverContent>
+		</Popover>
+	);
 }
 
 export function AliasesPage() {
@@ -78,9 +186,13 @@ export function AliasesPage() {
 			model_id: string;
 			description?: string;
 		}) => orpc.aliases.save(input),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['aliases'] });
-			closeForm();
+		onSuccess: (result) => {
+			if (result.ok) {
+				queryClient.invalidateQueries({ queryKey: ['aliases'] });
+				closeForm();
+				return;
+			}
+			setFormError({ model_id: result.error.message });
 		},
 		onError: (error: Error) => {
 			setFormError({ server: error.message });
@@ -135,7 +247,7 @@ export function AliasesPage() {
 			return;
 		}
 		if (form.model_id.trim() === '') {
-			setFormError({ name: 'Model ID is required' });
+			setFormError({ model_id: 'Pick a model from the dropdown' });
 			return;
 		}
 		saveMutation.mutate({
@@ -153,6 +265,7 @@ export function AliasesPage() {
 	}
 
 	const aliases = (listQuery.data ?? []) as Alias[];
+	const canSubmit = form.model_id.trim() !== '' && !saveMutation.isPending;
 
 	return (
 		<div className="flex h-screen w-screen flex-col bg-background">
@@ -295,7 +408,8 @@ export function AliasesPage() {
 									setForm({
 										name: form.name,
 										backend: value as Backend,
-										model_id: form.model_id,
+										// Backend change invalidates the model selection.
+										model_id: '',
 										description: form.description,
 									})
 								}
@@ -313,19 +427,22 @@ export function AliasesPage() {
 							<label htmlFor="alias-model-id" className="text-sm font-medium">
 								Model ID
 							</label>
-							<Input
-								id="alias-model-id"
+							<ModelCombobox
+								backend={form.backend}
 								value={form.model_id}
-								onChange={(event) =>
+								invalid={formError.model_id !== undefined}
+								onChange={(modelId) =>
 									setForm({
 										name: form.name,
 										backend: form.backend,
-										model_id: event.target.value,
+										model_id: modelId,
 										description: form.description,
 									})
 								}
-								placeholder="e.g. opencode-go/kimi-k2.6"
 							/>
+							{formError.model_id !== undefined && (
+								<p className="text-sm text-destructive">{formError.model_id}</p>
+							)}
 						</div>
 						<div className="grid gap-2">
 							<label
@@ -355,7 +472,7 @@ export function AliasesPage() {
 							<Button type="button" variant="outline" onClick={closeForm}>
 								Cancel
 							</Button>
-							<Button type="submit" disabled={saveMutation.isPending}>
+							<Button type="submit" disabled={!canSubmit}>
 								{saveMutation.isPending ? 'Saving…' : 'Save'}
 							</Button>
 						</DialogFooter>
