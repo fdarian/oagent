@@ -84,8 +84,23 @@ function ModelCombobox(props: ModelComboboxProps) {
 	});
 
 	const models = modelsQuery.data ?? [];
-	const showButtonLabel =
-		props.value.trim() === '' ? 'Select model…' : props.value;
+
+	// Find the selected entry to render its label in the trigger button.
+	const selectedEntry = models.find((entry) => entry.id === props.value);
+
+	const triggerContent =
+		props.value.trim() === '' ? (
+			<span className="font-sans text-muted-foreground">Select model…</span>
+		) : selectedEntry?.label !== undefined ? (
+			<span className="flex items-baseline gap-2 overflow-hidden">
+				<span className="shrink-0 font-medium">{selectedEntry.label}</span>
+				<span className="truncate font-mono text-xs text-muted-foreground">
+					{props.value}
+				</span>
+			</span>
+		) : (
+			<span className="truncate font-mono">{props.value}</span>
+		);
 
 	return (
 		<Popover open={open} onOpenChange={setOpen}>
@@ -96,12 +111,9 @@ function ModelCombobox(props: ModelComboboxProps) {
 					role="combobox"
 					aria-expanded={open}
 					aria-invalid={props.invalid}
-					className={cn(
-						'w-full justify-between font-mono text-foreground',
-						props.value.trim() === '' && 'font-sans text-muted-foreground',
-					)}
+					className="w-full justify-between text-foreground"
 				>
-					<span className="truncate">{showButtonLabel}</span>
+					{triggerContent}
 					<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
 				</Button>
 			</PopoverTrigger>
@@ -131,23 +143,40 @@ function ModelCombobox(props: ModelComboboxProps) {
 							<>
 								<CommandEmpty>No matching models.</CommandEmpty>
 								<CommandGroup>
-									{models.map((modelId) => (
+									{models.map((entry) => (
 										<CommandItem
-											key={modelId}
-											value={modelId}
-											onSelect={(selected) => {
-												props.onChange(selected);
+											key={entry.id}
+											// Include both label and id so the user can type either to match.
+											value={
+												entry.label !== undefined
+													? `${entry.label} ${entry.id}`
+													: entry.id
+											}
+											onSelect={() => {
+												props.onChange(entry.id);
 												setOpen(false);
 											}}
-											className="font-mono"
 										>
 											<Check
 												className={cn(
-													'mr-2 h-4 w-4',
-													props.value === modelId ? 'opacity-100' : 'opacity-0',
+													'mr-2 h-4 w-4 shrink-0',
+													props.value === entry.id
+														? 'opacity-100'
+														: 'opacity-0',
 												)}
 											/>
-											<span className="truncate">{modelId}</span>
+											{entry.label !== undefined ? (
+												<div className="flex min-w-0 flex-col leading-snug">
+													<span className="font-medium">{entry.label}</span>
+													<span className="truncate font-mono text-xs text-muted-foreground">
+														{entry.id}
+													</span>
+												</div>
+											) : (
+												<span className="truncate font-mono leading-[1.6rem]">
+													{entry.id}
+												</span>
+											)}
 										</CommandItem>
 									))}
 								</CommandGroup>
