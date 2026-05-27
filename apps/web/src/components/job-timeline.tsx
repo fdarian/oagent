@@ -56,14 +56,13 @@ export function JobTimeline({
 			getItemKey={(index) => partAt(index).id}
 			estimateSize={() => 72}
 			className="min-h-0 flex-1"
-			header={header}
 		>
 			{allParts.length === 0 ? (
 				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
 					{isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
-				<ConversationContent>
+				<ConversationContent header={header}>
 					{(virtualItem) => (
 						<div className="px-33">
 							<div className="mx-auto max-w-[900px]">

@@ -38,14 +38,12 @@ export type ConversationProps = ComponentProps<'div'> & {
 	count: number;
 	getItemKey: (index: number) => string;
 	estimateSize?: () => number;
-	header?: ReactNode;
 };
 
 export const Conversation = ({
 	count,
 	getItemKey,
 	estimateSize = () => 72,
-	header,
 	className,
 	children,
 	...props
@@ -68,15 +66,11 @@ export const Conversation = ({
 
 	return (
 		<div
-			ref={scrollRef}
-			className={cn('relative flex-1 overflow-y-auto', className)}
+			className={cn('relative flex flex-1 flex-col min-h-0', className)}
 			role="log"
 			{...props}
 		>
 			<ConversationContext.Provider value={{ virtualizer, scrollRef }}>
-				{header !== undefined && (
-					<div className="sticky top-0 z-10 bg-background">{header}</div>
-				)}
 				{children}
 			</ConversationContext.Provider>
 		</div>
@@ -85,37 +79,44 @@ export const Conversation = ({
 
 export type ConversationContentProps = {
 	className?: string;
+	header?: ReactNode;
 	children: (virtualItem: VirtualItem) => ReactNode;
 };
 
 export const ConversationContent = ({
 	className,
+	header,
 	children,
 }: ConversationContentProps) => {
-	const { virtualizer } = useConversationContext();
+	const { virtualizer, scrollRef } = useConversationContext();
 	const virtualItems = virtualizer.getVirtualItems();
 
 	return (
-		<div
-			className={cn('relative w-full', className)}
-			style={{ height: `${virtualizer.getTotalSize()}px` }}
-		>
-			{virtualItems.map((virtualItem) => (
-				<div
-					key={virtualItem.key}
-					ref={virtualizer.measureElement}
-					data-index={virtualItem.index}
-					style={{
-						position: 'absolute',
-						top: 0,
-						left: 0,
-						width: '100%',
-						transform: `translateY(${virtualItem.start}px)`,
-					}}
-				>
-					{children(virtualItem)}
-				</div>
-			))}
+		<div ref={scrollRef} className="flex-1 overflow-y-auto">
+			{header !== undefined && (
+				<div className="sticky top-0 z-10 bg-background">{header}</div>
+			)}
+			<div
+				className={cn('relative w-full', className)}
+				style={{ height: `${virtualizer.getTotalSize()}px` }}
+			>
+				{virtualItems.map((virtualItem) => (
+					<div
+						key={virtualItem.key}
+						ref={virtualizer.measureElement}
+						data-index={virtualItem.index}
+						style={{
+							position: 'absolute',
+							top: 0,
+							left: 0,
+							width: '100%',
+							transform: `translateY(${virtualItem.start}px)`,
+						}}
+					>
+						{children(virtualItem)}
+					</div>
+				))}
+			</div>
 		</div>
 	);
 };
