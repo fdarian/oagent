@@ -58,6 +58,7 @@ export const Conversation = ({
 		followOnAppend: true,
 		scrollEndThreshold: 80,
 		overscan: 6,
+		paddingEnd: 22,
 	});
 
 	useLayoutEffect(() => {
@@ -92,7 +93,7 @@ export const ConversationContent = ({
 	const virtualItems = virtualizer.getVirtualItems();
 
 	return (
-		<div ref={scrollRef} className="flex-1 overflow-y-auto pb-22">
+		<div ref={scrollRef} className="flex-1 overflow-y-auto">
 			{header !== undefined && (
 				<div className="sticky top-0 z-10 bg-background">{header}</div>
 			)}
