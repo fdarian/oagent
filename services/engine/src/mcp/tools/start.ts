@@ -46,17 +46,29 @@ export const startTool = {
 	description,
 	inputSchema,
 	handle(args: Args, ctx: { jobs: Jobs; waitUrlBase: string | undefined }) {
-		return Effect.map(ctx.jobs.start(args), (result) => {
-			const response =
-				ctx.waitUrlBase !== undefined
-					? {
-							jobId: result.jobId,
-							waitUrl: `${ctx.waitUrlBase}/jobs/${result.jobId}/wait`,
-						}
-					: { jobId: result.jobId };
-			return {
-				content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-			};
-		});
+		return ctx.jobs.start(args).pipe(
+			Effect.map((result) => {
+				const response =
+					ctx.waitUrlBase !== undefined
+						? {
+								jobId: result.jobId,
+								waitUrl: `${ctx.waitUrlBase}/jobs/${result.jobId}/wait`,
+							}
+						: { jobId: result.jobId };
+				return {
+					content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+				};
+			}),
+			Effect.catchTag('ModelResolutionError', (err) =>
+				Effect.succeed({
+					content: [
+						{
+							type: 'text' as const,
+							text: JSON.stringify({ error: { code: err.code, message: err.message } }),
+						},
+					],
+				}),
+			),
+		);
 	},
 };

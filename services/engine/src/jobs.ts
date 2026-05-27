@@ -15,6 +15,14 @@ class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 	jobId: Schema.String,
 }) {}
 
+export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
+	'ModelResolutionError',
+	{
+		code: Schema.Literal('MISSING', 'INVALID_FORMAT', 'UNKNOWN_BACKEND'),
+		message: Schema.String,
+	},
+) {}
+
 type JobOk = {
 	readonly sessionId: string;
 	readonly text: string;
@@ -265,29 +273,34 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			model?: string;
 			sessionId?: string;
 			cwd: string;
-		}): Effect.Effect<{ jobId: string }, never, never> =>
+		}): Effect.Effect<{ jobId: string }, ModelResolutionError, never> =>
 			Effect.gen(function* () {
 				const uuid = randomUUIDv7();
 
 				const model = input.model;
 				if (model === undefined) {
-					throw new Error('model is required: specify `<backend>:<modelId>`');
+					return yield* new ModelResolutionError({
+						code: 'MISSING',
+						message: 'model is required: specify `<backend>:<modelId>`',
+					});
 				}
 
 				const colonIdx = model.indexOf(':');
 				if (colonIdx === -1) {
-					throw new Error(
-						`Invalid model "${model}". Expected format: <backend>:<modelId>. Valid backends: opencode, cursor.`,
-					);
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `Invalid model "${model}". Expected format: <backend>:<modelId>. Valid backends: opencode, cursor.`,
+					});
 				}
 
 				const backend = model.slice(0, colonIdx);
 				const rest = model.slice(colonIdx + 1);
 
 				if (backend !== 'opencode' && backend !== 'cursor') {
-					throw new Error(
-						`Unknown backend "${backend}". Valid backends: opencode, cursor.`,
-					);
+					return yield* new ModelResolutionError({
+						code: 'UNKNOWN_BACKEND',
+						message: `Unknown backend "${backend}". Valid backends: opencode, cursor.`,
+					});
 				}
 
 				const jobRow = db
