@@ -1,4 +1,4 @@
-import { Link, Route, Routes } from 'react-router-dom';
+import { Route, Routes } from 'react-router-dom';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsolePage } from './pages/ConsolePage.tsx';
 
