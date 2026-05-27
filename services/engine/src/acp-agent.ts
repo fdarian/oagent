@@ -207,17 +207,20 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 
 					let buffer = '';
 
-					const unregister = registerListener(sessionResult.sessionId, (update) => {
-						if (input.onEvent !== undefined) {
-							input.onEvent(update);
-						}
-						if (
-							update.sessionUpdate === 'agent_message_chunk' &&
-							update.content.type === 'text'
-						) {
-							buffer += update.content.text;
-						}
-					});
+					const unregister = registerListener(
+						sessionResult.sessionId,
+						(update) => {
+							if (input.onEvent !== undefined) {
+								input.onEvent(update);
+							}
+							if (
+								update.sessionUpdate === 'agent_message_chunk' &&
+								update.content.type === 'text'
+							) {
+								buffer += update.content.text;
+							}
+						},
+					);
 
 					if (input.onExtensionEvent !== undefined) {
 						extNotificationHandlers.set(
@@ -243,32 +246,15 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 									}),
 								catch: (cause) => {
 									const rpcMessage = (() => {
-										if (
-											typeof cause === 'object' &&
-											cause !== null
-										) {
-											const c = cause as Record<
-												string,
-												unknown
-											>;
-											if (
-												typeof c.data === 'object' &&
-												c.data !== null
-											) {
-												const d = c.data as Record<
-													string,
-													unknown
-												>;
-												if (
-													typeof d.message ===
-													'string'
-												) {
+										if (typeof cause === 'object' && cause !== null) {
+											const c = cause as Record<string, unknown>;
+											if (typeof c.data === 'object' && c.data !== null) {
+												const d = c.data as Record<string, unknown>;
+												if (typeof d.message === 'string') {
 													return d.message;
 												}
 											}
-											if (
-												typeof c.message === 'string'
-											) {
+											if (typeof c.message === 'string') {
 												return c.message;
 											}
 										}
@@ -276,10 +262,8 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 									})();
 
 									const modelsHint =
-										sessionResult.availableModels !==
-											undefined &&
-										sessionResult.availableModels.length >
-											0
+										sessionResult.availableModels !== undefined &&
+										sessionResult.availableModels.length > 0
 											? ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`
 											: '';
 
@@ -310,15 +294,10 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 								return conn
 									.prompt({
 										sessionId: sessionResult.sessionId,
-										prompt: [
-											{ type: 'text', text: input.prompt },
-										],
+										prompt: [{ type: 'text', text: input.prompt }],
 									})
 									.finally(() => {
-										signal.removeEventListener(
-											'abort',
-											onAbort,
-										);
+										signal.removeEventListener('abort', onAbort);
 									});
 							},
 							catch: (cause) =>
