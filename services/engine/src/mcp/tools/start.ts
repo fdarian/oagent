@@ -64,7 +64,9 @@ export const startTool = {
 					content: [
 						{
 							type: 'text' as const,
-							text: JSON.stringify({ error: { code: err.code, message: err.message } }),
+							text: JSON.stringify({
+								error: { code: err.code, message: err.message },
+							}),
 						},
 					],
 				}),
