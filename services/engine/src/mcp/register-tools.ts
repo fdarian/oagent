@@ -3,7 +3,7 @@ import { Cause, type Effect, Exit, Runtime } from 'effect';
 import type { Jobs } from '../jobs.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { resultTool } from './tools/result.ts';
-import { startTool } from './tools/start.ts';
+import { buildDescription, inputSchema, startTool } from './tools/start.ts';
 
 export function registerTools(
 	server: McpServer,
@@ -27,9 +27,11 @@ export function registerTools(
 		return exit.value;
 	};
 
+	const aliases = jobs.listAliases();
+
 	server.registerTool(
 		'start',
-		{ description: startTool.description, inputSchema: startTool.inputSchema },
+		{ description: buildDescription(aliases), inputSchema },
 		(args) => runHandler(startTool.handle(args, { jobs, waitUrlBase })),
 	);
 
