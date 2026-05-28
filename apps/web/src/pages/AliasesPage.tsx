@@ -1,3 +1,4 @@
+import { useForm } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { Check, ChevronsUpDown } from 'lucide-react';
@@ -19,6 +20,7 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog';
+import { Field, FieldError, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
 	Popover,
@@ -44,29 +46,6 @@ type Alias = {
 	model_id: string;
 	description?: string;
 };
-
-type FormState = {
-	name: string;
-	backend: Backend;
-	model_id: string;
-	description: string;
-};
-
-type FormError = {
-	name?: string;
-	model_id?: string;
-	server?: string;
-};
-
-function validateName(name: string): string | undefined {
-	if (name.trim() === '') {
-		return 'Name is required';
-	}
-	if (!/^[a-z0-9-]+$/.test(name)) {
-		return 'Name must be lowercase letters, numbers, or dashes only';
-	}
-	return undefined;
-}
 
 type ModelComboboxProps = {
 	backend: Backend;
@@ -189,24 +168,18 @@ function ModelCombobox(props: ModelComboboxProps) {
 	);
 }
 
-export function AliasesPage() {
-	const queryClient = useQueryClient();
-	const [isFormOpen, setIsFormOpen] = useState(false);
-	const [editingAlias, setEditingAlias] = useState<Alias | undefined>();
-	const [form, setForm] = useState<FormState>({
-		name: '',
-		backend: 'opencode',
-		model_id: '',
-		description: '',
-	});
-	const [formError, setFormError] = useState<FormError>({});
-	const [deleteTarget, setDeleteTarget] = useState<Alias | undefined>();
-	const [deleteError, setDeleteError] = useState<string | undefined>();
+type AliasFormProps = {
+	editingAlias: Alias | undefined;
+	onSuccess: () => void;
+	onCancel: () => void;
+};
 
-	const listQuery = useQuery({
-		queryKey: ['aliases'],
-		queryFn: () => orpc.aliases.list(),
-	});
+function AliasForm(props: AliasFormProps) {
+	const queryClient = useQueryClient();
+	// Server-side error to surface under the model_id field.
+	const [serverModelError, setServerModelError] = useState<
+		string | undefined
+	>();
 
 	const saveMutation = useMutation({
 		mutationFn: (input: {
@@ -217,11 +190,202 @@ export function AliasesPage() {
 		}) => orpc.aliases.save(input),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ['aliases'] });
-			closeForm();
+			props.onSuccess();
 		},
 		onError: (error: Error) => {
-			setFormError({ server: error.message });
+			setServerModelError(error.message);
 		},
+	});
+
+	const form = useForm({
+		defaultValues: {
+			name: props.editingAlias?.name ?? '',
+			backend: props.editingAlias?.backend ?? 'opencode',
+			model_id: props.editingAlias?.model_id ?? '',
+			description: props.editingAlias?.description ?? '',
+		},
+		onSubmit: ({ value }) => {
+			setServerModelError(undefined);
+			saveMutation.mutate({
+				name: value.name.trim(),
+				backend: value.backend,
+				model_id: value.model_id.trim(),
+				description:
+					value.description.trim() === ''
+						? undefined
+						: value.description.trim(),
+			});
+		},
+	});
+
+	return (
+		<form
+			onSubmit={(e) => {
+				e.preventDefault();
+				e.stopPropagation();
+				form.handleSubmit();
+			}}
+			className="grid gap-4 py-4"
+		>
+			<form.Field
+				name="name"
+				validators={{
+					onChange: ({ value }) => {
+						if (value.trim() === '') return 'Name is required';
+						if (!/^[a-z0-9-]+$/.test(value))
+							return 'Name must be lowercase letters, numbers, or dashes only';
+						return undefined;
+					},
+				}}
+			>
+				{(field) => {
+					const isInvalid =
+						field.state.meta.isTouched && field.state.meta.errors.length > 0;
+					return (
+						<Field data-invalid={isInvalid}>
+							<FieldLabel htmlFor={field.name}>Name</FieldLabel>
+							<Input
+								id={field.name}
+								value={field.state.value}
+								disabled={props.editingAlias !== undefined}
+								onBlur={field.handleBlur}
+								onChange={(e) => field.handleChange(e.target.value)}
+								placeholder="e.g. quick"
+								aria-invalid={isInvalid}
+							/>
+							{isInvalid && (
+								<FieldError
+									errors={field.state.meta.errors.map((e) => ({
+										message: typeof e === 'string' ? e : String(e),
+									}))}
+								/>
+							)}
+						</Field>
+					);
+				}}
+			</form.Field>
+
+			<form.Field name="backend">
+				{(field) => (
+					<Field>
+						<FieldLabel htmlFor={field.name}>Backend</FieldLabel>
+						<Select
+							value={field.state.value}
+							onValueChange={(value) => {
+								field.handleChange(value as Backend);
+								// Changing backend invalidates the model selection.
+								form.setFieldValue('model_id', '');
+								setServerModelError(undefined);
+							}}
+						>
+							<SelectTrigger id={field.name}>
+								<SelectValue placeholder="Select backend" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="opencode">opencode</SelectItem>
+								<SelectItem value="cursor">cursor</SelectItem>
+							</SelectContent>
+						</Select>
+					</Field>
+				)}
+			</form.Field>
+
+			<form.Field
+				name="model_id"
+				validators={{
+					onChange: ({ value }) =>
+						value.trim() === '' ? 'Pick a model from the dropdown' : undefined,
+				}}
+			>
+				{(field) => {
+					const isInvalid =
+						(field.state.meta.isTouched &&
+							field.state.meta.errors.length > 0) ||
+						serverModelError !== undefined;
+					const errors = [
+						...field.state.meta.errors.map((e) => ({
+							message: typeof e === 'string' ? e : String(e),
+						})),
+						...(serverModelError !== undefined
+							? [{ message: serverModelError }]
+							: []),
+					];
+					return (
+						<Field data-invalid={isInvalid}>
+							<FieldLabel htmlFor={field.name}>Model ID</FieldLabel>
+							<form.Subscribe selector={(state) => state.values.backend}>
+								{(backend) => (
+									<ModelCombobox
+										backend={backend}
+										value={field.state.value}
+										invalid={isInvalid}
+										onChange={(modelId) => {
+											field.handleChange(modelId);
+											setServerModelError(undefined);
+										}}
+									/>
+								)}
+							</form.Subscribe>
+							{isInvalid && <FieldError errors={errors} />}
+						</Field>
+					);
+				}}
+			</form.Field>
+
+			<form.Field name="description">
+				{(field) => (
+					<Field>
+						<FieldLabel htmlFor={field.name}>Description</FieldLabel>
+						<Textarea
+							id={field.name}
+							value={field.state.value}
+							onBlur={field.handleBlur}
+							onChange={(e) => field.handleChange(e.target.value)}
+							placeholder="Optional description"
+						/>
+					</Field>
+				)}
+			</form.Field>
+
+			<DialogFooter>
+				<Button type="button" variant="outline" onClick={props.onCancel}>
+					Cancel
+				</Button>
+				<form.Subscribe
+					selector={(state) => ({
+						canSubmit: state.canSubmit,
+						isSubmitting: state.isSubmitting,
+					})}
+				>
+					{({ canSubmit, isSubmitting }) => (
+						<Button
+							type="submit"
+							disabled={
+								!canSubmit ||
+								isSubmitting ||
+								saveMutation.isPending ||
+								form.getFieldValue('model_id').trim() === ''
+							}
+						>
+							{saveMutation.isPending ? 'Saving…' : 'Save'}
+						</Button>
+					)}
+				</form.Subscribe>
+			</DialogFooter>
+		</form>
+	);
+}
+
+export function AliasesPage() {
+	const queryClient = useQueryClient();
+	const [isFormOpen, setIsFormOpen] = useState(false);
+	const [editingAlias, setEditingAlias] = useState<Alias | undefined>();
+	const [deleteTarget, setDeleteTarget] = useState<Alias | undefined>();
+	const [deleteError, setDeleteError] = useState<string | undefined>();
+
+	const listQuery = useQuery({
+		queryKey: ['aliases'],
+		queryFn: () => orpc.aliases.list(),
 	});
 
 	const deleteMutation = useMutation({
@@ -241,47 +405,17 @@ export function AliasesPage() {
 
 	function openCreate() {
 		setEditingAlias(undefined);
-		setForm({ name: '', backend: 'opencode', model_id: '', description: '' });
-		setFormError({});
 		setIsFormOpen(true);
 	}
 
 	function openEdit(alias: Alias) {
 		setEditingAlias(alias);
-		setForm({
-			name: alias.name,
-			backend: alias.backend,
-			model_id: alias.model_id,
-			description: alias.description ?? '',
-		});
-		setFormError({});
 		setIsFormOpen(true);
 	}
 
 	function closeForm() {
 		setIsFormOpen(false);
 		setEditingAlias(undefined);
-		setFormError({});
-	}
-
-	function handleSubmit(event: React.FormEvent) {
-		event.preventDefault();
-		const nameError = validateName(form.name);
-		if (nameError !== undefined) {
-			setFormError({ name: nameError });
-			return;
-		}
-		if (form.model_id.trim() === '') {
-			setFormError({ model_id: 'Pick a model from the dropdown' });
-			return;
-		}
-		saveMutation.mutate({
-			name: form.name.trim(),
-			backend: form.backend,
-			model_id: form.model_id.trim(),
-			description:
-				form.description.trim() === '' ? undefined : form.description.trim(),
-		});
 	}
 
 	function handleDelete() {
@@ -290,7 +424,6 @@ export function AliasesPage() {
 	}
 
 	const aliases = (listQuery.data ?? []) as Alias[];
-	const canSubmit = form.model_id.trim() !== '' && !saveMutation.isPending;
 
 	return (
 		<div className="flex h-screen w-screen flex-col bg-background">
@@ -383,9 +516,7 @@ export function AliasesPage() {
 			<Dialog
 				open={isFormOpen}
 				onOpenChange={(open) => {
-					if (!open) {
-						closeForm();
-					}
+					if (!open) closeForm();
 				}}
 			>
 				<DialogContent>
@@ -399,109 +530,13 @@ export function AliasesPage() {
 								: 'Update the alias settings.'}
 						</DialogDescription>
 					</DialogHeader>
-					<form onSubmit={handleSubmit} className="grid gap-4 py-4">
-						<div className="grid gap-2">
-							<label htmlFor="alias-name" className="text-sm font-medium">
-								Name
-							</label>
-							<Input
-								id="alias-name"
-								value={form.name}
-								disabled={editingAlias !== undefined}
-								onChange={(event) =>
-									setForm({
-										name: event.target.value,
-										backend: form.backend,
-										model_id: form.model_id,
-										description: form.description,
-									})
-								}
-								placeholder="e.g. quick"
-								aria-invalid={formError.name !== undefined}
-							/>
-							{formError.name !== undefined && (
-								<p className="text-sm text-destructive">{formError.name}</p>
-							)}
-						</div>
-						<div className="grid gap-2">
-							<label htmlFor="alias-backend" className="text-sm font-medium">
-								Backend
-							</label>
-							<Select
-								value={form.backend}
-								onValueChange={(value) =>
-									setForm({
-										name: form.name,
-										backend: value as Backend,
-										// Backend change invalidates the model selection.
-										model_id: '',
-										description: form.description,
-									})
-								}
-							>
-								<SelectTrigger id="alias-backend">
-									<SelectValue placeholder="Select backend" />
-								</SelectTrigger>
-								<SelectContent>
-									<SelectItem value="opencode">opencode</SelectItem>
-									<SelectItem value="cursor">cursor</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-						<div className="grid gap-2">
-							<label htmlFor="alias-model-id" className="text-sm font-medium">
-								Model ID
-							</label>
-							<ModelCombobox
-								backend={form.backend}
-								value={form.model_id}
-								invalid={formError.model_id !== undefined}
-								onChange={(modelId) =>
-									setForm({
-										name: form.name,
-										backend: form.backend,
-										model_id: modelId,
-										description: form.description,
-									})
-								}
-							/>
-							{formError.model_id !== undefined && (
-								<p className="text-sm text-destructive">{formError.model_id}</p>
-							)}
-						</div>
-						<div className="grid gap-2">
-							<label
-								htmlFor="alias-description"
-								className="text-sm font-medium"
-							>
-								Description
-							</label>
-							<Textarea
-								id="alias-description"
-								value={form.description}
-								onChange={(event) =>
-									setForm({
-										name: form.name,
-										backend: form.backend,
-										model_id: form.model_id,
-										description: event.target.value,
-									})
-								}
-								placeholder="Optional description"
-							/>
-						</div>
-						{formError.server !== undefined && (
-							<p className="text-sm text-destructive">{formError.server}</p>
-						)}
-						<DialogFooter>
-							<Button type="button" variant="outline" onClick={closeForm}>
-								Cancel
-							</Button>
-							<Button type="submit" disabled={!canSubmit}>
-								{saveMutation.isPending ? 'Saving…' : 'Save'}
-							</Button>
-						</DialogFooter>
-					</form>
+					{isFormOpen && (
+						<AliasForm
+							editingAlias={editingAlias}
+							onSuccess={closeForm}
+							onCancel={closeForm}
+						/>
+					)}
 				</DialogContent>
 			</Dialog>
 
