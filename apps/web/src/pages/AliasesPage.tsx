@@ -215,13 +215,9 @@ export function AliasesPage() {
 			model_id: string;
 			description?: string;
 		}) => orpc.aliases.save(input),
-		onSuccess: (result) => {
-			if (result.ok) {
-				queryClient.invalidateQueries({ queryKey: ['aliases'] });
-				closeForm();
-				return;
-			}
-			setFormError({ model_id: result.error.message });
+		onSuccess: () => {
+			queryClient.invalidateQueries({ queryKey: ['aliases'] });
+			closeForm();
 		},
 		onError: (error: Error) => {
 			setFormError({ server: error.message });
