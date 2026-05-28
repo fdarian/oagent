@@ -82,7 +82,7 @@ function ModelCombobox(props: ModelComboboxProps) {
 		);
 
 	return (
-		<Popover open={open} onOpenChange={setOpen}>
+		<Popover open={open} onOpenChange={setOpen} modal>
 			<PopoverTrigger asChild>
 				<Button
 					type="button"
