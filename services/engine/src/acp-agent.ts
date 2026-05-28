@@ -316,6 +316,22 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 					};
 				});
 
-			return { runTurn };
+			const listModels = (): Effect.Effect<
+				ReadonlyArray<{ id: string }>,
+				AcpSessionError,
+				never
+			> =>
+				Effect.tryPromise({
+					try: () => conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+					catch: (cause) => new AcpSessionError({ cause }),
+				}).pipe(
+					Effect.map((res) =>
+						res.models === undefined || res.models === null
+							? []
+							: res.models.availableModels.map((m) => ({ id: m.modelId })),
+					),
+				);
+
+			return { runTurn, listModels };
 		}),
 }) {}

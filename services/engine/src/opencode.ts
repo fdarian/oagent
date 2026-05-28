@@ -16,6 +16,6 @@ export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
 				}),
 			),
 		);
-		return { runTurn: acpAgent.runTurn };
+		return { runTurn: acpAgent.runTurn, listModels: acpAgent.listModels };
 	}),
 }) {}
