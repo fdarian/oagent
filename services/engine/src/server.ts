@@ -8,6 +8,7 @@ import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
+import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 
 type ServerOptions = {
@@ -185,6 +186,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 }) {
 	static layer = Engine.Default.pipe(
 		Layer.provide(Jobs.Default),
+		Layer.provide(ModelCatalog.Default),
 		Layer.provide(Layer.scope),
 	);
 }

@@ -1,11 +1,5 @@
-import { Agentation } from 'agentation';
-import { ConsolePage } from './pages/ConsolePage.tsx';
+import { Outlet } from '@tanstack/react-router';
 
 export function App() {
-	return (
-		<>
-			<ConsolePage />
-			{process.env.NODE_ENV === 'development' && <Agentation />}
-		</>
-	);
+	return <Outlet />;
 }

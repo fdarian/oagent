@@ -3,9 +3,11 @@ import { Effect } from 'effect';
 import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
 import { Jobs } from '../jobs.ts';
+import { ModelCatalog } from '../model-catalog.ts';
 
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
+	const modelCatalog = yield* ModelCatalog;
 
 	return {
 		jobs: {
@@ -171,6 +173,21 @@ const program = Effect.gen(function* () {
 				(opt) => {
 					return Effect.succeed({ ok: jobs.deleteAlias(opt.input.name) });
 				},
+			),
+		},
+		models: {
+			list: yield* createHandler(
+				os
+					.input(v.object({ backend: v.picklist(['opencode', 'cursor']) }))
+					.output(
+						v.array(
+							v.object({ id: v.string(), label: v.optional(v.string()) }),
+						),
+					),
+				Effect.fn(function* (opt) {
+					const models = yield* modelCatalog.list(opt.input.backend);
+					return models.map((entry) => ({ id: entry.id, label: entry.label }));
+				}),
 			),
 		},
 	};
