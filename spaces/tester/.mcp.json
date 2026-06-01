@@ -1,0 +1,8 @@
+{
+	"mcpServers": {
+		"this-oagent": {
+			"command": "bun",
+			"args": ["run", "../../apps/cli/src/index.ts", "claude", "mcp", "serve"]
+		}
+	}
+}
