@@ -20,6 +20,7 @@ type ServerOptions = {
 export class Engine extends Effect.Service<Engine>()('engine', {
 	effect: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const engineHandler = yield* createEngineHandler;
 
 		return {
 			mcp: {
@@ -47,8 +48,6 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 							server: McpServer;
 						}
 					>();
-
-					const engineHandler = yield* createEngineHandler;
 
 					const fetchHandler = async (request: Request) => {
 						const url = new URL(request.url);
