@@ -1,5 +1,5 @@
 import { Effect } from 'effect';
-import { AcpAgent } from './acp-agent.ts';
+import { AcpAgent, AcpSessionError } from './acp-agent.ts';
 
 export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
 	effect: Effect.gen(function* () {
@@ -16,6 +16,22 @@ export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
 				}),
 			),
 		);
-		return { runTurn: acpAgent.runTurn, listModels: acpAgent.listModels };
+
+		const listModels = () =>
+			Effect.tryPromise({
+				try: async () => {
+					const proc = Bun.spawn([binary, 'models'], { stdout: 'pipe' });
+					const text = await new Response(proc.stdout).text();
+					await proc.exited;
+					return text
+						.trim()
+						.split('\n')
+						.filter((line) => line.length > 0)
+						.map((id) => ({ id }));
+				},
+				catch: (cause) => new AcpSessionError({ cause }),
+			});
+
+		return { runTurn: acpAgent.runTurn, listModels };
 	}),
 }) {}
