@@ -13,7 +13,10 @@ const webFilemap = Effect.tryPromise(
 ).pipe(
 	Effect.map((mod) => mod.default),
 	Effect.tapError((error) =>
-		Effect.logWarning('Web UI bundle not available, please run `bun --filter \'@oagent/cli\' build` first; serving without SPA', error),
+		Effect.logWarning(
+			"Web UI bundle not available, please run `bun --filter '@oagent/cli' build` first; serving without SPA",
+			error,
+		),
 	),
 	Effect.orElseSucceed(() => undefined),
 );
