@@ -14,7 +14,11 @@ import { createEngineHandler } from './rpc/handler.ts';
 class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationError>()(
 	'PortlessRegistrationError',
 	{ cause: Schema.Defect },
-) {}
+) {
+	override get message() {
+		return String(this.cause);
+	}
+}
 
 type ServerOptions = {
 	port: number;

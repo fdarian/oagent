@@ -3,22 +3,20 @@ import { Engine } from '@oagent/engine';
 import { Effect } from 'effect';
 import type { Version } from '#/lib/misc.ts';
 
-const webFilemap = Effect.gen(function* () {
-	let filemap: Record<string, string> | undefined;
-	const mod = yield* Effect.tryPromise({
+const webFilemap = Effect.tryPromise(
+	() =>
 		// biome-ignore lint/suspicious/noTsIgnore: generated module missing in dev
 		// @ts-ignore Generated at build time; missing in dev
-		try: () =>
-			import('../../.gen/web-ui.gen.ts') as Promise<{
-				default?: Record<string, string>;
-			}>,
-		catch: () => undefined,
-	});
-	if (mod?.default !== undefined && typeof mod.default === 'object') {
-		filemap = mod.default;
-	}
-	return filemap;
-});
+		import('../../.gen/web-ui.gen.ts') as Promise<{
+			default?: Record<string, string>;
+		}>,
+).pipe(
+	Effect.map((mod) => mod.default),
+	Effect.tapError((error) =>
+		Effect.logWarning('Web UI bundle not available; serving without SPA', error),
+	),
+	Effect.orElseSucceed(() => undefined),
+);
 
 function runServe(params: {
 	port: number;
