@@ -17,8 +17,8 @@ import type { Version } from '#/lib/misc.ts';
 type EngineClient = RouterClient<EngineRouter>;
 type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
 
-/** Per-iteration block for the background waiter; it loops until the job is terminal. */
-const WAITER_POLL_MS = 50_000;
+/** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
+const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
 const RESULT_TIMEOUT_DEFAULT_MS = 50_000;
 const RESULT_TIMEOUT_MAX_MS = 55_000;
 
@@ -103,26 +103,71 @@ function channelEventFor(jobId: string, result: WaitResult) {
 }
 
 /**
- * Long-polls the engine until the job is terminal, then pushes the outcome into the
- * session. Fire-and-forget: callers do not await it so start can return immediately.
+ * Listens to the engine's SSE event stream for the job until the terminal sentinel
+ * arrives, fetches the final result once, and pushes the outcome into the session.
+ * Fire-and-forget: callers do not await it so start can return immediately.
  */
 async function waitAndNotify(
 	server: McpServer,
 	client: EngineClient,
+	engineUrl: string,
 	jobId: string,
 ) {
+	const ac = new AbortController();
 	try {
 		for (;;) {
-			const result = await client.jobs.wait({
-				jobId,
-				timeoutMs: WAITER_POLL_MS,
-			});
-			if (result.status === 'running') continue;
-			const event = channelEventFor(jobId, result);
-			await pushChannelEvent(server, event.content, event.meta);
-			return;
+			const sseUrl = new URL(`/jobs/${jobId}/events`, engineUrl);
+			const res = await fetch(sseUrl, { signal: ac.signal });
+			if (!res.body) {
+				throw new Error('SSE stream has no body');
+			}
+
+			const reader = res.body.getReader();
+			const decoder = new TextDecoder();
+			let buffer = '';
+			let gotTerminal = false;
+
+			while (!gotTerminal) {
+				const chunk = await reader.read();
+				if (chunk.done) break;
+
+				buffer += decoder.decode(chunk.value, { stream: true });
+				const frames = buffer.split('\n\n');
+				const tail = frames.pop();
+				buffer = tail === undefined ? '' : tail;
+
+				for (const frame of frames) {
+					const lines = frame.split('\n');
+					let payload: string | undefined;
+					for (const line of lines) {
+						if (line.startsWith('data:')) {
+							payload = line.slice('data:'.length).trim();
+							break;
+						}
+					}
+					if (payload === undefined) continue;
+					if (payload === '"__terminal__"') {
+						gotTerminal = true;
+						break;
+					}
+				}
+			}
+
+			await reader.cancel().catch(() => {});
+
+			if (gotTerminal) {
+				const result = await client.jobs.wait({
+					jobId,
+					timeoutMs: TERMINAL_FETCH_TIMEOUT_MS,
+				});
+				const event = channelEventFor(jobId, result);
+				await pushChannelEvent(server, event.content, event.meta);
+				return;
+			}
+			// Stream ended without terminal sentinel; reconnect and resume listening.
 		}
 	} catch (cause) {
+		ac.abort();
 		await pushChannelEvent(
 			server,
 			`Agent job ${jobId} failed while awaiting its result: ${errorMessage(cause)}`,
@@ -134,6 +179,7 @@ async function waitAndNotify(
 function registerChannelTools(
 	server: McpServer,
 	client: EngineClient,
+	engineUrl: string,
 	aliases: AliasPreset[],
 ) {
 	server.registerTool(
@@ -145,7 +191,7 @@ function registerChannelTools(
 		async (args) => {
 			try {
 				const started = await client.jobs.start(args);
-				void waitAndNotify(server, client, started.jobId);
+				void waitAndNotify(server, client, engineUrl, started.jobId);
 				return jsonContent({ jobId: started.jobId });
 			} catch (cause) {
 				return jsonContent({ error: { message: errorMessage(cause) } });
@@ -228,7 +274,7 @@ export function runChannelServer(params: {
 				instructions: CHANNEL_INSTRUCTIONS,
 			},
 		);
-		registerChannelTools(server, client, aliases);
+		registerChannelTools(server, client, params.engineUrl, aliases);
 
 		yield* Effect.tryPromise({
 			try: () => server.connect(new StdioServerTransport()),
