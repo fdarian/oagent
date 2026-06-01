@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { Console, Effect, Layer, type Runtime } from 'effect';
+import { Console, Effect, Layer, type Runtime, Schema } from 'effect';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
@@ -11,10 +11,16 @@ import { registerTools } from './mcp/register-tools.ts';
 import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 
+class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationError>()(
+	'PortlessRegistrationError',
+	{ cause: Schema.Defect },
+) {}
+
 type ServerOptions = {
 	port: number;
 	serverInfo: { name: string; version: string };
 	filemap?: Record<string, string>;
+	portless?: boolean;
 };
 
 export class Engine extends Effect.Service<Engine>()('engine', {
@@ -30,7 +36,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					waitUrlBase: string | undefined,
 				) => registerTools(server, jobs, rt, waitUrlBase),
 			},
-			startServer: ({ port, serverInfo, filemap }: ServerOptions) =>
+			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
 					const rt = yield* Effect.runtime<never>();
@@ -177,6 +183,43 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					yield* Console.error(
 						`oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
 					);
+
+					if (portless === true) {
+						const exitCode = yield* Effect.tryPromise({
+							try: () =>
+								Bun.spawn(
+									[
+										process.execPath,
+										'x',
+										'portless',
+										'alias',
+										'oagent',
+										String(bindResult.server.port),
+									],
+									{ stdout: 'pipe', stderr: 'pipe' },
+								).exited,
+							catch: (cause) => new PortlessRegistrationError({ cause }),
+						});
+						if (exitCode === 0) {
+							process.on('exit', () => {
+								Bun.spawnSync([
+									process.execPath,
+									'x',
+									'portless',
+									'alias',
+									'--remove',
+									'oagent',
+								]);
+							});
+							yield* Console.error(
+								'oagent accessible at https://oagent.localhost',
+							);
+						} else {
+							yield* Console.warn(
+								'portless registration failed — run `portless proxy start` first for https://oagent.localhost access',
+							);
+						}
+					}
 
 					yield* Effect.never;
 				}).pipe(Effect.provideService(Jobs, jobs)),

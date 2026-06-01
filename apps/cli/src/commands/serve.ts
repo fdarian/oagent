@@ -20,7 +20,11 @@ const webFilemap = Effect.gen(function* () {
 	return filemap;
 });
 
-function runServe(params: { port: number; version: Version }) {
+function runServe(params: {
+	port: number;
+	portless: boolean;
+	version: Version;
+}) {
 	return Effect.gen(function* () {
 		const engine = yield* Engine;
 
@@ -28,6 +32,7 @@ function runServe(params: { port: number; version: Version }) {
 			port: params.port,
 			serverInfo: { name: 'oagent', version: params.version },
 			filemap: yield* webFilemap,
+			portless: params.portless,
 		});
 	});
 }
@@ -41,6 +46,12 @@ export const serveCmd = (version: Version) =>
 				Options.withDefault(17_777),
 				Options.withDescription('Port to listen on (default: 17777)'),
 			),
+			portless: Options.boolean('portless').pipe(
+				Options.withDefault(false),
+				Options.withDescription(
+					'Register with portless proxy for https://oagent.localhost access',
+				),
+			),
 		},
-		({ port }) => runServe({ port, version }),
+		({ port, portless }) => runServe({ port, portless, version }),
 	);
