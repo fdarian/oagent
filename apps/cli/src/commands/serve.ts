@@ -35,7 +35,7 @@ function runServe(params: {
 			filemap: yield* webFilemap,
 			portless: params.portless,
 		});
-	});
+	}).pipe(Effect.provide(Engine.layer));
 }
 
 export const serveCmd = (version: Version) =>

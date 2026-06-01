@@ -10,6 +10,13 @@ export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
 export { Jobs } from './jobs.ts';
 export { registerTools } from './mcp/register-tools.ts';
+export { cancelTool } from './mcp/tools/cancel.ts';
+export { resultTool } from './mcp/tools/result.ts';
+export {
+	type AliasPreset,
+	formatPresets,
+	inputSchema as startInputSchema,
+} from './mcp/tools/start.ts';
 export { OpenCode } from './opencode.ts';
 export { createEngineHandler } from './rpc/handler.ts';
 export type { EngineRouter } from './rpc/router.ts';

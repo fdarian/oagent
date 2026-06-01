@@ -21,6 +21,8 @@
 		"@effect/platform-bun": "^0.89.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@oagent/engine": "workspace:*",
+		"@orpc/client": "^1.14.4",
+		"@orpc/server": "^1.14.4",
 		"effect": "^3.21.2"
 	},
 	"devDependencies": {
