@@ -35,6 +35,8 @@ claude mcp add --transport http opencode http://localhost:17777/mcp
 
 The port defaults to `17777` and can be overridden with the `OPENCODE_MCP_PORT` environment variable.
 
+To access oagent at a stable named URL (`https://oagent.localhost`) instead of a bare port, see [docs/using-portless.md](docs/using-portless.md).
+
 ### stdio fallback
 
 If you prefer per-session stdio mode (one MCP server process per Claude Code session):

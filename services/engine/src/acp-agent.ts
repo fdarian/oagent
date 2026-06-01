@@ -11,7 +11,11 @@ import { Effect, Schema } from 'effect';
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
 	{ cause: Schema.Defect },
-) {}
+) {
+	override get message() {
+		return String(this.cause);
+	}
+}
 
 export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	'AcpTurnFailed',
