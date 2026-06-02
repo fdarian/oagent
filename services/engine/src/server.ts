@@ -198,7 +198,12 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 							const exitCode = yield* Effect.tryPromise({
 								try: () =>
 									Bun.spawn(
-										[portlessBin, 'alias', 'oagent', String(bindResult.server.port)],
+										[
+											portlessBin,
+											'alias',
+											'oagent',
+											String(bindResult.server.port),
+										],
 										{ stdout: 'pipe', stderr: 'pipe' },
 									).exited,
 								catch: (cause) => new PortlessRegistrationError({ cause }),
