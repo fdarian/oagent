@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 import { Command } from '@effect/cli';
 import { BunContext, BunRuntime } from '@effect/platform-bun';
-import { Engine } from '@oagent/engine';
-import { Effect, Layer } from 'effect';
+import { Effect } from 'effect';
 import cliPackage from '../package.json' with { type: 'json' };
+import { claudeCmd } from './commands/claude';
 import { serveCmd } from './commands/serve';
 import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
@@ -14,7 +14,11 @@ const cli = Command.make('oagent').pipe(
 	Command.withDescription(
 		'MCP server that exposes OpenCode to Claude Code as a subagent via ACP',
 	),
-	Command.withSubcommands([serveCmd(version), stdioCmd(version)]),
+	Command.withSubcommands([
+		serveCmd(version),
+		stdioCmd(version),
+		claudeCmd(version),
+	]),
 );
 
 const program = Command.run(cli, {
@@ -22,7 +26,8 @@ const program = Command.run(cli, {
 	version: version,
 })(process.argv);
 
-program.pipe(
-	Effect.provide(Engine.layer.pipe(Layer.provideMerge(BunContext.layer))),
-	(e) => BunRuntime.runMain(e),
-);
+// Each subcommand provides Engine.layer itself where needed. The `claude mcp serve`
+// channel bridge deliberately omits it: it talks to a running engine over HTTP, so
+// building the in-process engine here would open the DB and run orphan-recovery,
+// wrongly marking the live engine's running jobs as errored.
+program.pipe(Effect.provide(BunContext.layer), (e) => BunRuntime.runMain(e));

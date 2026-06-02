@@ -47,6 +47,10 @@ claude mcp add opencode -- bun /absolute/path/to/oagent/src/index.ts stdio
 
 Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_result` call should resolve to OpenCode's response.
 
+### Channel MCP (push notifications)
+
+A dedicated stdio MCP that pushes job completions into the Claude Code session instead of making the caller poll, using Claude Code's experimental [channel](https://code.claude.com/docs/en/channels) capability. It bridges to a running `oagent serve` engine over HTTP and is launched with `claude --dangerously-load-development-channels server:oagent-channel`. See [docs/claude-channel-mcp.md](docs/claude-channel-mcp.md).
+
 ## Tools
 
 ### `opencode_start`

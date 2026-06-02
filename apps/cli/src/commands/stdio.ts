@@ -25,7 +25,7 @@ function runStdio(version: Version) {
 		});
 
 		yield* Effect.never;
-	});
+	}).pipe(Effect.provide(Engine.layer));
 }
 
 export const stdioCmd = (version: Version) =>

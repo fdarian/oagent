@@ -19,16 +19,17 @@ into a subsequent start call to continue the same conversation. The cwd \
 parameter is required: an absolute path to the directory the agent should \
 operate in — typically the parent agent's project root.`;
 
-export function buildDescription(
-	aliases: {
-		name: string;
-		backend: string;
-		model_id: string;
-		description: string | null;
-	}[],
-): string {
+export type AliasPreset = {
+	name: string;
+	backend: string;
+	model_id: string;
+	description: string | null;
+};
+
+/** Renders the preset/alias suffix shared by every `start` tool description. Empty when there are no aliases. */
+export function formatPresets(aliases: AliasPreset[]): string {
 	if (aliases.length === 0) {
-		return BASE_DESCRIPTION;
+		return '';
 	}
 
 	const maxNameLen = Math.max(...aliases.map((a) => a.name.length));
@@ -41,7 +42,11 @@ export function buildDescription(
 		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${desc}`;
 	});
 
-	return `${BASE_DESCRIPTION}\n\nAvailable presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form):\n${lines.join('\n')}\n\nPresets are loaded at engine startup. Adding or editing an alias requires restarting the engine for the new list to appear here.`;
+	return `\n\nAvailable presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form):\n${lines.join('\n')}\n\nPresets are loaded at engine startup. Adding or editing an alias requires restarting the engine for the new list to appear here.`;
+}
+
+export function buildDescription(aliases: AliasPreset[]): string {
+	return `${BASE_DESCRIPTION}${formatPresets(aliases)}`;
 }
 
 export const inputSchema = {
