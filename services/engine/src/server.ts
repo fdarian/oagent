@@ -189,39 +189,32 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					);
 
 					if (portless === true) {
-						const exitCode = yield* Effect.tryPromise({
-							try: () =>
-								Bun.spawn(
-									[
-										process.execPath,
-										'x',
-										'portless',
-										'alias',
-										'oagent',
-										String(bindResult.server.port),
-									],
-									{ stdout: 'pipe', stderr: 'pipe' },
-								).exited,
-							catch: (cause) => new PortlessRegistrationError({ cause }),
-						});
-						if (exitCode === 0) {
-							process.on('exit', () => {
-								Bun.spawnSync([
-									process.execPath,
-									'x',
-									'portless',
-									'alias',
-									'--remove',
-									'oagent',
-								]);
-							});
-							yield* Console.error(
-								'oagent accessible at https://oagent.localhost',
+						const portlessBin = Bun.which('portless');
+						if (portlessBin == null) {
+							yield* Console.warn(
+								'portless registration failed — `portless` not found in PATH',
 							);
 						} else {
-							yield* Console.warn(
-								'portless registration failed — run `portless proxy start` first for https://oagent.localhost access',
-							);
+							const exitCode = yield* Effect.tryPromise({
+								try: () =>
+									Bun.spawn(
+										[portlessBin, 'alias', 'oagent', String(bindResult.server.port)],
+										{ stdout: 'pipe', stderr: 'pipe' },
+									).exited,
+								catch: (cause) => new PortlessRegistrationError({ cause }),
+							});
+							if (exitCode === 0) {
+								process.on('exit', () => {
+									Bun.spawnSync([portlessBin, 'alias', '--remove', 'oagent']);
+								});
+								yield* Console.error(
+									'oagent accessible at https://oagent.localhost',
+								);
+							} else {
+								yield* Console.warn(
+									'portless registration failed — run `portless proxy start` first for https://oagent.localhost access',
+								);
+							}
 						}
 					}
 
