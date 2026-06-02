@@ -23,7 +23,7 @@ oagent serve --portless
 # oagent accessible at https://oagent.localhost
 ```
 
-oagent calls `bunx portless alias oagent <port>` after binding, so no `$PATH` dependency on a global install — `bunx` fetches portless on demand if it isn't already cached.
+oagent looks up `portless` via `$PATH` after binding and calls `portless alias oagent <port>`. If `portless` is not found on `$PATH`, oagent logs a warning and skips registration — make sure the global install above is on your `$PATH` before starting oagent.
 
 When the process exits the route is removed automatically (`portless alias --remove oagent`).
 

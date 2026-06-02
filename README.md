@@ -23,7 +23,8 @@ bun install
 Start the daemon once; it persists across Claude Code sessions:
 
 ```sh
-bun src/index.ts serve
+bun run build           # produces apps/cli/dist/oagent
+./apps/cli/dist/oagent serve
 # oagent listening on http://127.0.0.1:17777/mcp
 ```
 
@@ -42,10 +43,10 @@ To access oagent at a stable named URL (`https://oagent.localhost`) instead of a
 If you prefer per-session stdio mode (one MCP server process per Claude Code session):
 
 ```sh
-claude mcp add opencode -- bun /absolute/path/to/oagent/src/index.ts stdio
+claude mcp add opencode -- /absolute/path/to/oagent/apps/cli/dist/oagent stdio
 ```
 
-Verify in a Claude Code session: ask Claude to call `opencode_start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `opencode_result` call should resolve to OpenCode's response.
+Verify in a Claude Code session: ask Claude to call `start` with a `prompt` and `cwd` — it should return a `jobId`, and a follow-up `result` call should resolve to OpenCode's response.
 
 ### Channel MCP (push notifications)
 
@@ -53,21 +54,23 @@ A dedicated stdio MCP that pushes job completions into the Claude Code session i
 
 ## Tools
 
-### `opencode_start`
+### `start`
 
-Delegates a task to OpenCode and returns a `jobId` immediately.
+Delegates a task to the coding agent and returns immediately.
 
 Input:
 - `prompt: string` — the task to send
-- `cwd: string` — **required** absolute path to the directory OpenCode should operate in; typically the parent agent's project root
-- `model?: string` — OpenCode model id in provider-prefixed format (e.g. `opencode-go/kimi-k2.6`, `openrouter/anthropic/claude-sonnet-4.5`). Run `opencode models` to discover available ids. Omit to use OpenCode's configured default.
-- `sessionId?: string` — pass the `sessionId` returned from a prior `opencode_result` to continue that conversation.
+- `cwd: string` — **required** absolute path to the directory the agent should operate in; typically the parent agent's project root
+- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias name. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`. If the user has not specified a model, ask them which model and backend to use.
+- `sessionId?: string` — pass the `sessionId` returned from a prior `result` done response to continue that conversation.
 
-Output: `{ jobId: string }`
+Output:
+- HTTP daemon mode: `{ jobId: string, waitUrl: string }` — `waitUrl` is `<origin>/jobs/<jobId>/wait`, a long-poll endpoint; run `curl -sS <waitUrl>` as a background shell command to wait for completion without occupying a tool call slot.
+- stdio mode: `{ jobId: string }` — no `waitUrl`; use the `result` tool to poll.
 
-### `opencode_result`
+### `result`
 
-Fetches the result of a job, blocking up to `timeoutMs` if it's still running. In HTTP daemon mode, prefer the `waitUrl` returned by `opencode_start` — it's a long-poll endpoint you can hit with `curl` from a background shell. This MCP tool is the stdio-mode fallback; callers poll it until the status is terminal because Claude Code enforces a ~60 s hard timeout per MCP tool call, while OpenCode turns can take minutes.
+Fetches the result of a job, blocking up to `timeoutMs` if it's still running. In HTTP daemon mode, prefer `curl`-ing the `waitUrl` from `start` instead. This tool is the stdio-mode fallback; poll it until the status is terminal.
 
 Input:
 - `jobId: string`
@@ -75,12 +78,23 @@ Input:
 
 Output (discriminated union):
 - `{ status: "running" }` — call again
-- `{ status: "done", text: string, sessionId: string, stopReason: string }` — final aggregated assistant text plus the sessionId you can pass back to `opencode_start` to continue the conversation
+- `{ status: "done", text: string, sessionId: string, stopReason: string }` — final aggregated assistant text plus the sessionId you can pass back to `start` to continue the conversation
 - `{ status: "error", message: string }`
+
+### `cancel`
+
+Cancels a running job started via `start`. Interrupts the underlying agent session and marks the job `cancelled`. Cancelling an already-terminal job is a no-op.
+
+Input:
+- `jobId: string`
+
+Output:
+- `{ ok: true }` — job was found (running or already terminal)
+- `{ ok: false }` — no job with that `jobId` exists
 
 ## Web UI
 
-In `serve` (HTTP) mode, open `http://localhost:17777/` in a browser to see the live job list. Click a job to see its event timeline — text deltas, tool calls, status updates, and errors — streamed live via SSE while the job is running. The UI is server-rendered HTML; no framework or build step required.
+In `serve` (HTTP) mode, open `http://localhost:17777/` in a browser to see the live job list. Click a job to see its event timeline — text deltas, tool calls, status updates, and errors — streamed live via SSE while the job is running. The UI is a React 19 + Vite + Tailwind v4 SPA, embedded into the standalone binary at build time.
 
 This is only available in `serve` mode. The stdio fallback has no web UI.
 
@@ -88,18 +102,18 @@ This is only available in `serve` mode. The stdio fallback has no web UI.
 
 This is an MVP. The following are intentionally not supported:
 - `run_in_background` / worktree isolation — a job runs to completion or errors; no background detach
-- Cancellation — there's no `opencode_cancel` yet
 - Streaming partial output — you only see the aggregated text on `done`
 - No auth — the HTTP daemon binds to `127.0.0.1` only; no token is required or checked
 - Configurable permission policy — OpenCode's permission requests are auto-approved (the same pattern Claude Code uses with `--dangerously-skip-permissions`)
-- No job persistence across daemon restarts — the in-memory job map is process-local
+
+Jobs and events persist to SQLite at `~/.config/oagent/sqlite.db` (override with `OAGENT_DB_PATH`). On restart, any jobs that were in-flight are marked as errored automatically.
 
 ## Development
 
 ```sh
-bun dev          # run src/index.ts directly
-bun check        # typecheck + biome lint
-bun run format   # biome format + lint --write
+bun dev          # parallel: engine + vite dev server
+bun check        # typecheck + biome lint across all packages
+bun run build    # produce standalone binary at apps/cli/dist/oagent
 ```
 
 Architecture: `AGENTS.md`.
