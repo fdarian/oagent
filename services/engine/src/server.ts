@@ -11,6 +11,9 @@ import { registerTools } from './mcp/register-tools.ts';
 import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 
+const PORTLESS_ALIAS = 'oagent';
+const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
+
 class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationError>()(
 	'PortlessRegistrationError',
 	{ cause: Schema.Defect },
@@ -59,6 +62,8 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 						}
 					>();
 
+					let portlessPublicBase: string | undefined;
+
 					const fetchHandler = async (request: Request) => {
 						const url = new URL(request.url);
 
@@ -88,7 +93,12 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 								{ name: serverInfo.name, version: serverInfo.version },
 								{ capabilities: { tools: {} } },
 							);
-							registerTools(mcpServer, jobs, rt, url.origin);
+							registerTools(
+								mcpServer,
+								jobs,
+								rt,
+								portlessPublicBase ?? url.origin,
+							);
 
 							await mcpServer.connect(transport);
 							return transport.handleRequest(request);
@@ -201,7 +211,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 										[
 											portlessBin,
 											'alias',
-											'oagent',
+											PORTLESS_ALIAS,
 											String(bindResult.server.port),
 										],
 										{ stdout: 'pipe', stderr: 'pipe' },
@@ -209,15 +219,21 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 								catch: (cause) => new PortlessRegistrationError({ cause }),
 							});
 							if (exitCode === 0) {
+								portlessPublicBase = PORTLESS_PUBLIC_BASE;
 								process.on('exit', () => {
-									Bun.spawnSync([portlessBin, 'alias', '--remove', 'oagent']);
+									Bun.spawnSync([
+										portlessBin,
+										'alias',
+										'--remove',
+										PORTLESS_ALIAS,
+									]);
 								});
 								yield* Console.error(
-									'oagent accessible at https://oagent.localhost',
+									`oagent accessible at ${PORTLESS_PUBLIC_BASE}`,
 								);
 							} else {
 								yield* Console.warn(
-									'portless registration failed — run `portless proxy start` first for https://oagent.localhost access',
+									`portless registration failed — run \`portless proxy start\` first for ${PORTLESS_PUBLIC_BASE} access`,
 								);
 							}
 						}
