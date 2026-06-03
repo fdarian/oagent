@@ -3,18 +3,14 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
 	type AliasPreset,
 	cancelTool,
-	type EngineRouter,
 	formatPresets,
 	resultTool,
 	startInputSchema,
 } from '@oagent/engine';
-import { createORPCClient } from '@orpc/client';
-import { RPCLink } from '@orpc/client/fetch';
-import type { RouterClient } from '@orpc/server';
 import { Effect } from 'effect';
+import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
 
-type EngineClient = RouterClient<EngineRouter>;
 type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
 
 /** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
@@ -59,11 +55,6 @@ function errorMessage(cause: unknown): string {
 
 function jsonContent(value: unknown) {
 	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] };
-}
-
-function createEngineClient(engineUrl: string): EngineClient {
-	const link = new RPCLink({ url: new URL('/rpc', engineUrl) });
-	return createORPCClient(link);
 }
 
 /** Pushes a single `<channel source="oagent" ...>` event into the Claude Code session. */

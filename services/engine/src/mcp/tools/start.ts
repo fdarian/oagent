@@ -6,18 +6,18 @@ const BASE_DESCRIPTION = `\
 Delegate a task to the coding agent, running as a subprocess. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
 agent is the coding agent. Supports two backends: OpenCode and Cursor CLI. \
-Returns immediately with {jobId, waitUrl?}. If waitUrl is \
-present, the recommended way to wait is to run \`curl -sS <waitUrl>\` as a \
-background Bash command (run_in_background=true), then read the result with \
-BashOutput when ready. The curl returns the same JSON shape as result. \
-Optionally pass ?timeoutMs=N to the curl URL (default 600000 = 10min). The shell \
-will block until the job is terminal or the timeout fires; on timeout the response \
-is {status:"running"} and you can curl again. If waitUrl is absent (stdio mode), \
-fall back to repeatedly calling result. The first successful response \
-with status "done" will include the agent sessionId; pass that sessionId back \
-into a subsequent start call to continue the same conversation. The cwd \
-parameter is required: an absolute path to the directory the agent should \
-operate in — typically the parent agent's project root.`;
+Returns immediately with {jobId, waitUrl?}. The recommended way to wait is to run \
+\`oagent jobs wait <jobId>\` as a background Bash command (run_in_background=true), \
+then read the result with BashOutput when ready. It hits the engine directly and \
+returns the same JSON shape as result; on timeout the response is {status:"running"} \
+and you can run it again. Requires the \`oagent\` binary on PATH. Optional flags: \
+\`--timeout-ms N\` (overall wait budget, default 10800000 = 3h) and \`--engine-url URL\`. \
+As a fallback, if waitUrl is present you can instead run \`curl -sS <waitUrl>\` (also \
+background + BashOutput; optional ?timeoutMs=N, default 600000 = 10min); if waitUrl \
+is absent (stdio mode), repeatedly call result. The first response with status "done" \
+includes the agent sessionId; pass that sessionId back into a subsequent start call \
+to continue the same conversation. The cwd parameter is required: an absolute path to \
+the directory the agent should operate in — typically the parent agent's project root.`;
 
 export type AliasPreset = {
 	name: string;

@@ -1,10 +1,9 @@
 import { Command, Options } from '@effect/cli';
 import { runChannelServer } from '#/lib/channel.ts';
+import { defaultEngineUrl } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
 
 export const claudeCmd = (version: Version) => {
-	const defaultEngineUrl = `http://localhost:${process.env.OPENCODE_MCP_PORT ?? '17777'}`;
-
 	const serve = Command.make(
 		'serve',
 		{

@@ -4,6 +4,7 @@ import { BunContext, BunRuntime } from '@effect/platform-bun';
 import { Effect } from 'effect';
 import cliPackage from '../package.json' with { type: 'json' };
 import { claudeCmd } from './commands/claude';
+import { jobsCmd } from './commands/jobs';
 import { serveCmd } from './commands/serve';
 import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
@@ -18,6 +19,7 @@ const cli = Command.make('oagent').pipe(
 		serveCmd(version),
 		stdioCmd(version),
 		claudeCmd(version),
+		jobsCmd(version),
 	]),
 );
 
