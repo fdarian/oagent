@@ -7,6 +7,7 @@ import { JobSidebar } from '@/components/job-sidebar';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
 import { orpc } from '@/lib/orpc';
+import { queryKeys } from '@/lib/query-keys';
 import { useJobEvents } from '@/lib/use-job-events';
 import { useJobList } from '@/lib/use-job-list';
 
@@ -20,7 +21,7 @@ export function ConsolePage() {
 	const cancelJob = useMutation({
 		mutationFn: (jobId: string) => orpc.jobs.cancel({ jobId }),
 		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['jobs'] });
+			queryClient.invalidateQueries({ queryKey: queryKeys.jobs() });
 		},
 		onError: (error) => {
 			console.error('Failed to cancel job', error);
