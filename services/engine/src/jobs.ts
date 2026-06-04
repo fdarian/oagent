@@ -50,6 +50,12 @@ type EventPage = {
 	nextCursor: number | null;
 };
 
+type JobsChange = {
+	type: 'created' | 'status';
+	jobId: string;
+	status?: string;
+};
+
 const TIMEOUT_DEFAULT_MS = 50_000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
@@ -101,6 +107,8 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, unknown>>();
+		const jobsEmitter = new EventEmitter();
+		jobsEmitter.setMaxListeners(0);
 
 		const insertEvent = (jobId: number, event: SessionUpdate): number => {
 			return db.transaction((tx) => {
@@ -347,6 +355,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					throw new Error('Failed to insert job');
 				}
 				const internalId = jobRow.id;
+				jobsEmitter.emit('change', { type: 'created', jobId: uuid });
 
 				const emitter = new EventEmitter();
 				emitter.setMaxListeners(0);
@@ -402,6 +411,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 									})
 									.where(eq(schema.jobs.id, internalId))
 									.run();
+								jobsEmitter.emit('change', {
+									type: 'status',
+									jobId: uuid,
+									status: 'done',
+								});
 							}),
 						),
 						Effect.tapError((error) =>
@@ -414,6 +428,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 									})
 									.where(eq(schema.jobs.id, internalId))
 									.run();
+								jobsEmitter.emit('change', {
+									type: 'status',
+									jobId: uuid,
+									status: 'error',
+								});
 							}),
 						),
 						Effect.ensuring(closeResources),
@@ -447,6 +466,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					.set({ status: 'cancelled', terminated_at: new Date() })
 					.where(eq(schema.jobs.id, job.id))
 					.run();
+				jobsEmitter.emit('change', {
+					type: 'status',
+					jobId: input.jobId,
+					status: 'cancelled',
+				});
 
 				const fiber = liveFibers.get(input.jobId);
 				if (fiber !== undefined) {
@@ -616,6 +640,15 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			};
 		};
 
+		const subscribeJobs = (
+			listener: (change: JobsChange) => void,
+		): (() => void) => {
+			jobsEmitter.on('change', listener);
+			return () => {
+				jobsEmitter.off('change', listener);
+			};
+		};
+
 		const listAliases = () => {
 			return db
 				.select()
@@ -681,6 +714,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			list,
 			getDetail,
 			subscribe,
+			subscribeJobs,
 			listAliases,
 			saveAlias,
 			deleteAlias,
