@@ -4,7 +4,7 @@ import { useJobList } from '@/lib/use-job-list';
 
 export function ConsoleLayout() {
 	const jobList = useJobList();
-	const jobMatch = useMatch({ from: '/jobs/$jobId', shouldThrow: false });
+	const jobMatch = useMatch({ from: '/console/jobs/$jobId', shouldThrow: false });
 	const selectedId = jobMatch === undefined ? undefined : jobMatch.params.jobId;
 
 	return (

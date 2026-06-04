@@ -11,7 +11,7 @@ import { useJobEvents } from '@/lib/use-job-events';
 import { useJobList } from '@/lib/use-job-list';
 
 export function JobDetailPage() {
-	const params = useParams({ from: '/jobs/$jobId' });
+	const params = useParams({ from: '/console/jobs/$jobId' });
 	const jobId = params.jobId;
 	const [isPromptExpanded, setIsPromptExpanded] = useState(false);
 	const jobList = useJobList();

@@ -13,7 +13,7 @@ const rootRoute = createRootRoute({ component: App });
 
 const consoleLayoutRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	path: '/',
+	id: 'console',
 	component: ConsoleLayout,
 });
 
