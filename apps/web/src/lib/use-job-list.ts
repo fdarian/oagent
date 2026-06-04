@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react';
 import { groupByDay } from './format.ts';
 import { orpc } from './orpc.ts';
 import { queryKeys } from './query-keys.ts';
+import { useJobListStream } from './use-job-list-stream.ts';
 
 export type JobListItem = {
 	id: string;
@@ -15,15 +16,11 @@ export type JobListItem = {
 };
 
 export function useJobList() {
+	useJobListStream();
+
 	const { data, isLoading } = useQuery({
 		queryKey: queryKeys.jobs(),
 		queryFn: () => orpc.jobs.list(),
-		refetchInterval: (query) => {
-			if (query.state.data?.some((j) => j.status === 'running')) {
-				return 2000;
-			}
-			return false;
-		},
 	});
 
 	const [cwdFilter, setCwdFilter] = useState('');
