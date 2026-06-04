@@ -5,14 +5,28 @@ import {
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
-import { ConsolePage } from './pages/ConsolePage.tsx';
+import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
+import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
+import { JobDetailPage } from './pages/JobDetailPage.tsx';
 
 const rootRoute = createRootRoute({ component: App });
 
-const indexRoute = createRoute({
+const consoleLayoutRoute = createRoute({
 	getParentRoute: () => rootRoute,
 	path: '/',
-	component: ConsolePage,
+	component: ConsoleLayout,
+});
+
+const consoleIndexRoute = createRoute({
+	getParentRoute: () => consoleLayoutRoute,
+	path: '/',
+	component: ConsoleIndexPage,
+});
+
+const jobDetailRoute = createRoute({
+	getParentRoute: () => consoleLayoutRoute,
+	path: 'jobs/$jobId',
+	component: JobDetailPage,
 });
 
 const aliasesRoute = createRoute({
@@ -21,7 +35,10 @@ const aliasesRoute = createRoute({
 	component: AliasesPage,
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, aliasesRoute]);
+const routeTree = rootRoute.addChildren([
+	consoleLayoutRoute.addChildren([consoleIndexRoute, jobDetailRoute]),
+	aliasesRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

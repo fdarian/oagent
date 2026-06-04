@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { formatAge } from '@/lib/format';
 import { warmUpJobEvents } from '@/lib/job-warmup';
 import type { JobListItem } from '@/lib/use-job-list';
@@ -6,7 +7,6 @@ import { cn } from '@/lib/utils';
 export type JobSidebarListProps = {
 	groups: { label: string; items: JobListItem[] };
 	selectedId?: string;
-	onSelect: (id: string) => void;
 };
 
 function statusDotClass(status: string): string {
@@ -15,11 +15,7 @@ function statusDotClass(status: string): string {
 	return 'bg-destructive';
 }
 
-export function JobSidebarList({
-	groups,
-	selectedId,
-	onSelect,
-}: JobSidebarListProps) {
+export function JobSidebarList({ groups, selectedId }: JobSidebarListProps) {
 	return (
 		<div className="flex flex-col">
 			<div className="flex items-center justify-between px-22 py-15">
@@ -36,10 +32,10 @@ export function JobSidebarList({
 					const promptPreview =
 						job.prompt.split('\n')[0]?.slice(0, 80) ?? job.id;
 					return (
-						<button
+						<Link
 							key={job.id}
-							type="button"
-							onClick={() => onSelect(job.id)}
+							to="/jobs/$jobId"
+							params={{ jobId: job.id }}
 							onMouseEnter={() => warmUpJobEvents(job.id, selectedId)}
 							className={cn(
 								'flex flex-col gap-[6px] border-l px-22 py-15 text-left transition-colors',
@@ -64,7 +60,7 @@ export function JobSidebarList({
 								<span>·</span>
 								<span>{formatAge(job.createdAt)}</span>
 							</div>
-						</button>
+						</Link>
 					);
 				})}
 			</div>

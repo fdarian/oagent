@@ -18,7 +18,6 @@ export const Empty: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
-		onSelectJob: () => {},
 	},
 };
 
@@ -41,7 +40,6 @@ export const Dense: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
-		onSelectJob: () => {},
 	},
 };
 
@@ -92,7 +90,6 @@ export const MixedStatuses: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
-		onSelectJob: () => {},
 	},
 };
 
@@ -117,6 +114,5 @@ export const LongTitles: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
-		onSelectJob: () => {},
 	},
 };
