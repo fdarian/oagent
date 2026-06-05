@@ -1,8 +1,9 @@
 import { Effect, Ref, Schema } from 'effect';
 import { Cursor } from './cursor.ts';
+import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 
-type Backend = 'opencode' | 'cursor';
+type Backend = 'opencode' | 'cursor' | 'grok';
 
 export type ModelEntry = { id: string; label?: string };
 
@@ -27,13 +28,17 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 		effect: Effect.gen(function* () {
 			const opencode = yield* OpenCode;
 			const cursor = yield* Cursor;
+			const grok = yield* Grok;
 			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
 
 			const fetch = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
-				const inner =
-					backend === 'opencode' ? opencode.listModels() : cursor.listModels();
+				const inner = (() => {
+					if (backend === 'opencode') return opencode.listModels();
+					if (backend === 'grok') return grok.listModels();
+					return cursor.listModels();
+				})();
 				return inner.pipe(
 					Effect.catchAll((cause) =>
 						Effect.fail(
@@ -67,6 +72,6 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			return { list };
 		}),
-		dependencies: [OpenCode.Default, Cursor.Default],
+		dependencies: [OpenCode.Default, Cursor.Default, Grok.Default],
 	},
 ) {}
