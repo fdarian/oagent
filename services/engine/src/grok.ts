@@ -1,6 +1,10 @@
-import { type SessionUpdate } from '@agentclientprotocol/sdk';
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Effect } from 'effect';
-import { AcpSessionError, createAcpConnection, runAcpTurn } from './acp-agent.ts';
+import {
+	AcpSessionError,
+	createAcpConnection,
+	runAcpTurn,
+} from './acp-agent.ts';
 
 export class Grok extends Effect.Service<Grok>()('oagent/Grok', {
 	effect: Effect.gen(function* () {

@@ -178,7 +178,9 @@ const program = Effect.gen(function* () {
 		models: {
 			list: yield* createHandler(
 				os
-					.input(v.object({ backend: v.picklist(['opencode', 'cursor', 'grok']) }))
+					.input(
+						v.object({ backend: v.picklist(['opencode', 'cursor', 'grok']) }),
+					)
 					.output(
 						v.array(
 							v.object({ id: v.string(), label: v.optional(v.string()) }),

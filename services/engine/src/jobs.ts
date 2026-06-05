@@ -6,10 +6,10 @@ import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
 import { Cursor } from './cursor.ts';
-import { Grok } from './grok.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
@@ -81,7 +81,11 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				if (colonIdx !== -1) {
 					const backend = model.slice(0, colonIdx);
 					const modelId = model.slice(colonIdx + 1);
-					if (backend !== 'opencode' && backend !== 'cursor' && backend !== 'grok') {
+					if (
+						backend !== 'opencode' &&
+						backend !== 'cursor' &&
+						backend !== 'grok'
+					) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
 							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok.`,

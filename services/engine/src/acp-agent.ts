@@ -174,8 +174,11 @@ export function runAcpTurn(
 		registerListener: (
 			sessionId: string,
 			fn: (e: SessionUpdate) => void,
-		) => (() => void);
-		extNotificationHandlers: Map<string, (method: string, params: unknown) => void>;
+		) => () => void;
+		extNotificationHandlers: Map<
+			string,
+			(method: string, params: unknown) => void
+		>;
 	},
 	input: {
 		prompt: string;
@@ -345,16 +348,14 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 		Effect.gen(function* () {
 			const env = yield* createAcpConnection(config);
 
-			const runTurn = (
-				input: {
-					prompt: string;
-					model?: string;
-					sessionId?: string;
-					cwd: string;
-					onEvent?: (event: SessionUpdate) => void;
-					onExtensionEvent?: (method: string, params: unknown) => void;
-				},
-			) => runAcpTurn(env, input);
+			const runTurn = (input: {
+				prompt: string;
+				model?: string;
+				sessionId?: string;
+				cwd: string;
+				onEvent?: (event: SessionUpdate) => void;
+				onExtensionEvent?: (method: string, params: unknown) => void;
+			}) => runAcpTurn(env, input);
 
 			const listModels = (): Effect.Effect<
 				ReadonlyArray<{ id: string }>,
@@ -362,7 +363,8 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				never
 			> =>
 				Effect.tryPromise({
-					try: () => env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+					try: () =>
+						env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
 					catch: (cause) => new AcpSessionError({ cause }),
 				}).pipe(
 					Effect.map((res) =>

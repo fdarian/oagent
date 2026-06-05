@@ -34,11 +34,11 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 			const fetch = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
-			const inner = (() => {
-				if (backend === 'opencode') return opencode.listModels();
-				if (backend === 'grok') return grok.listModels();
-				return cursor.listModels();
-			})();
+				const inner = (() => {
+					if (backend === 'opencode') return opencode.listModels();
+					if (backend === 'grok') return grok.listModels();
+					return cursor.listModels();
+				})();
 				return inner.pipe(
 					Effect.catchAll((cause) =>
 						Effect.fail(
