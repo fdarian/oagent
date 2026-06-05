@@ -23,7 +23,7 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 		const binary =
 			process.env.OAGENT_CURSOR_BIN !== undefined
 				? process.env.OAGENT_CURSOR_BIN
-				: 'agent';
+				: 'cursor-agent';
 		const acpAgent = yield* AcpAgent.pipe(
 			Effect.provide(
 				AcpAgent.Default({
