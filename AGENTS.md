@@ -24,6 +24,7 @@ Quick commands:
 ```sh
 bun dev    # parallel: engine + vite; engine picks port and DB session, web polls for engine URL
 bun check  # typecheck + biome across all packages
+bun run test  # vitest + @effect/vitest across packages (turbo); per-package: bun -b vitest run
 bun run build  # produce standalone binary at apps/cli/dist/oagent
 ```
 
