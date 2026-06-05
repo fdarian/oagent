@@ -23,6 +23,7 @@
 		"@oagent/engine": "workspace:*",
 		"@orpc/client": "^1.14.4",
 		"@orpc/server": "^1.14.4",
+		"@toon-format/toon": "^2.3.0",
 		"effect": "^3.21.2"
 	},
 	"devDependencies": {
