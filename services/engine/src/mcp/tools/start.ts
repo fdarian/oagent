@@ -68,7 +68,7 @@ export const inputSchema = {
 		.string()
 		.optional()
 		.describe(
-			'Model id in either: `<backend>:<modelId>` format or an `alias`. Valid backends: `opencode`, `cursor`, `grok`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `grok:grok-build`. If the user has not specified a model, ask them which model and backend to use.',
+			'Model id in either: `<backend>:<modelId>` format or an `alias`. If the user has not specified a model, ask them which model and backend to use.',
 		),
 	sessionId: z
 		.string()
