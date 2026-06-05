@@ -1,4 +1,5 @@
 import { Args, Command, Options } from '@effect/cli';
+import { encode } from '@toon-format/toon';
 import { Effect } from 'effect';
 import {
 	createEngineClient,
@@ -8,6 +9,8 @@ import {
 import type { Version } from '#/lib/misc.ts';
 
 type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
+type ListResult = Awaited<ReturnType<EngineClient['jobs']['list']>>;
+type ListJob = ListResult[number];
 
 /** Per-request wait budget. The engine's wait blocks up to this long before returning. */
 const CHUNK_MS = 600_000;
@@ -70,6 +73,76 @@ function runWait(params: {
 	);
 }
 
+function renderToon(
+	total: number,
+	shown: number,
+	jobs: ReadonlyArray<ListJob>,
+) {
+	const mapped = jobs.map((job) => ({
+		status: job.status,
+		id: job.id,
+		created: new Date(job.createdAt).toISOString(),
+		model: job.model ?? null,
+		cwd: job.cwd,
+		prompt:
+			job.prompt.replace(/\n/g, ' ').length > 120
+				? `${job.prompt.replace(/\n/g, ' ').slice(0, 120)}…`
+				: job.prompt.replace(/\n/g, ' '),
+	}));
+	return `${encode({ total, shown, jobs: mapped })}\n`;
+}
+
+function renderJson(
+	total: number,
+	shown: number,
+	jobs: ReadonlyArray<ListJob>,
+) {
+	const mapped = jobs.map((job) => ({
+		id: job.id,
+		status: job.status,
+		createdAt: new Date(job.createdAt).toISOString(),
+		terminatedAt:
+			job.terminatedAt !== undefined
+				? new Date(job.terminatedAt).toISOString()
+				: undefined,
+		prompt: job.prompt,
+		cwd: job.cwd,
+		model: job.model,
+	}));
+	return `${JSON.stringify({ total, shown, jobs: mapped })}\n`;
+}
+
+function runList(params: {
+	engineUrl: string;
+	limit: number;
+	format: 'toon' | 'json';
+}) {
+	return Effect.tryPromise(async () => {
+		const client = createEngineClient(params.engineUrl);
+		const fullList = await client.jobs.list();
+		const sliced = fullList.slice(0, params.limit);
+		const total = fullList.length;
+		const shown = sliced.length;
+
+		const output =
+			params.format === 'json'
+				? renderJson(total, shown, sliced)
+				: renderToon(total, shown, sliced);
+
+		process.stdout.write(output);
+	}).pipe(
+		Effect.catchAll((cause) =>
+			Effect.sync(() => {
+				const message = errorMessage(cause);
+				process.stderr.write(
+					`${JSON.stringify({ status: 'error', message })}\n`,
+				);
+				process.exitCode = 1;
+			}),
+		),
+	);
+}
+
 export const jobsCmd = (_version: Version) => {
 	const wait = Command.make(
 		'wait',
@@ -96,8 +169,37 @@ export const jobsCmd = (_version: Version) => {
 		),
 	);
 
+	const list = Command.make(
+		'list',
+		{
+			engineUrl: Options.text('engine-url').pipe(
+				Options.withDefault(defaultEngineUrl),
+				Options.withDescription(
+					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
+				),
+			),
+			limit: Options.integer('limit').pipe(
+				Options.withDefault(10),
+				Options.withDescription(
+					'Maximum number of jobs to show (default: 10). Raise to see more, e.g. --limit 50.',
+				),
+			),
+			format: Options.choice('format', ['toon', 'json']).pipe(
+				Options.withDefault('toon'),
+				Options.withDescription(
+					'Output format. toon (default) is the compact, token-efficient format for agent/LLM consumption; json is full-fidelity for piping.',
+				),
+			),
+		},
+		({ engineUrl, limit, format }) => runList({ engineUrl, limit, format }),
+	).pipe(
+		Command.withDescription(
+			'List recent jobs (running first, then newest first). Useful for recovering a jobId after an interrupted wait.',
+		),
+	);
+
 	return Command.make('jobs').pipe(
 		Command.withDescription('Inspect and wait on oagent jobs'),
-		Command.withSubcommands([wait]),
+		Command.withSubcommands([wait, list]),
 	);
 };

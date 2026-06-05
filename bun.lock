@@ -23,6 +23,7 @@
         "@oagent/engine": "workspace:*",
         "@orpc/client": "^1.14.4",
         "@orpc/server": "^1.14.4",
+        "@toon-format/toon": "^2.3.0",
         "effect": "^3.21.2",
       },
       "devDependencies": {
@@ -759,6 +760,8 @@
     "@tokenlens/helpers": ["@tokenlens/helpers@1.3.1", "", { "dependencies": { "@tokenlens/core": "1.3.0", "@tokenlens/fetch": "1.3.0" } }, "sha512-t6yL8N6ES8337E6eVSeH4hCKnPdWkZRFpupy9w5E66Q9IeqQ9IO7XQ6gh12JKjvWiRHuyyJ8MBP5I549Cr41EQ=="],
 
     "@tokenlens/models": ["@tokenlens/models@1.3.0", "", { "dependencies": { "@tokenlens/core": "1.3.0" } }, "sha512-9mx7ZGeewW4ndXAiD7AT1bbCk4OpJeortbjHHyNkgap+pMPPn1chY6R5zqe1ggXIUzZ2l8VOAKfPqOvpcrisJw=="],
+
+    "@toon-format/toon": ["@toon-format/toon@2.3.0", "", {}, "sha512-/Ew9etdRQKVMnm9fDaCG0JjyAOK/O7T0M97oum1aW4W+UR8ZhVVPBanIV7oWgHBiGlnVxV9M55PWQCHofDV07w=="],
 
     "@total-typescript/tsconfig": ["@total-typescript/tsconfig@1.0.4", "", {}, "sha512-fO4ctMPGz1kOFOQ4RCPBRBfMy3gDn+pegUfrGyUFRMv/Rd0ZM3/SHH3hFCYG4u6bPLG8OlmOGcBLDexvyr3A5w=="],
 
