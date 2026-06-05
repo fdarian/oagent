@@ -13,6 +13,7 @@
 	"scripts": {
 		"dev": "bun --filter '*' dev",
 		"check": "turbo run check",
+		"test": "turbo run test",
 		"format": "biome check --write",
 		"build": "bun --filter '@oagent/cli' build"
 	},
