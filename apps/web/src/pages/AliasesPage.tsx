@@ -1,6 +1,5 @@
 import { useForm } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -427,20 +426,11 @@ export function AliasesPage() {
 	const aliases = (listQuery.data ?? []) as Alias[];
 
 	return (
-		<div className="flex h-screen w-screen flex-col bg-background">
+		<div className="flex min-h-0 flex-1 flex-col">
 			<header className="flex items-center justify-between border-b border-border px-22 py-15">
-				<div className="flex items-center gap-22">
-					<Link
-						to="/"
-						className="text-subheading font-light text-foreground hover:text-primary"
-					>
-						oagent
-					</Link>
-					<span className="text-body text-muted-foreground">/</span>
-					<span className="text-subheading font-light text-foreground">
-						Aliases
-					</span>
-				</div>
+				<span className="text-subheading font-light text-foreground">
+					Aliases
+				</span>
 				<Button onClick={openCreate}>Create alias</Button>
 			</header>
 

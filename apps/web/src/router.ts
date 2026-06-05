@@ -2,12 +2,14 @@ import {
 	createRootRoute,
 	createRoute,
 	createRouter,
+	redirect,
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
 import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
 import { JobDetailPage } from './pages/JobDetailPage.tsx';
+import { SettingsLayout } from './pages/SettingsLayout.tsx';
 
 const rootRoute = createRootRoute({ component: App });
 
@@ -29,15 +31,30 @@ const jobDetailRoute = createRoute({
 	component: JobDetailPage,
 });
 
-const aliasesRoute = createRoute({
+const settingsLayoutRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	path: '/aliases',
+	id: 'settings',
+	path: '/settings',
+	component: SettingsLayout,
+});
+
+const settingsIndexRoute = createRoute({
+	getParentRoute: () => settingsLayoutRoute,
+	path: '/',
+	beforeLoad: () => {
+		throw redirect({ to: '/settings/aliases' });
+	},
+});
+
+const settingsAliasesRoute = createRoute({
+	getParentRoute: () => settingsLayoutRoute,
+	path: 'aliases',
 	component: AliasesPage,
 });
 
 const routeTree = rootRoute.addChildren([
 	consoleLayoutRoute.addChildren([consoleIndexRoute, jobDetailRoute]),
-	aliasesRoute,
+	settingsLayoutRoute.addChildren([settingsIndexRoute, settingsAliasesRoute]),
 ]);
 
 export const router = createRouter({ routeTree });

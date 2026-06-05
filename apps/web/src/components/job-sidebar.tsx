@@ -29,10 +29,10 @@ export function JobSidebar({
 			</div>
 			<div className="flex items-center justify-between border-b border-border px-22 py-15">
 				<Link
-					to="/aliases"
+					to="/settings"
 					className="text-caption text-muted-foreground hover:text-foreground"
 				>
-					Aliases
+					Settings
 				</Link>
 			</div>
 			<JobSidebarFilters
