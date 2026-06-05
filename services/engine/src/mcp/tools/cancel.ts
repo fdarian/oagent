@@ -3,11 +3,13 @@ import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
 const description = `\
-Cancel a running agent job started via start. Interrupts the underlying \
-agent session and marks the job 'cancelled'. Returns { ok: true } if the \
-job was found (whether it was actually running or already terminal), or \
-{ ok: false } if no job with that jobId exists. Cancelling an already-terminal \
-job is a no-op.`;
+Cancel a running agent job started via \`start\`. Interrupts the underlying agent session and marks the job 'cancelled'.
+
+Returns
+- { ok: true } if the job was found (whether it was actually running or already terminal)
+- { ok: false } if no job with that jobId exists.
+
+Cancelling an already-terminal job is a no-op.`;
 
 const inputSchema = {
 	jobId: z.string().describe('The jobId returned by start.'),

@@ -3,15 +3,13 @@ import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
 const description = `\
-Fetch the result of an agent job (started via start). In HTTP daemon \
-mode, prefer the waitUrl from start; this tool is the stdio-mode \
-fallback. Blocks up to timeoutMs (default 50000, capped at 55000 to stay under \
-Claude Code's tool timeout). Returns a discriminated union: { status: "running" } \
-— call again to keep waiting; { status: "done", text, sessionId, stopReason } — \
-the final aggregated assistant text plus the sessionId you can pass back to \
-start to continue the same conversation; { status: "error", message } — \
-the job terminated with an error. Always poll until status is "done" or "error" \
-before treating the task as complete.`;
+Fetch the result of an agent job (started via \`start\`).
+
+It returns the final result as a discriminated union:
+- Success: \`{ status: "done", text, sessionId, stopReason }\` — the final aggregated assistant text plus the \`sessionId\` you can pass back into a subsequent \`start\` call to continue the same conversation
+- Error: \`{ status: "error", message }\` — the job terminated with an error 
+- Cancelled: \`{ status: "cancelled" }\`
+- Pending: \`{ status: "running", jobId }\` — the job is still running, wait by executing \`oagent jobs wait <jobId>\` as a background command`;
 
 const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
 const WAIT_TIMEOUT_MAX_MS = 55_000;
