@@ -108,6 +108,10 @@ This is an MVP. The following are intentionally not supported:
 
 Jobs and events persist to SQLite at `~/.config/oagent/sqlite.db` (override with `OAGENT_DB_PATH`). On restart, any jobs that were in-flight are marked as errored automatically.
 
+## Diagnostics
+
+If a process monitor shows oagent using gigabytes of memory, run `oagent doctor mem` (macOS only) for a breakdown of the `opencode` subprocess tree behind it. See [docs/doctor-mem.md](docs/doctor-mem.md).
+
 ## Development
 
 ```sh
