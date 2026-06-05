@@ -10,7 +10,6 @@ export type JobSidebarProps = {
 	isLoading: boolean;
 	cwdFilter: string;
 	onCwdFilterChange: (value: string) => void;
-	onSelectJob: (id: string) => void;
 };
 
 export function JobSidebar({
@@ -19,7 +18,6 @@ export function JobSidebar({
 	isLoading,
 	cwdFilter,
 	onCwdFilterChange,
-	onSelectJob,
 }: JobSidebarProps) {
 	return (
 		<div className="flex h-full w-[360px] shrink-0 flex-col border-r border-border bg-background">
@@ -57,7 +55,6 @@ export function JobSidebar({
 								key={group.label}
 								groups={group}
 								selectedId={selectedId}
-								onSelect={onSelectJob}
 							/>
 						))}
 					</div>
