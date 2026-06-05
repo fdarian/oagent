@@ -33,7 +33,6 @@ const jobDetailRoute = createRoute({
 
 const settingsLayoutRoute = createRoute({
 	getParentRoute: () => rootRoute,
-	id: 'settings',
 	path: '/settings',
 	component: SettingsLayout,
 });
