@@ -25,9 +25,19 @@ type MemoryGroup = {
 	physBytes: number;
 };
 
+type ProcessTreeNode = {
+	pid: number;
+	label: string;
+	command: string;
+	rssBytes: number;
+	physBytes: number;
+	children: ReadonlyArray<ProcessTreeNode>;
+};
+
 type TreeSection = {
 	roots: ReadonlyArray<ProcessMemory>;
 	processes: ReadonlyArray<ProcessMemory>;
+	tree: ReadonlyArray<ProcessTreeNode>;
 	groups: ReadonlyArray<MemoryGroup>;
 	totals: { rssBytes: number; physBytes: number };
 	serverCore: { rssBytes: number; physBytes: number };
@@ -363,6 +373,123 @@ function groupProcesses(processes: ReadonlyArray<ProcessMemory>): {
 	return { groups, totals: { rssBytes: totalRss, physBytes: totalPhys } };
 }
 
+function findParentInSection(
+	proc: ProcessMemory,
+	pidSet: Set<number>,
+	byPid: Map<number, PsProcess>,
+): number | undefined {
+	let ppid = proc.ppid;
+	for (;;) {
+		if (pidSet.has(ppid)) {
+			return ppid;
+		}
+		const parent = byPid.get(ppid);
+		if (parent === undefined) {
+			return undefined;
+		}
+		ppid = parent.ppid;
+	}
+}
+
+function sortPidsByPhys(
+	pids: ReadonlyArray<number>,
+	memByPid: Map<number, ProcessMemory>,
+): ReadonlyArray<number> {
+	const copy = [...pids];
+	copy.sort((a, b) => {
+		const ma = memByPid.get(a);
+		const mb = memByPid.get(b);
+		const physA = ma === undefined ? 0 : ma.physBytes;
+		const physB = mb === undefined ? 0 : mb.physBytes;
+		if (physB !== physA) {
+			return physB - physA;
+		}
+		return a - b;
+	});
+	return copy;
+}
+
+function buildProcessTreeNode(
+	pid: number,
+	memByPid: Map<number, ProcessMemory>,
+	childrenMap: Map<number, ReadonlyArray<number>>,
+): ProcessTreeNode | undefined {
+	const mem = memByPid.get(pid);
+	if (mem === undefined) {
+		return undefined;
+	}
+	const childPids = childrenMap.get(pid);
+	const sortedChildPids =
+		childPids === undefined ? [] : sortPidsByPhys(childPids, memByPid);
+	const children: ProcessTreeNode[] = [];
+	for (const childPid of sortedChildPids) {
+		const childNode = buildProcessTreeNode(childPid, memByPid, childrenMap);
+		if (childNode !== undefined) {
+			children.push(childNode);
+		}
+	}
+	return {
+		pid: mem.pid,
+		label: mem.normalized,
+		command: mem.command,
+		rssBytes: mem.rssBytes,
+		physBytes: mem.physBytes,
+		children,
+	};
+}
+
+/** Build nested parent→child tree from section processes (same pid set). */
+function buildProcessTree(
+	rootPids: ReadonlyArray<number>,
+	processes: ReadonlyArray<ProcessMemory>,
+	byPid: Map<number, PsProcess>,
+): ReadonlyArray<ProcessTreeNode> {
+	const pidSet = new Set<number>();
+	const memByPid = new Map<number, ProcessMemory>();
+	const rootSet = new Set<number>();
+	for (const rootPid of rootPids) {
+		rootSet.add(rootPid);
+	}
+	for (const proc of processes) {
+		pidSet.add(proc.pid);
+		memByPid.set(proc.pid, proc);
+	}
+
+	const childLists = new Map<number, number[]>();
+	for (const proc of processes) {
+		if (rootSet.has(proc.pid)) {
+			continue;
+		}
+		const parentPid = findParentInSection(proc, pidSet, byPid);
+		if (parentPid === undefined) {
+			continue;
+		}
+		const existing = childLists.get(parentPid);
+		if (existing === undefined) {
+			childLists.set(parentPid, [proc.pid]);
+		} else {
+			existing.push(proc.pid);
+		}
+	}
+
+	const childrenMap = new Map<number, ReadonlyArray<number>>();
+	for (const entry of childLists) {
+		const parentPid = entry[0];
+		const pids = entry[1];
+		childrenMap.set(parentPid, pids);
+	}
+
+	const sortedRoots = sortPidsByPhys(rootPids, memByPid);
+	const roots: ProcessTreeNode[] = [];
+	for (const rootPid of sortedRoots) {
+		const node = buildProcessTreeNode(rootPid, memByPid, childrenMap);
+		if (node !== undefined) {
+			roots.push(node);
+		}
+	}
+	return roots;
+}
+
 function serverCoreMemory(processes: ReadonlyArray<ProcessMemory>): {
 	rssBytes: number;
 	physBytes: number;
@@ -416,9 +543,11 @@ async function buildTreeSection(
 		}
 	}
 	const grouped = groupProcesses(enriched);
+	const tree = buildProcessTree(rootPids, enriched, byPid);
 	return {
 		roots,
 		processes: enriched,
+		tree,
 		groups: grouped.groups,
 		totals: grouped.totals,
 		serverCore: serverCoreMemory(enriched),
@@ -441,6 +570,53 @@ function formatBytes(bytes: number): string {
 	return `${bytes} B`;
 }
 
+function formatTreeNodeLine(node: ProcessTreeNode): string {
+	return `${node.label} (pid ${node.pid}) — ${formatBytes(node.rssBytes)} RSS · ${formatBytes(node.physBytes)} phys`;
+}
+
+function renderTreeChildren(
+	children: ReadonlyArray<ProcessTreeNode>,
+	prefix: string,
+): ReadonlyArray<string> {
+	const lines: string[] = [];
+	for (let i = 0; i < children.length; i++) {
+		const child = children[i];
+		if (child === undefined) {
+			continue;
+		}
+		const isLast = i === children.length - 1;
+		const branch = isLast ? '└─ ' : '├─ ';
+		const nextPrefix = prefix + (isLast ? '   ' : '│  ');
+		lines.push(`${prefix}${branch}${formatTreeNodeLine(child)}`);
+		const sublines = renderTreeChildren(child.children, nextPrefix);
+		for (const subline of sublines) {
+			lines.push(subline);
+		}
+	}
+	return lines;
+}
+
+function renderProcessHierarchy(tree: ReadonlyArray<ProcessTreeNode>): string {
+	const lines: string[] = [];
+	lines.push('### Process hierarchy');
+	lines.push('');
+	for (let i = 0; i < tree.length; i++) {
+		const root = tree[i];
+		if (root === undefined) {
+			continue;
+		}
+		lines.push(formatTreeNodeLine(root));
+		const childLines = renderTreeChildren(root.children, '');
+		for (const childLine of childLines) {
+			lines.push(childLine);
+		}
+		if (i < tree.length - 1) {
+			lines.push('');
+		}
+	}
+	return lines.join('\n');
+}
+
 function renderGroupTable(groups: ReadonlyArray<MemoryGroup>): string {
 	const lines: string[] = [];
 	lines.push('| Group | Count | RSS | phys |');
@@ -458,6 +634,8 @@ function renderTreeSection(title: string, section: TreeSection): string {
 	lines.push(`## ${title}`);
 	lines.push('');
 	lines.push(renderGroupTable(section.groups));
+	lines.push('');
+	lines.push(renderProcessHierarchy(section.tree));
 	lines.push('');
 	lines.push(
 		`**Total:** ${formatBytes(section.totals.rssBytes)} RSS · ${formatBytes(section.totals.physBytes)} phys`,
@@ -615,9 +793,15 @@ async function buildMemReport(): Promise<MemReport> {
 			? await (async () => {
 					const enriched = await enrichProcesses(filteredOrphans);
 					const grouped = groupProcesses(enriched);
+					const orphanRootPids: number[] = [];
+					for (const proc of enriched) {
+						orphanRootPids.push(proc.pid);
+					}
+					const tree = buildProcessTree(orphanRootPids, enriched, byPid);
 					return {
 						roots: enriched,
 						processes: enriched,
+						tree,
 						groups: grouped.groups,
 						totals: grouped.totals,
 						serverCore: { rssBytes: 0, physBytes: 0 },
