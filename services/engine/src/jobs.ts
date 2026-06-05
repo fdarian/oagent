@@ -6,6 +6,7 @@ import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
 import { Cursor } from './cursor.ts';
+import { Grok } from './grok.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -65,6 +66,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 	effect: Effect.gen(function* () {
 		const opencode = yield* OpenCode;
 		const cursor = yield* Cursor;
+		const grok = yield* Grok;
 		const { db } = yield* Db;
 
 		const resolveModel = (
@@ -79,10 +81,10 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				if (colonIdx !== -1) {
 					const backend = model.slice(0, colonIdx);
 					const modelId = model.slice(colonIdx + 1);
-					if (backend !== 'opencode' && backend !== 'cursor') {
+					if (backend !== 'opencode' && backend !== 'cursor' && backend !== 'grok') {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor.`,
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok.`,
 						});
 					}
 					return { backend, modelId };
@@ -375,6 +377,15 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				const runTurnEffect = (() => {
 					if (backend === 'opencode') {
 						return opencode.runTurn({
+							prompt: input.prompt,
+							model: rest,
+							sessionId: input.sessionId,
+							cwd: input.cwd,
+							onEvent,
+						});
+					}
+					if (backend === 'grok') {
+						return grok.runTurn({
 							prompt: input.prompt,
 							model: rest,
 							sessionId: input.sessionId,
@@ -730,7 +741,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			},
 		};
 	}),
-	dependencies: [OpenCode.Default, Cursor.Default, Db.Default],
+	dependencies: [OpenCode.Default, Cursor.Default, Grok.Default, Db.Default],
 }) {}
 
 function toWaitResult(job: {

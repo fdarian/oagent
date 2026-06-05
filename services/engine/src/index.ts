@@ -5,6 +5,7 @@ export type {
 	ToolKind,
 } from '@agentclientprotocol/sdk';
 export { Cursor } from './cursor.ts';
+export { Grok } from './grok.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
