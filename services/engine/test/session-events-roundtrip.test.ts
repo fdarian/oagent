@@ -7,7 +7,7 @@ import * as schema from '../src/db/schema.ts';
 import {
 	insertSessionUpdate,
 	readSessionEventsPage,
-} from '../src/db/sessionEvents.ts';
+} from '../src/db/session-events.ts';
 import { testDbLayer } from './helpers/db.ts';
 
 const sampleEvents: SessionUpdate[] = [

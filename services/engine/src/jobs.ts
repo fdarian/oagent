@@ -11,7 +11,7 @@ import * as schema from './db/schema.ts';
 import {
 	insertSessionUpdate,
 	readSessionEventsPage,
-} from './db/sessionEvents.ts';
+} from './db/session-events.ts';
 import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 

@@ -92,8 +92,8 @@ it.effect('round-trips through SQLite', () =>
 Do **not** use the real `OpenCode` service (that spawns a subprocess). Inject the fake layer instead:
 
 ```ts
-import { scriptedFakeOpenCodeLayer, failingFakeOpenCodeLayer, gatedFakeOpenCodeLayer } from './helpers/fakeOpenCode.ts';
-import { jobsTestLayer } from './helpers/jobsTestLayer.ts';
+import { scriptedFakeOpenCodeLayer, failingFakeOpenCodeLayer, gatedFakeOpenCodeLayer } from './helpers/fake-opencode.ts';
+import { jobsTestLayer } from './helpers/jobs-test-layer.ts';
 import { Jobs } from '../src/jobs.ts';
 ```
 

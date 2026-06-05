@@ -14,8 +14,8 @@ import {
 	failingFakeOpenCodeLayer,
 	gatedFakeOpenCodeLayer,
 	scriptedFakeOpenCodeLayer,
-} from './helpers/fakeOpenCode.ts';
-import { jobsTestLayer } from './helpers/jobsTestLayer.ts';
+} from './helpers/fake-opencode.ts';
+import { jobsTestLayer } from './helpers/jobs-test-layer.ts';
 
 const scriptedEvents: SessionUpdate[] = [
 	{
