@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Console, Effect, Layer, type Runtime, Schema } from 'effect';
+import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
@@ -114,14 +115,18 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 							}
 						}
 
-						// 3. SSE events endpoint
+						// 3. Global jobs SSE stream
+						if (url.pathname === '/jobs/events')
+							return handleJobsStream(jobs, request.signal);
+
+						// 4. Per-job SSE events endpoint
 						const eventsJobId = url.pathname.match(
 							/^\/jobs\/([^/]+)\/events$/,
 						)?.[1];
 						if (eventsJobId !== undefined)
 							return handleJobEvents(jobs, eventsJobId, request.signal);
 
-						// 4. Wait endpoint
+						// 5. Wait endpoint
 						const waitJobId = url.pathname.match(
 							/^\/jobs\/([^/]+)\/wait$/,
 						)?.[1];
@@ -134,7 +139,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 							return handleJobWait(jobs, waitJobId, timeoutMs, rt);
 						}
 
-						// 5. SPA fallback
+						// 6. SPA fallback
 						if (filemap !== undefined) {
 							const spaResponse = serveSPA(filemap, url.pathname);
 							if (spaResponse !== undefined) return spaResponse;
