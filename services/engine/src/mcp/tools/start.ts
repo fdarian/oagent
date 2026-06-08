@@ -57,7 +57,7 @@ export function buildDescription(aliases: AliasPreset[]): string {
  * pick our own conservative cap well under the default and hand back a {status:"running"}
  * resume handle if it elapses, rather than trying to detect the client's limit.
  */
-const BLOCKING_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
+export const BLOCKING_WAIT_TIMEOUT_MS = 30 * 60 * 1000;
 
 export const inputSchema = {
 	prompt: z.string().describe('The task instructions'),
