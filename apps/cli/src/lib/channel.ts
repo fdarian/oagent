@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
 	type AliasPreset,
+	BLOCKING_WAIT_TIMEOUT_MS,
 	cancelTool,
 	formatPresets,
 	resultTool,
@@ -182,10 +183,29 @@ function registerChannelTools(
 		async (args) => {
 			try {
 				const started = await client.jobs.start(args);
-				void waitAndNotify(server, client, engineUrl, started.jobId);
-				return jsonContent({ jobId: started.jobId });
+				const { jobId } = started;
+
+				if (args.background === true) {
+					void waitAndNotify(server, client, engineUrl, jobId);
+					return jsonContent({ status: 'running', jobId });
+				}
+
+				const result = await client.jobs.wait({
+					jobId,
+					timeoutMs: BLOCKING_WAIT_TIMEOUT_MS,
+				});
+
+				if (result.status === 'running') {
+					void waitAndNotify(server, client, engineUrl, jobId);
+					return jsonContent({ status: 'running', jobId });
+				}
+
+				return jsonContent(result);
 			} catch (cause) {
-				return jsonContent({ error: { message: errorMessage(cause) } });
+				return jsonContent({
+					status: 'error',
+					message: errorMessage(cause),
+				});
 			}
 		},
 	);
