@@ -18,37 +18,42 @@ const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
 const RESULT_TIMEOUT_DEFAULT_MS = 50_000;
 const RESULT_TIMEOUT_MAX_MS = 55_000;
 
-const CHANNEL_INSTRUCTIONS = `\
+function channelInstructions(source: string) {
+	return `\
 Job completions from delegated coding-agent tasks arrive as \
-<channel source="oagent" job_id="..." status="..." session_id="...">. The body is \
+<channel source="${source}" job_id="..." status="..." session_id="...">. The body is \
 the agent's final output (or an error / cancellation note). These are one-way \
 notifications for jobs you started with the start tool — read the result and \
 continue your task; no reply is expected. When status is "done", you may pass the \
 session_id attribute back as sessionId to a subsequent start call to continue the \
 same conversation.`;
+}
 
-const CHANNEL_START_DESCRIPTION = `\
+function channelStartDescription(source: string) {
+	return `\
 Delegate a task to the coding agent, running as a subprocess via the oagent engine. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
 agent is the coding agent. Supports two backends: OpenCode and Cursor. Returns \
 immediately with {jobId}. You do NOT need to poll or wait: when the job finishes, \
-its result is pushed into this session as a <channel source="oagent" job_id="..." \
+its result is pushed into this session as a <channel source="${source}" job_id="..." \
 status="..."> event. Continue with other work — you will be notified. The pushed \
 event body is the agent's final output; when status is "done" the session_id \
 attribute can be passed back as sessionId to a later start call to continue the same \
 conversation. If you ever suspect a notification was missed, the result tool fetches \
 the same outcome on demand. The cwd parameter is required: an absolute path to the \
 directory the agent should operate in — typically the parent agent's project root.`;
+}
 
-const CHANNEL_RESULT_DESCRIPTION = `\
+function channelResultDescription(source: string) {
+	return `\
 Fetch the result of an agent job started via start. You normally do NOT need this: \
-completion is pushed into the session as a <channel source="oagent"> event. Use it \
+completion is pushed into the session as a <channel source="${source}"> event. Use it \
 only as a fallback when you suspect a notification was missed. Blocks up to timeoutMs \
 (default 50000, capped at 55000 to stay under Claude Code's tool timeout). Returns a \
 discriminated union: { status: "running" } — call again to keep waiting; \
 { status: "done", text, sessionId, stopReason }; { status: "error", message }; \
 { status: "cancelled" }.`;
-
+}
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
@@ -172,11 +177,12 @@ function registerChannelTools(
 	client: EngineClient,
 	engineUrl: string,
 	aliases: AliasPreset[],
+	mcpName: string,
 ) {
 	server.registerTool(
 		'start',
 		{
-			description: `${CHANNEL_START_DESCRIPTION}${formatPresets(aliases)}`,
+			description: `${channelStartDescription(mcpName)}${formatPresets(aliases)}`,
 			inputSchema: startInputSchema,
 		},
 		async (args) => {
@@ -193,7 +199,7 @@ function registerChannelTools(
 	server.registerTool(
 		'result',
 		{
-			description: CHANNEL_RESULT_DESCRIPTION,
+			description: channelResultDescription(mcpName),
 			inputSchema: resultTool.inputSchema,
 		},
 		async (args) => {
@@ -236,6 +242,7 @@ function registerChannelTools(
 export function runChannelServer(params: {
 	version: Version;
 	engineUrl: string;
+	mcpName: string;
 }) {
 	return Effect.gen(function* () {
 		const client = createEngineClient(params.engineUrl);
@@ -256,16 +263,22 @@ export function runChannelServer(params: {
 		);
 
 		const server = new McpServer(
-			{ name: 'oagent', version: params.version },
+			{ name: params.mcpName, version: params.version },
 			{
 				capabilities: {
 					tools: {},
 					experimental: { 'claude/channel': {} },
 				},
-				instructions: CHANNEL_INSTRUCTIONS,
+				instructions: channelInstructions(params.mcpName),
 			},
 		);
-		registerChannelTools(server, client, params.engineUrl, aliases);
+		registerChannelTools(
+			server,
+			client,
+			params.engineUrl,
+			aliases,
+			params.mcpName,
+		);
 
 		yield* Effect.tryPromise({
 			try: () => server.connect(new StdioServerTransport()),

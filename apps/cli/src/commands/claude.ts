@@ -13,8 +13,15 @@ export const claudeCmd = (version: Version) => {
 					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
 				),
 			),
+			mcpName: Options.text('mcp-name').pipe(
+				Options.withDefault('oagent'),
+				Options.withDescription(
+					'MCP server name used for channel source and tool descriptions (default: oagent).',
+				),
+			),
 		},
-		({ engineUrl }) => runChannelServer({ version, engineUrl }),
+		({ engineUrl, mcpName }) =>
+			runChannelServer({ version, engineUrl, mcpName }),
 	).pipe(
 		Command.withDescription(
 			'Run the dedicated Claude Code channel MCP over stdio, bridging to a running oagent engine and pushing job completions into the session.',
