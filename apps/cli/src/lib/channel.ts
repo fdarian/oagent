@@ -17,6 +17,12 @@ type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
 /** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
 const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
 const RESULT_TIMEOUT_DEFAULT_MS = 50_000;
+/**
+ * Max wait for the result tool's single jobs.wait call. Cap is a deliberate poll-style
+ * responsiveness choice — returns {status:"running"} so the caller can re-poll or do
+ * other work. NOT a harness limit: Claude Code's MCP tool-call timeout defaults to
+ * ~27.7h (see BLOCKING_WAIT_TIMEOUT_MS in services/engine/src/mcp/tools/start.ts).
+ */
 const RESULT_TIMEOUT_MAX_MS = 55_000;
 
 const CHANNEL_INSTRUCTIONS = `\
@@ -45,7 +51,7 @@ const CHANNEL_RESULT_DESCRIPTION = `\
 Fetch the result of an agent job started via start. You normally do NOT need this: \
 completion is pushed into the session as a <channel source="oagent"> event. Use it \
 only as a fallback when you suspect a notification was missed. Blocks up to timeoutMs \
-(default 50000, capped at 55000 to stay under Claude Code's tool timeout). Returns a \
+(default 50000, capped at 55000 so the tool returns promptly for re-polling). Returns a \
 discriminated union: { status: "running" } — call again to keep waiting; \
 { status: "done", text, sessionId, stopReason }; { status: "error", message }; \
 { status: "cancelled" }.`;
