@@ -19,26 +19,7 @@ description: How to write and run tests in the oagent monorepo (vitest + @effect
 - Shared helpers in `<package>/test/helpers/`.
 - Each package has its own `vitest.config.ts` at the package root.
 
-The config needs a custom `sqlTextPlugin` because migrations embed SQL via Bun's `import ... with { type: 'text' }`, which Vite does not understand natively:
-
-```ts
-// services/engine/vitest.config.ts  (same pattern in apps/cli)
-import fs from 'node:fs';
-import { defineConfig } from 'vitest/config';
-
-const sqlTextPlugin = () => ({
-	name: 'sql-text-import',
-	load(id: string) {
-		if (!id.endsWith('.sql')) return;
-		return `export default ${JSON.stringify(fs.readFileSync(id, 'utf-8'))}`;
-	},
-});
-
-export default defineConfig({
-	plugins: [sqlTextPlugin()],
-	test: { include: ['test/**/*.test.ts'] },
-});
-```
+The config needs a custom `sqlTextPlugin` so vitest can load the `with { type: 'text' }` migration SQL (Vite can't resolve those natively) — copy it from `services/engine/vitest.config.ts` when setting up a new package's `vitest.config.ts`.
 
 ## The @effect/vitest idiom
 
