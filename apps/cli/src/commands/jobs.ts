@@ -17,8 +17,15 @@ const CHUNK_MS = 600_000;
 /** Overall wait budget default: 3 hours — a safe upper bound; most agent jobs run 30s–1hr. */
 const DEFAULT_TIMEOUT_MS = 10_800_000;
 
+/** Unwraps nested `.cause` chains to surface the deepest meaningful error message. */
 function errorMessage(cause: unknown): string {
-	return cause instanceof Error ? cause.message : String(cause);
+	if (!(cause instanceof Error)) {
+		return String(cause);
+	}
+	if (cause.cause !== undefined) {
+		return errorMessage(cause.cause);
+	}
+	return cause.message;
 }
 
 /**
