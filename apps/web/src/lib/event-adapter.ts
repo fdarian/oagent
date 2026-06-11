@@ -366,7 +366,12 @@ export function applyEvent(
 			title: event.title,
 			state: newState,
 			toolKind: event.kind ?? existing.toolKind,
-			content: event.content ?? existing.content,
+			content:
+				event.content !== null &&
+				event.content !== undefined &&
+				event.content.length > 0
+					? event.content
+					: existing.content,
 			locations: event.locations ?? existing.locations,
 			rawInput: event.rawInput ?? existing.rawInput,
 			createdAt: existing.createdAt,
@@ -421,7 +426,9 @@ export function applyEvent(
 				? event.kind
 				: existing.toolKind;
 		const nextContent =
-			event.content !== null && event.content !== undefined
+			event.content !== null &&
+			event.content !== undefined &&
+			event.content.length > 0
 				? event.content
 				: existing.content;
 		const nextLocations =
