@@ -13,18 +13,19 @@ import { JobTimelineTool } from './job-timeline-tool';
 export type JobTimelineProps = {
 	parts: TimelinePart[];
 	streamingTail: TimelinePart | null;
+	cwd: string;
 	header?: ReactNode;
 	isLoading?: boolean;
 };
 
-function renderPart(part: TimelinePart) {
+function renderPart(part: TimelinePart, cwd: string) {
 	switch (part.kind) {
 		case 'text':
 			return <JobTimelineMessage part={part} />;
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
 		case 'tool':
-			return <JobTimelineTool part={part} />;
+			return <JobTimelineTool part={part} cwd={cwd} />;
 		case 'error':
 			return <JobTimelineError part={part} />;
 		default:
@@ -35,6 +36,7 @@ function renderPart(part: TimelinePart) {
 export function JobTimeline({
 	parts,
 	streamingTail,
+	cwd,
 	header,
 	isLoading,
 }: JobTimelineProps) {
@@ -66,7 +68,7 @@ export function JobTimeline({
 					{(virtualItem) => (
 						<div className="px-33">
 							<div className="mx-auto max-w-[900px]">
-								{renderPart(partAt(virtualItem.index))}
+								{renderPart(partAt(virtualItem.index), cwd)}
 							</div>
 						</div>
 					)}

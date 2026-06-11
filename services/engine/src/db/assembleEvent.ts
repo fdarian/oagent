@@ -4,6 +4,7 @@ import type {
 	PlanEntry,
 	SessionConfigOption,
 	SessionUpdate,
+	ToolCallContent,
 	ToolCallLocation,
 } from '@agentclientprotocol/sdk';
 
@@ -19,6 +20,7 @@ type VariantRow = {
 	message_id: string | null;
 	content: ContentBlock | null;
 	tool_call_id: string | null;
+	tool_content: ToolCallContent[] | null;
 	title: string | null;
 	status: string | null;
 	kind: string | null;
@@ -69,7 +71,7 @@ export function assembleEvent(
 				title: variant.title ?? undefined,
 				status: variant.status ?? undefined,
 				kind: variant.kind ?? undefined,
-				content: variant.content ?? undefined,
+				content: variant.tool_content ?? undefined,
 				locations: variant.locations ?? undefined,
 				rawInput: variant.raw_input ?? undefined,
 				rawOutput: variant.raw_output ?? undefined,

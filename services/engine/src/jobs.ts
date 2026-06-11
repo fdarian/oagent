@@ -294,6 +294,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 						message_id: row.chunk_events?.message_id ?? null,
 						content: row.chunk_events?.content ?? null,
 						tool_call_id: row.tool_call_events?.tool_call_id ?? null,
+						tool_content: row.tool_call_events?.content ?? null,
 						title: row.tool_call_events?.title ?? null,
 						status: row.tool_call_events?.status ?? null,
 						kind: row.tool_call_events?.kind ?? null,

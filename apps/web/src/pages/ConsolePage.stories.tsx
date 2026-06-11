@@ -92,6 +92,7 @@ export const RunningSession: Story = {
 						/>
 						<div className="mt-22 min-h-0 flex-1">
 							<JobTimeline
+								cwd="/Users/dev/project/apps/api"
 								parts={[
 									{
 										kind: 'reasoning',
@@ -105,8 +106,9 @@ export const RunningSession: Story = {
 										kind: 'tool',
 										id: 'tool-1',
 										toolCallId: 'tc-1',
-										toolName: 'read_file',
-										title: 'read_file',
+										toolName: 'read',
+										title: 'auth.ts',
+										toolKind: 'read',
 										state: 'output-available',
 										content: [
 											{
@@ -117,9 +119,42 @@ export const RunningSession: Story = {
 												},
 											},
 										],
-										locations: [{ path: 'src/middleware/auth.ts' }],
+										locations: [
+											{
+												path: '/Users/dev/project/apps/api/src/middleware/auth.ts',
+											},
+										],
+										rawInput: {
+											filePath:
+												'/Users/dev/project/apps/api/src/middleware/auth.ts',
+										},
 										createdAt: Date.now() - 90_000,
 										durationMs: 800,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-shell',
+										toolCallId: 'tc-shell',
+										toolName: 'bash',
+										title: 'Run the test suite',
+										toolKind: 'execute',
+										state: 'output-available',
+										content: [
+											{
+												type: 'content',
+												content: {
+													type: 'text',
+													text: 'PASS  src/middleware/auth.test.ts\n  ✓ rejects missing token (3 ms)\n  ✓ calls next on valid token (1 ms)\n\nTest Suites: 1 passed, 1 total',
+												},
+											},
+										],
+										locations: [],
+										rawInput: {
+											command: 'bun test src/middleware/auth.test.ts',
+											description: 'Run the test suite',
+										},
+										createdAt: Date.now() - 85_000,
+										durationMs: 1200,
 									},
 									{
 										kind: 'text',
@@ -146,6 +181,72 @@ export const RunningSession: Story = {
 										locations: [{ path: 'src/middleware/auth.ts' }],
 										createdAt: Date.now() - 5000,
 										durationMs: undefined,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-edit',
+										toolCallId: 'tc-edit',
+										toolName: 'edit',
+										title: 'StrReplace',
+										toolKind: 'edit',
+										state: 'output-available',
+										content: [
+											{
+												type: 'diff',
+												path: '/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+												oldText:
+													'name: Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n',
+												newText:
+													'name: Deploy\non:\n  push:\n    branches: [main, staging]\njobs:\n  deploy:\n    runs-on: ubuntu-22.04\n',
+											},
+										],
+										locations: [
+											{
+												path: '/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+											},
+										],
+										rawInput: {
+											filePath:
+												'/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+										},
+										createdAt: Date.now() - 4000,
+										durationMs: 500,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-grep',
+										toolCallId: 'tc-grep',
+										toolName: 'grep',
+										title: 'Grep',
+										toolKind: 'search',
+										state: 'output-available',
+										content: [
+											{
+												type: 'content',
+												content: {
+													type: 'text',
+													text: 'package.json:12:  "check:tsc": "tsc --noEmit"',
+												},
+											},
+										],
+										locations: [],
+										rawInput: { pattern: 'check:tsc', include: 'package.json' },
+										createdAt: Date.now() - 3000,
+										durationMs: 120,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-glob',
+										toolCallId: 'tc-glob',
+										toolName: 'glob',
+										title: 'Glob',
+										toolKind: 'search',
+										state: 'output-available',
+										content: [],
+										locations: [],
+										rawInput: { glob_pattern: '**/*.nonexistent' },
+										createdAt: Date.now() - 2000,
+										durationMs: 80,
 									},
 								]}
 								streamingTail={null}

@@ -29,6 +29,8 @@ export type TimelinePart =
 			toolKind?: ToolKind;
 			content: ToolCallContent[];
 			locations: ToolCallLocation[];
+			rawInput?: unknown;
+			rawOutput?: unknown;
 			createdAt: number;
 			durationMs?: number;
 	  }
@@ -341,6 +343,8 @@ export function applyEvent(
 						toolKind: event.kind ?? undefined,
 						content: event.content ?? [],
 						locations: event.locations ?? [],
+						rawInput: event.rawInput,
+						rawOutput: event.rawOutput,
 						createdAt,
 					},
 				],
@@ -364,8 +368,15 @@ export function applyEvent(
 			title: event.title,
 			state: newState,
 			toolKind: event.kind ?? existing.toolKind,
-			content: event.content ?? existing.content,
+			content:
+				event.content !== null &&
+				event.content !== undefined &&
+				event.content.length > 0
+					? event.content
+					: existing.content,
 			locations: event.locations ?? existing.locations,
+			rawInput: event.rawInput ?? existing.rawInput,
+			rawOutput: event.rawOutput ?? existing.rawOutput,
 			createdAt: existing.createdAt,
 			durationMs,
 		};
@@ -418,13 +429,23 @@ export function applyEvent(
 				? event.kind
 				: existing.toolKind;
 		const nextContent =
-			event.content !== null && event.content !== undefined
+			event.content !== null &&
+			event.content !== undefined &&
+			event.content.length > 0
 				? event.content
 				: existing.content;
 		const nextLocations =
 			event.locations !== null && event.locations !== undefined
 				? event.locations
 				: existing.locations;
+		const nextRawInput =
+			event.rawInput !== null && event.rawInput !== undefined
+				? event.rawInput
+				: existing.rawInput;
+		const nextRawOutput =
+			event.rawOutput !== null && event.rawOutput !== undefined
+				? event.rawOutput
+				: existing.rawOutput;
 		const durationMs =
 			(nextState_ === 'output-available' || nextState_ === 'output-error') &&
 			existing.durationMs === undefined
@@ -441,6 +462,8 @@ export function applyEvent(
 			toolKind: nextToolKind,
 			content: nextContent,
 			locations: nextLocations,
+			rawInput: nextRawInput,
+			rawOutput: nextRawOutput,
 			createdAt: existing.createdAt,
 			durationMs,
 		};
