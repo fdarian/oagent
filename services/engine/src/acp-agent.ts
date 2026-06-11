@@ -4,6 +4,8 @@ import {
 	ClientSideConnection,
 	ndJsonStream,
 	PROTOCOL_VERSION,
+	type SessionConfigSelectGroup,
+	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect, Schema } from 'effect';
@@ -25,6 +27,18 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 		cause: Schema.Defect,
 	},
 ) {}
+
+function isSelectGroup(
+	opt: SessionConfigSelectOption | SessionConfigSelectGroup,
+): opt is SessionConfigSelectGroup {
+	return 'group' in opt;
+}
+
+function isGroupArray(
+	opts: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>,
+): opts is Array<SessionConfigSelectGroup> {
+	return opts.length > 0 && isSelectGroup(opts[0]);
+}
 
 export function createAcpConnection(config: {
 	binary: string;
@@ -357,22 +371,45 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				onExtensionEvent?: (method: string, params: unknown) => void;
 			}) => runAcpTurn(env, input);
 
-			const listModels = (): Effect.Effect<
-				ReadonlyArray<{ id: string }>,
-				AcpSessionError,
-				never
-			> =>
-				Effect.tryPromise({
-					try: () =>
-						env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
-					catch: (cause) => new AcpSessionError({ cause }),
-				}).pipe(
-					Effect.map((res) =>
-						res.models === undefined || res.models === null
-							? []
-							: res.models.availableModels.map((m) => ({ id: m.modelId })),
-					),
-				);
+		const listModels = (): Effect.Effect<
+			ReadonlyArray<{ id: string }>,
+			AcpSessionError,
+			never
+		> =>
+			Effect.tryPromise({
+				try: () =>
+					env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+				catch: (cause) => new AcpSessionError({ cause }),
+			}).pipe(
+				Effect.map((res) => {
+					const availableModels =
+						res.models !== undefined && res.models !== null
+							? res.models.availableModels
+							: [];
+					if (availableModels.length > 0) {
+						return availableModels.map((m) => ({ id: m.modelId }));
+					}
+
+					const modelOption = res.configOptions?.find(
+						(opt) => opt.id === 'model',
+					);
+					if (
+						modelOption === undefined ||
+						modelOption.type !== 'select'
+					) {
+						return [];
+					}
+
+					const opts = modelOption.options;
+					if (opts.length > 0 && isGroupArray(opts)) {
+						return opts.flatMap((g) =>
+							g.options.map((o) => ({ id: o.value })),
+						);
+					}
+
+					return opts.map((o) => ({ id: o.value }));
+				}),
+			);
 
 			return { runTurn, listModels };
 		}),
