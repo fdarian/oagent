@@ -17,6 +17,13 @@ const CHUNK_MS = 600_000;
 /** Overall wait budget default: 3 hours — a safe upper bound; most agent jobs run 30s–1hr. */
 const DEFAULT_TIMEOUT_MS = 10_800_000;
 
+/** Transport-retry backoff starting delay (ms). */
+const RETRY_BACKOFF_BASE_MS = 1_000;
+/** Transport-retry backoff ceiling (ms). */
+const RETRY_BACKOFF_CAP_MS = 15_000;
+/** How long a continuous failure streak must last before we give up (ms). */
+const RETRY_GIVE_UP_MS = 120_000;
+
 /** Unwraps nested `.cause` chains to surface the deepest meaningful error message. */
 function errorMessage(cause: unknown): string {
 	if (!(cause instanceof Error)) {
@@ -28,10 +35,24 @@ function errorMessage(cause: unknown): string {
 	return cause.message;
 }
 
+function sleep(ms: number): Promise<void> {
+	return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 /**
  * Polls the engine's `jobs.wait` in CHUNK_MS slices until the job reaches a terminal
  * state or the overall deadline passes. A single long-lived HTTP request would be
  * fragile, so we re-issue short waits and re-poll while the job is still running.
+ *
+ * Transport-level rejections (connection refused, reset, fetch failure) are retried
+ * with exponential backoff rather than propagating immediately — the engine may be
+ * restarting. oRPC logical errors (job failed, job-not-found) arrive as successful
+ * responses shaped `{status: 'error', ...}` and are NOT retried (handled by the
+ * `result.status !== 'running'` branch below). A continuous failure streak beyond
+ * RETRY_GIVE_UP_MS re-throws so a permanently-dead engine surfaces quickly.
+ *
+ * TODO: when this module migrates to Effect HTTP, replace the catch-rejection
+ * mechanism here with typed/validated fetch errors from the Effect HTTP client.
  */
 async function pollWait(
 	client: EngineClient,
@@ -40,18 +61,58 @@ async function pollWait(
 ): Promise<WaitResult> {
 	const deadline = Date.now() + timeoutMs;
 
+	let streakStartMs: number | null = null;
+	let backoffMs = RETRY_BACKOFF_BASE_MS;
+
 	for (;;) {
 		const remaining = deadline - Date.now();
-		const result = await client.jobs.wait({
-			jobId,
-			timeoutMs: Math.min(CHUNK_MS, remaining),
-		});
-
-		if (result.status !== 'running') {
-			return result;
+		if (remaining <= 0) {
+			// Deadline passed during a failure streak — surface as timeout.
+			throw new Error(
+				`Transport failures persisted until the overall deadline (jobId: ${jobId})`,
+			);
 		}
-		if (Date.now() >= deadline) {
-			return result;
+
+		try {
+			const result = await client.jobs.wait({
+				jobId,
+				timeoutMs: Math.min(CHUNK_MS, remaining),
+			});
+
+			// Successful response: reset failure-streak state.
+			streakStartMs = null;
+			backoffMs = RETRY_BACKOFF_BASE_MS;
+
+			if (result.status !== 'running') {
+				return result;
+			}
+			if (Date.now() >= deadline) {
+				return result;
+			}
+		} catch (caught) {
+			const now = Date.now();
+
+			if (streakStartMs === null) {
+				streakStartMs = now;
+			}
+
+			if (now - streakStartMs >= RETRY_GIVE_UP_MS) {
+				throw new Error(
+					`Engine unreachable for ${RETRY_GIVE_UP_MS / 1000}s continuously (jobId: ${jobId})`,
+					{ cause: caught },
+				);
+			}
+
+			const deadlineRemaining = deadline - now;
+			if (deadlineRemaining <= 0) {
+				throw new Error(
+					`Transport failures persisted until the overall deadline (jobId: ${jobId})`,
+					{ cause: caught },
+				);
+			}
+
+			await sleep(Math.min(backoffMs, deadlineRemaining));
+			backoffMs = Math.min(backoffMs * 2, RETRY_BACKOFF_CAP_MS);
 		}
 	}
 }
