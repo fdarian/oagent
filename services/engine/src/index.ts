@@ -6,6 +6,7 @@ export type {
 } from '@agentclientprotocol/sdk';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
+export { EngineApi } from './http/api.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
@@ -20,6 +21,4 @@ export {
 	inputSchema as startInputSchema,
 } from './mcp/tools/start.ts';
 export { OpenCode } from './opencode.ts';
-export { createEngineHandler } from './rpc/handler.ts';
-export type { EngineRouter } from './rpc/router.ts';
 export { Engine } from './server.ts';
