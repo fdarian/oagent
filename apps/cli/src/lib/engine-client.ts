@@ -7,7 +7,26 @@ export type EngineClient = RouterClient<EngineRouter>;
 
 export const defaultEngineUrl = `http://localhost:${process.env.OPENCODE_MCP_PORT ?? '17777'}`;
 
+/**
+ * Custom fetch that disables Bun's default 300s timeout so long-poll wait
+ * requests (held up to CHUNK_MS = 10 min by the engine) aren't guillotined
+ * before the server responds.
+ */
+function fetchNoTimeout(
+	request: Request,
+	init: { redirect?: Request['redirect'] },
+): Promise<Response> {
+	return fetch(request, {
+		...init,
+		// @ts-expect-error — `timeout` is a Bun-specific RequestInit extension, not in DOM lib types
+		timeout: false,
+	});
+}
+
 export function createEngineClient(engineUrl: string): EngineClient {
-	const link = new RPCLink({ url: new URL('/rpc', engineUrl) });
+	const link = new RPCLink({
+		url: new URL('/rpc', engineUrl),
+		fetch: fetchNoTimeout,
+	});
 	return createORPCClient(link);
 }
