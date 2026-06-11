@@ -179,23 +179,40 @@ async function waitAndNotify(
 	}
 }
 
+/** Fetch alias presets from the engine. Best-effort: returns [] if the engine is not up yet. */
+async function fetchAliasPresets(client: EngineClient): Promise<AliasPreset[]> {
+	try {
+		const rows = await client.aliases.list();
+		return rows.map(
+			(row): AliasPreset => ({
+				name: row.name,
+				backend: row.backend,
+				model_id: row.model_id,
+				description: row.description ?? null,
+			}),
+		);
+	} catch {
+		return [];
+	}
+}
+
+/** Returns the registered start tool handle so the caller can update its description. */
 function registerChannelTools(
 	server: McpServer,
 	client: EngineClient,
 	engineUrl: string,
-	aliases: AliasPreset[],
 	mcpName: string,
 ) {
-	server.registerTool(
+	const startTool = server.registerTool(
 		'start',
 		{
-			description: `${channelStartDescription(mcpName)}${formatPresets(aliases)}`,
+			description: channelStartDescription(mcpName),
 			inputSchema: startInputSchema,
 		},
 		async (args) => {
 			try {
 				const started = await client.jobs.start(args);
-				const { jobId } = started;
+				const jobId = started.jobId;
 
 				if (args.background === true) {
 					void waitAndNotify(server, client, engineUrl, jobId);
@@ -258,6 +275,8 @@ function registerChannelTools(
 			}
 		},
 	);
+
+	return startTool;
 }
 
 /**
@@ -273,21 +292,6 @@ export function runChannelServer(params: {
 	return Effect.gen(function* () {
 		const client = createEngineClient(params.engineUrl);
 
-		// Presets enrich the start description, but the engine may not be up yet — best-effort.
-		const aliases = yield* Effect.tryPromise(() => client.aliases.list()).pipe(
-			Effect.map((rows) =>
-				rows.map(
-					(row): AliasPreset => ({
-						name: row.name,
-						backend: row.backend,
-						model_id: row.model_id,
-						description: row.description ?? null,
-					}),
-				),
-			),
-			Effect.catchAll(() => Effect.succeed<AliasPreset[]>([])),
-		);
-
 		const server = new McpServer(
 			{ name: params.mcpName, version: params.version },
 			{
@@ -298,13 +302,22 @@ export function runChannelServer(params: {
 				instructions: channelInstructions(params.mcpName),
 			},
 		);
-		registerChannelTools(
+
+		const startTool = registerChannelTools(
 			server,
 			client,
 			params.engineUrl,
-			aliases,
 			params.mcpName,
 		);
+
+		// Refresh presets on every connect so the description reflects current aliases even if the engine was down at boot.
+		server.server.oninitialized = () => {
+			void fetchAliasPresets(client).then((aliases) => {
+				startTool.update({
+					description: `${channelStartDescription(params.mcpName)}${formatPresets(aliases)}`,
+				});
+			});
+		};
 
 		yield* Effect.tryPromise({
 			try: () => server.connect(new StdioServerTransport()),

@@ -27,13 +27,18 @@ export function registerTools(
 		return exit.value;
 	};
 
-	const aliases = jobs.listAliases();
-
-	server.registerTool(
+	const registeredStart = server.registerTool(
 		'start',
-		{ description: buildDescription(aliases), inputSchema },
+		{ description: buildDescription(jobs.listAliases()), inputSchema },
 		(args) => runHandler(startTool.handle(args, { jobs, waitUrlBase })),
 	);
+
+	// Refresh aliases on every connect so the description reflects current state per session.
+	server.server.oninitialized = () => {
+		registeredStart.update({
+			description: buildDescription(jobs.listAliases()),
+		});
+	};
 
 	server.registerTool(
 		'result',
