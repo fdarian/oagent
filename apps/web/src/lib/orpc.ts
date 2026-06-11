@@ -1,5 +1,5 @@
 import { FetchHttpClient, HttpApiClient } from '@effect/platform';
-import { EngineApi } from '@oagent/engine';
+import { EngineApi } from '@oagent/engine/api';
 import { Effect } from 'effect';
 
 function resolveBaseUrl(): string {

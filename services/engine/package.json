@@ -4,7 +4,8 @@
 	"type": "module",
 	"private": true,
 	"exports": {
-		".": "./src/index.ts"
+		".": "./src/index.ts",
+		"./api": "./src/http/api.ts"
 	},
 	"types": "./src/index.ts",
 	"scripts": {
@@ -20,10 +21,8 @@
 		"@effect/platform-bun": "^0.89.0",
 		"@modelcontextprotocol/sdk": "^1.29.0",
 		"@oagent/common": "workspace:*",
-		"@orpc/server": "latest",
 		"drizzle-orm": "^0.45.2",
 		"effect": "^3.21.2",
-		"ff-effect": "latest",
 		"get-port": "^7.2.0",
 		"valibot": "^1.4.1",
 		"zod": "^4.4.3"
