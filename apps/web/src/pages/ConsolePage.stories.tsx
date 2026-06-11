@@ -182,6 +182,72 @@ export const RunningSession: Story = {
 										createdAt: Date.now() - 5000,
 										durationMs: undefined,
 									},
+									{
+										kind: 'tool',
+										id: 'tool-edit',
+										toolCallId: 'tc-edit',
+										toolName: 'edit',
+										title: 'StrReplace',
+										toolKind: 'edit',
+										state: 'output-available',
+										content: [
+											{
+												type: 'diff',
+												path: '/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+												oldText:
+													'name: Deploy\non:\n  push:\n    branches: [main]\njobs:\n  deploy:\n    runs-on: ubuntu-latest\n',
+												newText:
+													'name: Deploy\non:\n  push:\n    branches: [main, staging]\njobs:\n  deploy:\n    runs-on: ubuntu-22.04\n',
+											},
+										],
+										locations: [
+											{
+												path: '/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+											},
+										],
+										rawInput: {
+											filePath:
+												'/Users/dev/project/apps/api/.github/workflows/deploy.yml',
+										},
+										createdAt: Date.now() - 4000,
+										durationMs: 500,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-grep',
+										toolCallId: 'tc-grep',
+										toolName: 'grep',
+										title: 'Grep',
+										toolKind: 'search',
+										state: 'output-available',
+										content: [
+											{
+												type: 'content',
+												content: {
+													type: 'text',
+													text: 'package.json:12:  "check:tsc": "tsc --noEmit"',
+												},
+											},
+										],
+										locations: [],
+										rawInput: { pattern: 'check:tsc', include: 'package.json' },
+										createdAt: Date.now() - 3000,
+										durationMs: 120,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-glob',
+										toolCallId: 'tc-glob',
+										toolName: 'glob',
+										title: 'Glob',
+										toolKind: 'search',
+										state: 'output-available',
+										content: [],
+										locations: [],
+										rawInput: { glob_pattern: '**/*.nonexistent' },
+										createdAt: Date.now() - 2000,
+										durationMs: 80,
+									},
 								]}
 								streamingTail={null}
 							/>

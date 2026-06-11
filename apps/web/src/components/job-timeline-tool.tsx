@@ -1,6 +1,8 @@
 import type { ToolCallContent, ToolCallLocation } from '@oagent/engine';
+import { parseDiffFromFile } from '@pierre/diffs';
+import { FileDiff } from '@pierre/diffs/react';
 import { ChevronRightIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
-import { memo } from 'react';
+import { memo, useMemo } from 'react';
 import { CodeBlock } from '@/components/ai-elements/code-block';
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool';
 import {
@@ -71,13 +73,99 @@ function readDescriptor(part: ToolPart, cwd: string): string {
 	return title.length > 0 && title.toLowerCase() !== 'read' ? title : 'file';
 }
 
+type ToolRowProps = {
+	label: string;
+	descriptor: React.ReactNode;
+	running: boolean;
+	error: boolean;
+	children?: React.ReactNode;
+};
+
+function ToolRow(props: ToolRowProps) {
+	const descriptorClass = cn(
+		'min-w-0 truncate text-sm text-muted-foreground',
+		props.error && 'text-destructive',
+	);
+
+	if (props.children === undefined || props.children === null) {
+		return (
+			<div className="mb-2 flex w-full items-center gap-1.5 py-1">
+				<span className="shrink-0 font-medium text-sm">{props.label}</span>
+				<span className={descriptorClass}>{props.descriptor}</span>
+				{props.running && (
+					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+				)}
+			</div>
+		);
+	}
+
+	return (
+		<Collapsible defaultOpen={false} className="group mb-2 w-full">
+			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
+				<span className="shrink-0 font-medium text-sm">{props.label}</span>
+				<span className={descriptorClass}>{props.descriptor}</span>
+				{props.running && (
+					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
+				)}
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90 group-data-[state=open]:opacity-100" />
+			</CollapsibleTrigger>
+			<CollapsibleContent className="pt-2">{props.children}</CollapsibleContent>
+		</Collapsible>
+	);
+}
+
 export const JobTimelineTool = memo(function JobTimelineTool(
 	props: JobTimelineToolProps,
 ) {
 	const part = props.part;
-	if (part.toolKind === 'execute' || part.toolKind === 'read') {
-		return <MinimalToolRow part={part} cwd={props.cwd} />;
+	const isRunning =
+		part.state === 'input-available' || part.state === 'input-streaming';
+	const isError = part.state === 'output-error';
+
+	if (part.toolKind === 'execute') {
+		const descriptor = shellDescriptor(part);
+		const command = readStringProp(part.rawInput, 'command');
+		const output = extractText(part.content);
+		const children =
+			command !== undefined || output.length > 0 ? (
+				<ShellOutput part={part} />
+			) : null;
+		return (
+			<ToolRow
+				label="Shell"
+				descriptor={descriptor}
+				running={isRunning}
+				error={isError}
+			>
+				{children}
+			</ToolRow>
+		);
 	}
+
+	if (part.toolKind === 'read') {
+		const descriptor = readDescriptor(part, props.cwd);
+		const children =
+			part.content.length > 0 ? <ReadOutput part={part} /> : null;
+		return (
+			<ToolRow
+				label="Read"
+				descriptor={descriptor}
+				running={isRunning}
+				error={isError}
+			>
+				{children}
+			</ToolRow>
+		);
+	}
+
+	if (part.toolKind === 'edit') {
+		return <EditRow part={part} cwd={props.cwd} />;
+	}
+
+	if (part.toolKind === 'search') {
+		return <SearchRow part={part} running={isRunning} error={isError} />;
+	}
+
 	return (
 		<Tool defaultOpen={false}>
 			<ToolHeader
@@ -98,37 +186,160 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 	);
 });
 
-function MinimalToolRow(props: { part: ToolPart; cwd: string }) {
+function EditRow(props: { part: ToolPart; cwd: string }) {
 	const part = props.part;
-	const isShell = part.toolKind === 'execute';
-	const label = isShell ? 'Shell' : 'Read';
-	const descriptor = isShell
-		? shellDescriptor(part)
-		: readDescriptor(part, props.cwd);
 	const isRunning =
 		part.state === 'input-available' || part.state === 'input-streaming';
 	const isError = part.state === 'output-error';
+
+	const diffEntry = part.content.find((c) => c.type === 'diff');
+
+	if (diffEntry === undefined || diffEntry.type !== 'diff') {
+		const rawPath =
+			part.locations[0]?.path ??
+			readStringProp(part.rawInput, 'filePath') ??
+			readStringProp(part.rawInput, 'path');
+		const descriptor =
+			rawPath !== undefined && rawPath.length > 0
+				? relativePath(rawPath, props.cwd)
+				: 'file';
+		return (
+			<ToolRow
+				label="Edit"
+				descriptor={descriptor}
+				running={isRunning}
+				error={isError}
+			/>
+		);
+	}
+
 	return (
-		<Collapsible defaultOpen={false} className="group mb-2 w-full">
-			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
-				<span className="shrink-0 font-medium text-sm">{label}</span>
-				<span
-					className={cn(
-						'min-w-0 truncate text-sm text-muted-foreground',
-						isError && 'text-destructive',
-					)}
-				>
-					{descriptor}
-				</span>
-				{isRunning && (
-					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
-				)}
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90 group-data-[state=open]:opacity-100" />
-			</CollapsibleTrigger>
-			<CollapsibleContent className="pt-2">
-				{isShell ? <ShellOutput part={part} /> : <ReadOutput part={part} />}
-			</CollapsibleContent>
-		</Collapsible>
+		<EditDiffRow
+			diffPath={diffEntry.path}
+			oldText={diffEntry.oldText ?? ''}
+			newText={diffEntry.newText}
+			cwd={props.cwd}
+			running={isRunning}
+			error={isError}
+		/>
+	);
+}
+
+type EditDiffRowProps = {
+	diffPath: string;
+	oldText: string;
+	newText: string;
+	cwd: string;
+	running: boolean;
+	error: boolean;
+};
+
+function EditDiffRow(props: EditDiffRowProps) {
+	const fileDiff = useMemo(
+		() =>
+			parseDiffFromFile(
+				{ name: props.diffPath, contents: props.oldText },
+				{ name: props.diffPath, contents: props.newText },
+			),
+		[props.diffPath, props.oldText, props.newText],
+	);
+
+	const added = fileDiff.hunks.reduce((s, h) => s + h.additionLines, 0);
+	const removed = fileDiff.hunks.reduce((s, h) => s + h.deletionLines, 0);
+
+	const rel = relativePath(props.diffPath, props.cwd);
+	const lastSlash = rel.lastIndexOf('/');
+	const basename = lastSlash >= 0 ? rel.slice(lastSlash + 1) : rel;
+	const dir = lastSlash >= 0 ? rel.slice(0, lastSlash + 1) : '';
+
+	const descriptor = (
+		<span className="flex min-w-0 items-baseline gap-1.5">
+			<span className="font-medium text-foreground">{basename}</span>
+			{dir.length > 0 && (
+				<span className="min-w-0 truncate text-muted-foreground">{dir}</span>
+			)}
+			<span className="shrink-0 text-emerald-600 dark:text-emerald-400">
+				+{added}
+			</span>
+			<span className="shrink-0 text-red-600 dark:text-red-400">
+				&minus;{removed}
+			</span>
+		</span>
+	);
+
+	return (
+		<ToolRow
+			label="Edit"
+			descriptor={descriptor}
+			running={props.running}
+			error={props.error}
+		>
+			<div className="overflow-hidden rounded-md border">
+				<FileDiff
+					fileDiff={fileDiff}
+					options={{
+						diffStyle: 'unified',
+						diffIndicators: 'bars',
+						theme: { light: 'github-light', dark: 'github-dark' },
+						themeType: 'system',
+					}}
+				/>
+			</div>
+		</ToolRow>
+	);
+}
+
+function SearchRow(props: {
+	part: ToolPart;
+	running: boolean;
+	error: boolean;
+}) {
+	const part = props.part;
+	const label = /glob/i.test(part.title) ? 'Glob' : 'Grep';
+
+	const pattern =
+		readStringProp(part.rawInput, 'pattern') ??
+		readStringProp(part.rawInput, 'glob_pattern');
+	const include = readStringProp(part.rawInput, 'include');
+
+	let descriptorText = '';
+	if (pattern !== undefined) {
+		descriptorText = `pattern="${pattern}"`;
+	}
+	if (include !== undefined) {
+		descriptorText =
+			descriptorText.length > 0
+				? `${descriptorText} include=${include}`
+				: `include=${include}`;
+	}
+	if (descriptorText.length === 0) {
+		descriptorText = 'search';
+	}
+
+	const descriptor = (
+		<>
+			<span className="text-muted-foreground/60">/</span>{' '}
+			<span className="min-w-0 truncate">{descriptorText}</span>
+		</>
+	);
+
+	const output = extractText(part.content);
+	const children =
+		output.length > 0 ? (
+			<div className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+				{output}
+			</div>
+		) : null;
+
+	return (
+		<ToolRow
+			label={label}
+			descriptor={descriptor}
+			running={props.running}
+			error={props.error}
+		>
+			{children}
+		</ToolRow>
 	);
 }
 
