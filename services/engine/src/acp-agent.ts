@@ -403,10 +403,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 						const modelOption = res.configOptions?.find(
 							(opt) => opt.id === 'model',
 						);
-						if (
-							modelOption === undefined ||
-							modelOption.type !== 'select'
-						) {
+						if (modelOption === undefined || modelOption.type !== 'select') {
 							return [];
 						}
 

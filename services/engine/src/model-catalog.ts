@@ -75,6 +75,11 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			return { list };
 		}),
-		dependencies: [OpenCode.Default, Cursor.Default, Grok.Default, Codex.Default],
+		dependencies: [
+			OpenCode.Default,
+			Cursor.Default,
+			Grok.Default,
+			Codex.Default,
+		],
 	},
 ) {}

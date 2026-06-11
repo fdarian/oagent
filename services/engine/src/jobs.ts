@@ -758,7 +758,13 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			},
 		};
 	}),
-	dependencies: [OpenCode.Default, Cursor.Default, Grok.Default, Codex.Default, Db.Default],
+	dependencies: [
+		OpenCode.Default,
+		Cursor.Default,
+		Grok.Default,
+		Codex.Default,
+		Db.Default,
+	],
 }) {}
 
 function toWaitResult(job: {
