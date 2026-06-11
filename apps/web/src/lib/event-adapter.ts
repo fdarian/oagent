@@ -30,6 +30,7 @@ export type TimelinePart =
 			content: ToolCallContent[];
 			locations: ToolCallLocation[];
 			rawInput?: unknown;
+			rawOutput?: unknown;
 			createdAt: number;
 			durationMs?: number;
 	  }
@@ -343,6 +344,7 @@ export function applyEvent(
 						content: event.content ?? [],
 						locations: event.locations ?? [],
 						rawInput: event.rawInput,
+						rawOutput: event.rawOutput,
 						createdAt,
 					},
 				],
@@ -374,6 +376,7 @@ export function applyEvent(
 					: existing.content,
 			locations: event.locations ?? existing.locations,
 			rawInput: event.rawInput ?? existing.rawInput,
+			rawOutput: event.rawOutput ?? existing.rawOutput,
 			createdAt: existing.createdAt,
 			durationMs,
 		};
@@ -439,6 +442,10 @@ export function applyEvent(
 			event.rawInput !== null && event.rawInput !== undefined
 				? event.rawInput
 				: existing.rawInput;
+		const nextRawOutput =
+			event.rawOutput !== null && event.rawOutput !== undefined
+				? event.rawOutput
+				: existing.rawOutput;
 		const durationMs =
 			(nextState_ === 'output-available' || nextState_ === 'output-error') &&
 			existing.durationMs === undefined
@@ -456,6 +463,7 @@ export function applyEvent(
 			content: nextContent,
 			locations: nextLocations,
 			rawInput: nextRawInput,
+			rawOutput: nextRawOutput,
 			createdAt: existing.createdAt,
 			durationMs,
 		};
