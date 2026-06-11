@@ -21,6 +21,4 @@ export {
 	inputSchema as startInputSchema,
 } from './mcp/tools/start.ts';
 export { OpenCode } from './opencode.ts';
-export { createEngineHandler } from './rpc/handler.ts';
-export type { EngineRouter } from './rpc/router.ts';
 export { Engine } from './server.ts';
