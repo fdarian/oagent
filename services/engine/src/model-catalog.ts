@@ -27,20 +27,20 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 	'oagent/ModelCatalog',
 	{
 		effect: Effect.gen(function* () {
-		const opencode = yield* OpenCode;
-		const cursor = yield* Cursor;
-		const grok = yield* Grok;
-		const codex = yield* Codex;
-		const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
+			const opencode = yield* OpenCode;
+			const cursor = yield* Cursor;
+			const grok = yield* Grok;
+			const codex = yield* Codex;
+			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
 
 			const fetch = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
 				const inner = (() => {
-				if (backend === 'opencode') return opencode.listModels();
-				if (backend === 'grok') return grok.listModels();
-				if (backend === 'codex') return codex.listModels();
-				return cursor.listModels();
+					if (backend === 'opencode') return opencode.listModels();
+					if (backend === 'grok') return grok.listModels();
+					if (backend === 'codex') return codex.listModels();
+					return cursor.listModels();
 				})();
 				return inner.pipe(
 					Effect.catchAll((cause) =>

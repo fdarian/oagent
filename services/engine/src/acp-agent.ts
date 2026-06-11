@@ -381,38 +381,38 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				onExtensionEvent?: (method: string, params: unknown) => void;
 			}) => runAcpTurn(env, input);
 
-		const listModels = (): Effect.Effect<
-			ReadonlyArray<{ id: string }>,
-			AcpSessionError,
-			never
-		> =>
-			Effect.tryPromise({
-				try: () =>
-					env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
-				catch: (cause) => new AcpSessionError({ cause }),
-			}).pipe(
-				Effect.map((res) => {
-					const availableModels =
-						res.models !== undefined && res.models !== null
-							? res.models.availableModels
-							: [];
-					if (availableModels.length > 0) {
-						return availableModels.map((m) => ({ id: m.modelId }));
-					}
+			const listModels = (): Effect.Effect<
+				ReadonlyArray<{ id: string }>,
+				AcpSessionError,
+				never
+			> =>
+				Effect.tryPromise({
+					try: () =>
+						env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+					catch: (cause) => new AcpSessionError({ cause }),
+				}).pipe(
+					Effect.map((res) => {
+						const availableModels =
+							res.models !== undefined && res.models !== null
+								? res.models.availableModels
+								: [];
+						if (availableModels.length > 0) {
+							return availableModels.map((m) => ({ id: m.modelId }));
+						}
 
-					const modelOption = res.configOptions?.find(
-						(opt) => opt.id === 'model',
-					);
-					if (
-						modelOption === undefined ||
-						modelOption.type !== 'select'
-					) {
-						return [];
-					}
+						const modelOption = res.configOptions?.find(
+							(opt) => opt.id === 'model',
+						);
+						if (
+							modelOption === undefined ||
+							modelOption.type !== 'select'
+						) {
+							return [];
+						}
 
-					return extractModelIds(modelOption.options);
-				}),
-			);
+						return extractModelIds(modelOption.options);
+					}),
+				);
 
 			return { runTurn, listModels };
 		}),
