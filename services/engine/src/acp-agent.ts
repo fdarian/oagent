@@ -34,10 +34,20 @@ function isSelectGroup(
 	return 'group' in opt;
 }
 
-function isGroupArray(
+function extractModelIds(
 	opts: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>,
-): opts is Array<SessionConfigSelectGroup> {
-	return opts.length > 0 && isSelectGroup(opts[0]);
+): Array<{ id: string }> {
+	const ids: Array<{ id: string }> = [];
+	for (const item of opts) {
+		if (isSelectGroup(item)) {
+			for (const o of item.options) {
+				ids.push({ id: o.value });
+			}
+		} else {
+			ids.push({ id: item.value });
+		}
+	}
+	return ids;
 }
 
 export function createAcpConnection(config: {
@@ -400,14 +410,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 						return [];
 					}
 
-					const opts = modelOption.options;
-					if (opts.length > 0 && isGroupArray(opts)) {
-						return opts.flatMap((g) =>
-							g.options.map((o) => ({ id: o.value })),
-						);
-					}
-
-					return opts.map((o) => ({ id: o.value }));
+					return extractModelIds(modelOption.options);
 				}),
 			);
 
