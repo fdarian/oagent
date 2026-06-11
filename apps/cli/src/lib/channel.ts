@@ -9,13 +9,10 @@ import {
 	startInputSchema,
 } from '@oagent/engine';
 import { Effect } from 'effect';
+import { waitForTerminalAndNotify } from '#/lib/channel-waiter.ts';
 import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
 
-type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
-
-/** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
-const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
 const RESULT_TIMEOUT_DEFAULT_MS = 50_000;
 /**
  * Max wait for the result tool's single jobs.wait call. Cap is a deliberate poll-style
@@ -81,34 +78,8 @@ function pushChannelEvent(
 	});
 }
 
-function channelEventFor(jobId: string, result: WaitResult) {
-	if (result.status === 'done') {
-		const meta: Record<string, string> = {
-			job_id: jobId,
-			status: 'done',
-			session_id: result.sessionId,
-		};
-		if (result.stopReason !== undefined) {
-			meta.stop_reason = result.stopReason;
-		}
-		return { content: result.text, meta };
-	}
-	if (result.status === 'error') {
-		return {
-			content: `Agent job failed: ${result.message}`,
-			meta: { job_id: jobId, status: 'error' },
-		};
-	}
-	return {
-		content: 'Agent job was cancelled.',
-		meta: { job_id: jobId, status: 'cancelled' },
-	};
-}
-
 /**
- * Listens to the engine's SSE event stream for the job until the terminal sentinel
- * arrives, fetches the final result once, and pushes the outcome into the session.
- * Fire-and-forget: callers do not await it so start can return immediately.
+ * Fire-and-forget wrapper: callers do not await so start can return immediately.
  */
 async function waitAndNotify(
 	server: McpServer,
@@ -116,67 +87,12 @@ async function waitAndNotify(
 	engineUrl: string,
 	jobId: string,
 ) {
-	const ac = new AbortController();
-	try {
-		for (;;) {
-			const sseUrl = new URL(`/jobs/${jobId}/events`, engineUrl);
-			const res = await fetch(sseUrl, { signal: ac.signal });
-			if (!res.body) {
-				throw new Error('SSE stream has no body');
-			}
-
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let gotTerminal = false;
-
-			while (!gotTerminal) {
-				const chunk = await reader.read();
-				if (chunk.done) break;
-
-				buffer += decoder.decode(chunk.value, { stream: true });
-				const frames = buffer.split('\n\n');
-				const tail = frames.pop();
-				buffer = tail === undefined ? '' : tail;
-
-				for (const frame of frames) {
-					const lines = frame.split('\n');
-					let payload: string | undefined;
-					for (const line of lines) {
-						if (line.startsWith('data:')) {
-							payload = line.slice('data:'.length).trim();
-							break;
-						}
-					}
-					if (payload === undefined) continue;
-					if (payload === '"__terminal__"') {
-						gotTerminal = true;
-						break;
-					}
-				}
-			}
-
-			await reader.cancel().catch(() => {});
-
-			if (gotTerminal) {
-				const result = await client.jobs.wait({
-					jobId,
-					timeoutMs: TERMINAL_FETCH_TIMEOUT_MS,
-				});
-				const event = channelEventFor(jobId, result);
-				await pushChannelEvent(server, event.content, event.meta);
-				return;
-			}
-			// Stream ended without terminal sentinel; reconnect and resume listening.
-		}
-	} catch (cause) {
-		ac.abort();
-		await pushChannelEvent(
-			server,
-			`Agent job ${jobId} failed while awaiting its result: ${errorMessage(cause)}`,
-			{ job_id: jobId, status: 'error' },
-		).catch(() => {});
-	}
+	await waitForTerminalAndNotify({
+		jobId,
+		engineUrl,
+		waitJob: (args) => client.jobs.wait(args),
+		notify: (content, meta) => pushChannelEvent(server, content, meta),
+	});
 }
 
 function registerChannelTools(
