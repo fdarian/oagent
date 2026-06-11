@@ -5,6 +5,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Effect, Fiber, Schema } from 'effect';
+import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
@@ -67,6 +68,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 		const opencode = yield* OpenCode;
 		const cursor = yield* Cursor;
 		const grok = yield* Grok;
+		const codex = yield* Codex;
 		const { db } = yield* Db;
 
 		const resolveModel = (
@@ -84,11 +86,12 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					if (
 						backend !== 'opencode' &&
 						backend !== 'cursor' &&
-						backend !== 'grok'
+						backend !== 'grok' &&
+						backend !== 'codex'
 					) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok.`,
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
 						});
 					}
 					return { backend, modelId };
@@ -391,6 +394,15 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					}
 					if (backend === 'grok') {
 						return grok.runTurn({
+							prompt: input.prompt,
+							model: rest,
+							sessionId: input.sessionId,
+							cwd: input.cwd,
+							onEvent,
+						});
+					}
+					if (backend === 'codex') {
+						return codex.runTurn({
 							prompt: input.prompt,
 							model: rest,
 							sessionId: input.sessionId,
@@ -746,7 +758,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			},
 		};
 	}),
-	dependencies: [OpenCode.Default, Cursor.Default, Grok.Default, Db.Default],
+	dependencies: [OpenCode.Default, Cursor.Default, Grok.Default, Codex.Default, Db.Default],
 }) {}
 
 function toWaitResult(job: {
