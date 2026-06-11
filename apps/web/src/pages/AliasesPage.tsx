@@ -37,7 +37,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 
-type Backend = 'opencode' | 'cursor' | 'grok';
+type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
 type Alias = {
 	name: string;
@@ -284,6 +284,7 @@ function AliasForm(props: AliasFormProps) {
 								<SelectItem value="opencode">opencode</SelectItem>
 								<SelectItem value="cursor">cursor</SelectItem>
 								<SelectItem value="grok">grok</SelectItem>
+								<SelectItem value="codex">codex</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
