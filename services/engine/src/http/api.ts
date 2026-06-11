@@ -1,8 +1,4 @@
-import {
-	HttpApi,
-	HttpApiEndpoint,
-	HttpApiGroup,
-} from '@effect/platform';
+import { HttpApi, HttpApiEndpoint, HttpApiGroup } from '@effect/platform';
 import * as HttpApiSchema from '@effect/platform/HttpApiSchema';
 import * as Schema from 'effect/Schema';
 import { ModelCatalogError } from '../model-catalog.ts';

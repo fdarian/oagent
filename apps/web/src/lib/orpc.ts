@@ -38,9 +38,7 @@ export const orpc = {
 			memoizedClient().then((client) => Effect.runPromise(client.jobs.list())),
 		cancel: (args: { jobId: string }) =>
 			memoizedClient().then((client) =>
-				Effect.runPromise(
-					client.jobs.cancel({ path: { jobId: args.jobId } }),
-				),
+				Effect.runPromise(client.jobs.cancel({ path: { jobId: args.jobId } })),
 			),
 	},
 	models: {
@@ -67,9 +65,7 @@ export const orpc = {
 			),
 		delete: (args: { name: string }) =>
 			memoizedClient().then((client) =>
-				Effect.runPromise(
-					client.aliases.delete({ path: { name: args.name } }),
-				),
+				Effect.runPromise(client.aliases.delete({ path: { name: args.name } })),
 			),
 	},
 };

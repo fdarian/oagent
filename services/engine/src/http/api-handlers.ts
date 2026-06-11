@@ -4,73 +4,74 @@ import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 import { EngineApi, ModelResolutionError } from './api.ts';
 
-export const jobsGroupLayer = HttpApiBuilder.group(EngineApi, 'jobs', (handlers) =>
-	handlers
-		.handle('list', () =>
-			Effect.gen(function* () {
-				const jobs = yield* Jobs;
-				return jobs.list();
-			}),
-		)
-		.handle('get', (ctx) =>
-			Effect.gen(function* () {
-				const jobs = yield* Jobs;
-				const detail = jobs.getDetail(ctx.path.jobId);
-				if (detail === undefined) {
-					return null;
-				}
-				return {
-					id: detail.id,
-					status: detail.status,
-					createdAt: detail.createdAt,
-					terminatedAt: detail.terminatedAt,
-					prompt: detail.prompt,
-					cwd: detail.cwd,
-					model: detail.model,
-				};
-			}),
-		)
-		.handle('start', (ctx) =>
-			Effect.gen(function* () {
-				const jobs = yield* Jobs;
-				return yield* jobs.start(ctx.payload).pipe(
-					Effect.catchTag('ModelResolutionError', (err) =>
-						Effect.fail(
-							new ModelResolutionError({ message: err.message }),
-						),
-					),
-				);
-			}),
-		)
-		.handle('cancel', (ctx) =>
-			Effect.gen(function* () {
-				const jobs = yield* Jobs;
-				return yield* jobs.cancel({ jobId: ctx.path.jobId }).pipe(
-					Effect.as({ ok: true }),
-					Effect.catchTag('JobNotFound', () =>
-						Effect.succeed({ ok: false }),
-					),
-				);
-			}),
-		)
-		.handle('wait', (ctx) =>
-			Effect.gen(function* () {
-				const jobs = yield* Jobs;
-				return yield* jobs
-					.wait({
-						jobId: ctx.path.jobId,
-						timeoutMs: ctx.urlParams.timeoutMs,
-					})
-					.pipe(
-						Effect.catchTag('JobNotFound', (err) =>
-							Effect.succeed({
-								status: 'error' as const,
-								message: `Job not found: ${err.jobId}`,
-							}),
-						),
+export const jobsGroupLayer = HttpApiBuilder.group(
+	EngineApi,
+	'jobs',
+	(handlers) =>
+		handlers
+			.handle('list', () =>
+				Effect.gen(function* () {
+					const jobs = yield* Jobs;
+					return jobs.list();
+				}),
+			)
+			.handle('get', (ctx) =>
+				Effect.gen(function* () {
+					const jobs = yield* Jobs;
+					const detail = jobs.getDetail(ctx.path.jobId);
+					if (detail === undefined) {
+						return null;
+					}
+					return {
+						id: detail.id,
+						status: detail.status,
+						createdAt: detail.createdAt,
+						terminatedAt: detail.terminatedAt,
+						prompt: detail.prompt,
+						cwd: detail.cwd,
+						model: detail.model,
+					};
+				}),
+			)
+			.handle('start', (ctx) =>
+				Effect.gen(function* () {
+					const jobs = yield* Jobs;
+					return yield* jobs
+						.start(ctx.payload)
+						.pipe(
+							Effect.catchTag('ModelResolutionError', (err) =>
+								Effect.fail(new ModelResolutionError({ message: err.message })),
+							),
+						);
+				}),
+			)
+			.handle('cancel', (ctx) =>
+				Effect.gen(function* () {
+					const jobs = yield* Jobs;
+					return yield* jobs.cancel({ jobId: ctx.path.jobId }).pipe(
+						Effect.as({ ok: true }),
+						Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
 					);
-			}),
-		),
+				}),
+			)
+			.handle('wait', (ctx) =>
+				Effect.gen(function* () {
+					const jobs = yield* Jobs;
+					return yield* jobs
+						.wait({
+							jobId: ctx.path.jobId,
+							timeoutMs: ctx.urlParams.timeoutMs,
+						})
+						.pipe(
+							Effect.catchTag('JobNotFound', (err) =>
+								Effect.succeed({
+									status: 'error' as const,
+									message: `Job not found: ${err.jobId}`,
+								}),
+							),
+						);
+				}),
+			),
 );
 
 export const aliasesGroupLayer = HttpApiBuilder.group(
