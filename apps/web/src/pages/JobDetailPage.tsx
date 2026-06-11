@@ -67,6 +67,7 @@ export function JobDetailPage() {
 					<JobTimeline
 						parts={events.parts}
 						streamingTail={events.streamingTail}
+						cwd={selectedJob.cwd}
 						isLoading={
 							events.isLoading &&
 							events.parts.length === 0 &&

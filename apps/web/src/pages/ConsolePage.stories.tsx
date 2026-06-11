@@ -92,6 +92,7 @@ export const RunningSession: Story = {
 						/>
 						<div className="mt-22 min-h-0 flex-1">
 							<JobTimeline
+								cwd="/Users/dev/project/apps/api"
 								parts={[
 									{
 										kind: 'reasoning',
@@ -105,8 +106,9 @@ export const RunningSession: Story = {
 										kind: 'tool',
 										id: 'tool-1',
 										toolCallId: 'tc-1',
-										toolName: 'read_file',
-										title: 'read_file',
+										toolName: 'read',
+										title: 'auth.ts',
+										toolKind: 'read',
 										state: 'output-available',
 										content: [
 											{
@@ -117,9 +119,42 @@ export const RunningSession: Story = {
 												},
 											},
 										],
-										locations: [{ path: 'src/middleware/auth.ts' }],
+										locations: [
+											{
+												path: '/Users/dev/project/apps/api/src/middleware/auth.ts',
+											},
+										],
+										rawInput: {
+											filePath:
+												'/Users/dev/project/apps/api/src/middleware/auth.ts',
+										},
 										createdAt: Date.now() - 90_000,
 										durationMs: 800,
+									},
+									{
+										kind: 'tool',
+										id: 'tool-shell',
+										toolCallId: 'tc-shell',
+										toolName: 'bash',
+										title: 'Run the test suite',
+										toolKind: 'execute',
+										state: 'output-available',
+										content: [
+											{
+												type: 'content',
+												content: {
+													type: 'text',
+													text: 'PASS  src/middleware/auth.test.ts\n  ✓ rejects missing token (3 ms)\n  ✓ calls next on valid token (1 ms)\n\nTest Suites: 1 passed, 1 total',
+												},
+											},
+										],
+										locations: [],
+										rawInput: {
+											command: 'bun test src/middleware/auth.test.ts',
+											description: 'Run the test suite',
+										},
+										createdAt: Date.now() - 85_000,
+										durationMs: 1200,
 									},
 									{
 										kind: 'text',
