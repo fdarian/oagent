@@ -313,9 +313,7 @@ function WriteRow(props: { part: ToolPart; cwd: string }) {
 
 	const children =
 		body !== undefined && body.length > 0 ? (
-			<div className="overflow-hidden rounded-md border">
-				<CodeBlock code={body} language={detectLanguage(body)} />
-			</div>
+			<CodeBlock code={body} language={detectLanguage(body)} />
 		) : null;
 
 	return (
@@ -457,7 +455,7 @@ function EditDiffRow(props: EditDiffRowProps) {
 
 	const descriptor = (
 		<span className="flex min-w-0 items-baseline gap-1.5">
-			<span className="font-medium text-foreground">{basename}</span>
+			<span className="text-muted-foreground">{basename}</span>
 			{dir.length > 0 && (
 				<span className="min-w-0 truncate text-muted-foreground">{dir}</span>
 			)}
