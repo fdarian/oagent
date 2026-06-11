@@ -55,9 +55,9 @@ This service is the primary adapter for the OpenCode ACP backend. It wraps the l
   - **Turn Execution**: Its main function is `runTurn`, which takes a prompt and other parameters, sends them to the OpenCode process, and yields a stream of `SessionUpdate` events back to the caller (the `Jobs` service).
   - **Model Catalog**: The engine includes a `model-catalog.ts` which likely contains static or dynamically fetched information about available models to validate user requests.
 
-#### 3.1.3. `Cursor` and `Grok` Services
+#### 3.1.3. `Cursor`, `Grok`, and `Codex` Services
 
-The architecture is designed to support multiple ACP backends. While the primary focus is on OpenCode, the codebase includes the scaffolding for `Cursor` and `Grok` backends. These services would follow the same pattern as the `OpenCode` service: wrapping a subprocess or API client, and yielding a stream of normalized events. The existence of these files indicates a future-proof design that can easily be extended to support other agent providers.
+The architecture is designed to support multiple ACP backends. While the primary focus is on OpenCode, the codebase includes the scaffolding for `Cursor`, `Grok`, and `Codex` backends. These services follow the same pattern as the `OpenCode` service: wrapping a subprocess or API client, and yielding a stream of normalized events. The existence of these files indicates a future-proof design that can easily be extended to support other agent providers.
 
 #### 3.1.4. `Db` Service
 

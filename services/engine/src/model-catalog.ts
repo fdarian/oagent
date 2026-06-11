@@ -1,9 +1,10 @@
 import { Effect, Ref, Schema } from 'effect';
+import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 
-type Backend = 'opencode' | 'cursor' | 'grok';
+type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
 export type ModelEntry = { id: string; label?: string };
 
@@ -29,6 +30,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 			const opencode = yield* OpenCode;
 			const cursor = yield* Cursor;
 			const grok = yield* Grok;
+			const codex = yield* Codex;
 			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
 
 			const fetch = (
@@ -37,6 +39,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 				const inner = (() => {
 					if (backend === 'opencode') return opencode.listModels();
 					if (backend === 'grok') return grok.listModels();
+					if (backend === 'codex') return codex.listModels();
 					return cursor.listModels();
 				})();
 				return inner.pipe(
@@ -72,6 +75,11 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 
 			return { list };
 		}),
-		dependencies: [OpenCode.Default, Cursor.Default, Grok.Default],
+		dependencies: [
+			OpenCode.Default,
+			Cursor.Default,
+			Grok.Default,
+			Codex.Default,
+		],
 	},
 ) {}

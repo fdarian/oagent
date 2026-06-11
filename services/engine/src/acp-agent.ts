@@ -4,6 +4,8 @@ import {
 	ClientSideConnection,
 	ndJsonStream,
 	PROTOCOL_VERSION,
+	type SessionConfigSelectGroup,
+	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect, Schema } from 'effect';
@@ -25,6 +27,28 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 		cause: Schema.Defect,
 	},
 ) {}
+
+function isSelectGroup(
+	opt: SessionConfigSelectOption | SessionConfigSelectGroup,
+): opt is SessionConfigSelectGroup {
+	return 'group' in opt;
+}
+
+function extractModelIds(
+	opts: Array<SessionConfigSelectOption> | Array<SessionConfigSelectGroup>,
+): Array<{ id: string }> {
+	const ids: Array<{ id: string }> = [];
+	for (const item of opts) {
+		if (isSelectGroup(item)) {
+			for (const o of item.options) {
+				ids.push({ id: o.value });
+			}
+		} else {
+			ids.push({ id: item.value });
+		}
+	}
+	return ids;
+}
 
 export function createAcpConnection(config: {
 	binary: string;
@@ -367,11 +391,24 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 						env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
 					catch: (cause) => new AcpSessionError({ cause }),
 				}).pipe(
-					Effect.map((res) =>
-						res.models === undefined || res.models === null
-							? []
-							: res.models.availableModels.map((m) => ({ id: m.modelId })),
-					),
+					Effect.map((res) => {
+						const availableModels =
+							res.models !== undefined && res.models !== null
+								? res.models.availableModels
+								: [];
+						if (availableModels.length > 0) {
+							return availableModels.map((m) => ({ id: m.modelId }));
+						}
+
+						const modelOption = res.configOptions?.find(
+							(opt) => opt.id === 'model',
+						);
+						if (modelOption === undefined || modelOption.type !== 'select') {
+							return [];
+						}
+
+						return extractModelIds(modelOption.options);
+					}),
 				);
 
 			return { runTurn, listModels };

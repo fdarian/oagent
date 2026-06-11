@@ -4,6 +4,7 @@ export type {
 	ToolCallLocation,
 	ToolKind,
 } from '@agentclientprotocol/sdk';
+export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
 export { serveSPA } from './http/spa.ts';

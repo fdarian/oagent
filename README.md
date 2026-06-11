@@ -61,7 +61,7 @@ Delegates a task to the coding agent and returns immediately.
 Input:
 - `prompt: string` — the task to send
 - `cwd: string` — **required** absolute path to the directory the agent should operate in; typically the parent agent's project root
-- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias name. Valid backends: `opencode`, `cursor`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`. If the user has not specified a model, ask them which model and backend to use.
+- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias name. Valid backends: `opencode`, `cursor`, `grok`, `codex`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`. If the user has not specified a model, ask them which model and backend to use.
 - `sessionId?: string` — pass the `sessionId` returned from a prior `result` done response to continue that conversation.
 
 Output:

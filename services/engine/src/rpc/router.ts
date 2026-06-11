@@ -142,7 +142,7 @@ const program = Effect.gen(function* () {
 					.input(
 						v.object({
 							name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-							backend: v.picklist(['opencode', 'cursor', 'grok']),
+							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
 							model_id: v.pipe(v.string(), v.nonEmpty()),
 							description: v.optional(v.string()),
 						}),
@@ -179,7 +179,9 @@ const program = Effect.gen(function* () {
 			list: yield* createHandler(
 				os
 					.input(
-						v.object({ backend: v.picklist(['opencode', 'cursor', 'grok']) }),
+						v.object({
+							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+						}),
 					)
 					.output(
 						v.array(
