@@ -303,7 +303,7 @@ function WriteRow(props: { part: ToolPart; cwd: string }) {
 		const { basename, dir } = splitRelativePath(rel);
 		return (
 			<span className="flex min-w-0 items-baseline gap-1.5">
-				<span className="font-medium text-foreground">{basename}</span>
+				<span className="text-muted-foreground">{basename}</span>
 				{dir.length > 0 && (
 					<span className="min-w-0 truncate text-muted-foreground">{dir}</span>
 				)}
