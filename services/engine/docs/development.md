@@ -36,3 +36,4 @@ For probing tools on the running engine, see the `test-oagent-mcp` skill at `.cl
 | Variable         | Default                      | Description                                                                         |
 | ---------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
 | `OAGENT_DB_PATH` | `~/.config/oagent/sqlite.db` | SQLite path. `services/engine/scripts/dev.ts` sets it to the session's `sqlite.db`. |
+| `OAGENT_CONFIG_PATH` | `~/.config/oagent/config.json` | Config file path. Optional JSON with schema-validated fields (e.g. `"portless": true`). |

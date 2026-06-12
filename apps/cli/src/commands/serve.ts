@@ -50,7 +50,7 @@ export const serveCmd = (version: Version) =>
 			portless: Options.boolean('portless').pipe(
 				Options.withDefault(false),
 				Options.withDescription(
-					'Register with portless proxy for https://oagent.localhost access',
+					'Register with portless proxy for https://oagent.localhost access (also settable in ~/.config/oagent/config.json via "portless": true)',
 				),
 			),
 		},
