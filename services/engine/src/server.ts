@@ -3,12 +3,12 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Console, Effect, Layer, type Runtime, Schema } from 'effect';
+import { loadConfig } from './config.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
-import { loadConfig } from './config.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
@@ -205,7 +205,8 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					);
 
 					const fileConfig = yield* loadConfig();
-					const portlessEnabled = portless === true || fileConfig.portless === true;
+					const portlessEnabled =
+						portless === true || fileConfig.portless === true;
 
 					if (portlessEnabled) {
 						const portlessBin = Bun.which('portless');

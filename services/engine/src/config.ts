@@ -1,7 +1,14 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { Config, type ConfigError, Effect, Option, ParseResult, Schema } from 'effect';
+import {
+	Config,
+	type ConfigError,
+	Effect,
+	Option,
+	type ParseResult,
+	Schema,
+} from 'effect';
 
 const ConfigSchema = Schema.Struct({
 	portless: Schema.optionalWith(Schema.Boolean, { default: () => false }),
@@ -9,10 +16,7 @@ const ConfigSchema = Schema.Struct({
 
 export type OagentConfig = Schema.Schema.Type<typeof ConfigSchema>;
 
-function resolveConfigPath(): Effect.Effect<
-	string,
-	ConfigError.ConfigError
-> {
+function resolveConfigPath(): Effect.Effect<string, ConfigError.ConfigError> {
 	return Effect.gen(function* () {
 		const pathFromEnv = Option.getOrNull(
 			yield* Config.string('OAGENT_CONFIG_PATH').pipe(Config.option),
