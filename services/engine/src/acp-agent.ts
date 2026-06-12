@@ -104,23 +104,7 @@ export function createAcpConnection(config: {
 					}
 					return { outcome: { outcome: 'cancelled' } };
 				},
-				readTextFile: async (params) => {
-					const text = await Bun.file(params.path).text();
-					if (params.line !== undefined && params.line !== null) {
-						const lines = text.split('\n');
-						const start = Math.max(params.line - 1, 0);
-						const end =
-							params.limit !== undefined && params.limit !== null
-								? start + params.limit
-								: undefined;
-						return { content: lines.slice(start, end).join('\n') };
-					}
-					return { content: text };
-				},
-				writeTextFile: async (params) => {
-					await Bun.write(params.path, params.content);
-					return {};
-				},
+
 				extMethod: async (method, params) => {
 					const handler = config.extensionHandlers?.[method];
 					if (handler !== undefined) {
@@ -156,7 +140,6 @@ export function createAcpConnection(config: {
 				conn.initialize({
 					protocolVersion: PROTOCOL_VERSION,
 					clientCapabilities: {
-						fs: { readTextFile: true, writeTextFile: true },
 						terminal: false,
 					},
 					clientInfo: { name: config.clientInfoName, version: '0.1.0' },
