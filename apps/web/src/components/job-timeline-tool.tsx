@@ -548,7 +548,8 @@ function SearchRow(props: {
 	);
 
 	const output = extractText(part.content);
-	const effectiveOutput = output.length > 0 ? output : extractRawOutputText(part.rawOutput);
+	const effectiveOutput =
+		output.length > 0 ? output : extractRawOutputText(part.rawOutput);
 	const children =
 		effectiveOutput.length > 0 ? (
 			<div className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
@@ -594,7 +595,9 @@ function ReadOutput(props: { part: ToolPart; output: string }) {
 		if (props.output.length === 0) {
 			return <div className="text-xs text-muted-foreground">No content</div>;
 		}
-		return <CodeBlock code={props.output} language={detectLanguage(props.output)} />;
+		return (
+			<CodeBlock code={props.output} language={detectLanguage(props.output)} />
+		);
 	}
 	return (
 		<>
@@ -607,7 +610,9 @@ function ReadOutput(props: { part: ToolPart; output: string }) {
 
 function GenericOutput(props: { output: string }) {
 	if (props.output.length === 0) return null;
-	return <CodeBlock code={props.output} language={detectLanguage(props.output)} />;
+	return (
+		<CodeBlock code={props.output} language={detectLanguage(props.output)} />
+	);
 }
 
 function ToolCallContentBlock(props: { content: ToolCallContent }) {
