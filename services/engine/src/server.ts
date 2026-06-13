@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Console, Effect, Layer, type Runtime, Schema } from 'effect';
+import { loadConfig } from './config.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
@@ -203,7 +204,11 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 						`oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
 					);
 
-					if (portless === true) {
+					const fileConfig = yield* loadConfig();
+					const portlessEnabled =
+						portless === true || fileConfig.portless === true;
+
+					if (portlessEnabled) {
 						const portlessBin = Bun.which('portless');
 						if (portlessBin == null) {
 							yield* Console.warn(
