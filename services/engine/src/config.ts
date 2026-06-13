@@ -1,6 +1,7 @@
-import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import type { PlatformError } from '@effect/platform/Error';
+import { FileSystem } from '@effect/platform/FileSystem';
 import {
 	Config,
 	type ConfigError,
@@ -32,23 +33,23 @@ function resolveConfigPath(): Effect.Effect<string, ConfigError.ConfigError> {
 
 export function loadConfig(): Effect.Effect<
 	OagentConfig,
-	ConfigError.ConfigError | ParseResult.ParseError | Error
+	ConfigError.ConfigError | ParseResult.ParseError | PlatformError | Error,
+	FileSystem
 > {
 	return Effect.gen(function* () {
+		const fs = yield* FileSystem;
 		const configPath = yield* resolveConfigPath();
 
-		if (!fs.existsSync(configPath)) {
+		if (!(yield* fs.exists(configPath))) {
 			return yield* Schema.decode(ConfigSchema)({});
 		}
 
+		const raw = yield* fs.readFileString(configPath);
 		const parsed = yield* Effect.try({
-			try: () => {
-				const raw = fs.readFileSync(configPath, 'utf-8');
-				return JSON.parse(raw);
-			},
+			try: () => JSON.parse(raw),
 			catch: (cause) =>
 				new Error(
-					`Failed to read/parse config file at ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
+					`Failed to parse config file at ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
 				),
 		});
 
