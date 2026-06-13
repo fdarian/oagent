@@ -14,6 +14,7 @@ import {
 const ConfigSchema = Schema.Struct({
 	portless: Schema.optionalWith(Schema.Boolean, { default: () => false }),
 });
+const ConfigSchemaFromJson = Schema.parseJson(ConfigSchema);
 
 export type OagentConfig = Schema.Schema.Type<typeof ConfigSchema>;
 
@@ -45,14 +46,6 @@ export function loadConfig(): Effect.Effect<
 		}
 
 		const raw = yield* fs.readFileString(configPath);
-		const parsed = yield* Effect.try({
-			try: () => JSON.parse(raw),
-			catch: (cause) =>
-				new Error(
-					`Failed to parse config file at ${configPath}: ${cause instanceof Error ? cause.message : String(cause)}`,
-				),
-		});
-
-		return yield* Schema.decode(ConfigSchema)(parsed);
+		return yield* Schema.decode(ConfigSchemaFromJson)(raw);
 	});
 }
