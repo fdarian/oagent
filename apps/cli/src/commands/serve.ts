@@ -1,6 +1,8 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { Command, Options } from '@effect/cli';
 import { Engine } from '@oagent/engine';
-import { Effect } from 'effect';
+import { Effect, Logger, Option } from 'effect';
 import type { Version } from '#/lib/misc.ts';
 
 const webFilemap = Effect.tryPromise(
@@ -24,9 +26,10 @@ const webFilemap = Effect.tryPromise(
 function runServe(params: {
 	port: number;
 	portless: boolean;
+	logFile: string | undefined;
 	version: Version;
 }) {
-	return Effect.gen(function* () {
+	const baseProgram = Effect.gen(function* () {
 		const engine = yield* Engine;
 
 		yield* engine.startServer({
@@ -36,6 +39,24 @@ function runServe(params: {
 			portless: params.portless,
 		});
 	}).pipe(Effect.provide(Engine.layer));
+
+	const loggerLayer = getLoggerLayer(params.logFile);
+
+	return baseProgram.pipe(Effect.provide(loggerLayer));
+}
+
+function getLoggerLayer(logFile: string | undefined) {
+	if (logFile !== undefined) {
+		const resolvedPath = path.resolve(logFile);
+		const logDir = path.dirname(resolvedPath);
+		fs.mkdirSync(logDir, { recursive: true });
+		const fileLogger = Logger.make((options) => {
+			const line = Logger.jsonLogger.log(options);
+			fs.appendFileSync(resolvedPath, `${line}\n`);
+		});
+		return Logger.replace(Logger.defaultLogger, fileLogger);
+	}
+	return Logger.pretty;
 }
 
 export const serveCmd = (version: Version) =>
@@ -53,6 +74,17 @@ export const serveCmd = (version: Version) =>
 					'Register with portless proxy for https://oagent.localhost access (also settable in ~/.config/oagent/config.json via "portless": true)',
 				),
 			),
+			logFile: Options.optional(Options.text('log-file')).pipe(
+				Options.withDescription(
+					'Write Effect logs as JSONL to the given file instead of pretty console output',
+				),
+			),
 		},
-		({ port, portless }) => runServe({ port, portless, version }),
+		(params) =>
+			runServe({
+				port: params.port,
+				portless: params.portless,
+				logFile: Option.getOrUndefined(params.logFile),
+				version,
+			}),
 	);
