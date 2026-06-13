@@ -7,6 +7,7 @@ import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';
 import { jobsCmd } from './commands/jobs';
 import { serveCmd } from './commands/serve';
+import { serviceCmd } from './commands/service';
 import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
 
@@ -22,6 +23,7 @@ const cli = Command.make('oagent').pipe(
 		claudeCmd(version),
 		jobsCmd(version),
 		doctorCmd(version),
+		serviceCmd(version),
 	]),
 );
 
