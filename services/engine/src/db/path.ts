@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { Config, type ConfigError, Effect, Option } from 'effect';
+import { getOagentBaseDir } from '../paths.ts';
 
 export function resolveDbPath(): Effect.Effect<
 	string,
@@ -18,9 +18,9 @@ export function resolveDbPath(): Effect.Effect<
 			return resolved;
 		}
 
-		const dir = path.join(os.homedir(), '.config', 'oagent');
-		fs.mkdirSync(dir, { recursive: true });
-		const dbPath = path.join(dir, 'sqlite.db');
+		const baseDir = getOagentBaseDir();
+		fs.mkdirSync(baseDir, { recursive: true });
+		const dbPath = path.join(baseDir, 'sqlite.db');
 		yield* Effect.logInfo(`[sqlite] using ${dbPath}`);
 		return dbPath;
 	});

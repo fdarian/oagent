@@ -1,4 +1,3 @@
-import os from 'node:os';
 import path from 'node:path';
 import type { PlatformError } from '@effect/platform/Error';
 import { FileSystem } from '@effect/platform/FileSystem';
@@ -10,6 +9,7 @@ import {
 	type ParseResult,
 	Schema,
 } from 'effect';
+import { getOagentBaseDir } from './paths.ts';
 
 const ConfigSchema = Schema.Struct({
 	portless: Schema.optionalWith(Schema.Boolean, { default: () => false }),
@@ -27,8 +27,7 @@ function resolveConfigPath(): Effect.Effect<string, ConfigError.ConfigError> {
 			return path.resolve(pathFromEnv);
 		}
 
-		const dir = path.join(os.homedir(), '.config', 'oagent');
-		return path.join(dir, 'config.json');
+		return path.join(getOagentBaseDir(), 'config.json');
 	});
 }
 
