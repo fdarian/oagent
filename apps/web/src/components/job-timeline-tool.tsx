@@ -45,6 +45,22 @@ function extractText(content: ToolCallContent[]): string {
 		.join('');
 }
 
+function extractRawOutputText(rawOutput: unknown): string {
+	const formattedOutput = readStringProp(rawOutput, 'formatted_output');
+	if (formattedOutput !== undefined) return formattedOutput;
+	const aggregatedOutput = readStringProp(rawOutput, 'aggregated_output');
+	if (aggregatedOutput !== undefined) return aggregatedOutput;
+	const stdout = readStringProp(rawOutput, 'stdout');
+	if (stdout !== undefined) return stdout;
+	return '';
+}
+
+function extractEffectiveOutput(part: ToolPart): string {
+	const text = extractText(part.content);
+	if (text.length > 0) return text;
+	return extractRawOutputText(part.rawOutput);
+}
+
 function relativePath(absPath: string, cwd: string): string {
 	if (absPath === cwd) return absPath;
 	const prefix = cwd.endsWith('/') ? cwd : `${cwd}/`;
@@ -139,10 +155,10 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 	if (part.toolKind === 'execute') {
 		const descriptor = shellDescriptor(part);
 		const command = readStringProp(part.rawInput, 'command');
-		const output = extractText(part.content);
+		const output = extractEffectiveOutput(part);
 		const children =
 			command !== undefined || output.length > 0 ? (
-				<ShellOutput part={part} />
+				<ShellOutput command={command} output={output} />
 			) : null;
 		return (
 			<ToolRow
@@ -158,8 +174,11 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 
 	if (part.toolKind === 'read') {
 		const descriptor = readDescriptor(part, props.cwd);
+		const output = extractEffectiveOutput(part);
 		const children =
-			part.content.length > 0 ? <ReadOutput part={part} /> : null;
+			part.content.length > 0 || output.length > 0 ? (
+				<ReadOutput part={part} output={output} />
+			) : null;
 		return (
 			<ToolRow
 				label="Read"
@@ -207,9 +226,13 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 				icon={<WrenchIcon className="size-4 text-muted-foreground" />}
 			/>
 			<ToolContent>
-				{part.content.map((c, i) => (
-					<ToolCallContentBlock key={contentKey(c, i)} content={c} />
-				))}
+				{part.content.length > 0 ? (
+					part.content.map((c, i) => (
+						<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+					))
+				) : (
+					<GenericOutput output={extractEffectiveOutput(part)} />
+				)}
 				{part.locations.length > 0 && (
 					<ToolLocations locations={part.locations} />
 				)}
@@ -525,10 +548,11 @@ function SearchRow(props: {
 	);
 
 	const output = extractText(part.content);
+	const effectiveOutput = output.length > 0 ? output : extractRawOutputText(part.rawOutput);
 	const children =
-		output.length > 0 ? (
+		effectiveOutput.length > 0 ? (
 			<div className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap">
-				{output}
+				{effectiveOutput}
 			</div>
 		) : null;
 
@@ -544,32 +568,33 @@ function SearchRow(props: {
 	);
 }
 
-function ShellOutput(props: { part: ToolPart }) {
-	const command = readStringProp(props.part.rawInput, 'command');
-	const output = extractText(props.part.content);
-	if (command === undefined && output.length === 0) return null;
+function ShellOutput(props: { command?: string; output: string }) {
+	if (props.command === undefined && props.output.length === 0) return null;
 	return (
 		<div className="overflow-x-auto rounded-md border bg-muted/30 p-3 font-mono text-xs leading-relaxed">
-			{command !== undefined && (
-				<div className="whitespace-pre-wrap">$ {command}</div>
+			{props.command !== undefined && (
+				<div className="whitespace-pre-wrap">$ {props.command}</div>
 			)}
-			{output.length > 0 && (
+			{props.output.length > 0 && (
 				<div
 					className={cn(
 						'whitespace-pre-wrap text-muted-foreground',
-						command !== undefined && 'mt-3',
+						props.command !== undefined && 'mt-3',
 					)}
 				>
-					{output}
+					{props.output}
 				</div>
 			)}
 		</div>
 	);
 }
 
-function ReadOutput(props: { part: ToolPart }) {
+function ReadOutput(props: { part: ToolPart; output: string }) {
 	if (props.part.content.length === 0) {
-		return <div className="text-xs text-muted-foreground">No content</div>;
+		if (props.output.length === 0) {
+			return <div className="text-xs text-muted-foreground">No content</div>;
+		}
+		return <CodeBlock code={props.output} language={detectLanguage(props.output)} />;
 	}
 	return (
 		<>
@@ -578,6 +603,11 @@ function ReadOutput(props: { part: ToolPart }) {
 			))}
 		</>
 	);
+}
+
+function GenericOutput(props: { output: string }) {
+	if (props.output.length === 0) return null;
+	return <CodeBlock code={props.output} language={detectLanguage(props.output)} />;
 }
 
 function ToolCallContentBlock(props: { content: ToolCallContent }) {
