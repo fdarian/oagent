@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { JobListItem } from '@/lib/use-job-list';
 import { cn } from '@/lib/utils';
 import { JobSidebarFilters } from './job-sidebar-filters';
-import { JobSidebarList, JobSidebarSessionList } from './job-sidebar-list';
+import { JobSidebarGroup, JobSidebarSessionList } from './job-sidebar-list';
 import { ThemeToggle } from './theme-toggle';
 
 export type JobSidebarProps = {
@@ -89,9 +89,10 @@ export function JobSidebar({
 				) : view === 'jobs' ? (
 					<div className="flex flex-col pb-22">
 						{grouped.map((group) => (
-							<JobSidebarList
+							<JobSidebarGroup
 								key={group.label}
-								groups={group}
+								label={group.label}
+								items={group.items}
 								selectedId={selectedId}
 							/>
 						))}

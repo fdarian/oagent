@@ -1,13 +1,14 @@
 import { Link } from '@tanstack/react-router';
+import { ChevronRightIcon } from 'lucide-react';
 import { formatAge, groupBySession } from '@/lib/format';
 import { warmUpJobEvents } from '@/lib/job-warmup';
 import type { JobListItem } from '@/lib/use-job-list';
 import { cn } from '@/lib/utils';
-
-export type JobSidebarListProps = {
-	groups: { label: string; items: JobListItem[] };
-	selectedId?: string;
-};
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from './ui/collapsible';
 
 function statusDotClass(status: string): string {
 	if (status === 'running') return 'bg-verdant-accent';
@@ -56,23 +57,36 @@ export function JobSidebarItem({
 	);
 }
 
-export function JobSidebarList({ groups, selectedId }: JobSidebarListProps) {
+type JobSidebarGroupProps = {
+	label: string;
+	items: JobListItem[];
+	selectedId?: string;
+};
+
+export function JobSidebarGroup({
+	label,
+	items,
+	selectedId,
+}: JobSidebarGroupProps) {
 	return (
-		<div className="flex flex-col">
-			<div className="flex items-center justify-between px-22 py-15">
+		<Collapsible defaultOpen className="group flex flex-col">
+			<CollapsibleTrigger className="flex w-full items-center justify-between px-22 py-15 text-left">
 				<span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-					{groups.label}
+					{label}
 				</span>
-				<span className="text-caption font-medium text-muted-foreground">
-					{groups.items.length}
-				</span>
-			</div>
-			<div className="flex flex-col">
-				{groups.items.map((job) => (
+				<div className="flex items-center gap-10">
+					<span className="text-caption font-medium text-muted-foreground">
+						{items.length}
+					</span>
+					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+				</div>
+			</CollapsibleTrigger>
+			<CollapsibleContent className="flex flex-col">
+				{items.map((job) => (
 					<JobSidebarItem key={job.id} job={job} selectedId={selectedId} />
 				))}
-			</div>
-		</div>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }
 
@@ -95,28 +109,12 @@ export function JobSidebarSessionList({
 							? `${group.sessionId.slice(0, 8)}…`
 							: group.sessionId;
 				return (
-					<div
+					<JobSidebarGroup
 						key={group.sessionId ?? '__no_session__'}
-						className="flex flex-col"
-					>
-						<div className="flex items-center justify-between px-22 py-15">
-							<span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-								{label}
-							</span>
-							<span className="text-caption font-medium text-muted-foreground">
-								{group.items.length}
-							</span>
-						</div>
-						<div className="flex flex-col">
-							{group.items.map((job) => (
-								<JobSidebarItem
-									key={job.id}
-									job={job}
-									selectedId={selectedId}
-								/>
-							))}
-						</div>
-					</div>
+						label={label}
+						items={group.items}
+						selectedId={selectedId}
+					/>
 				);
 			})}
 		</div>
