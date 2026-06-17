@@ -567,7 +567,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				return { status: 'running' };
 			});
 
-		const list = (): {
+		type JobSummary = {
 			id: string;
 			status: 'running' | 'done' | 'error' | 'cancelled';
 			createdAt: number;
@@ -576,7 +576,22 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			cwd: string;
 			model?: string;
 			mcpSessionId?: string;
-		}[] => {
+		};
+
+		const toJobSummary = (
+			row: typeof schema.jobs.$inferSelect,
+		): JobSummary => ({
+			id: row.uuid,
+			status: row.status,
+			createdAt: row.created_at.getTime(),
+			terminatedAt: row.terminated_at?.getTime(),
+			prompt: row.prompt,
+			cwd: row.cwd,
+			model: row.model ?? undefined,
+			mcpSessionId: row.mcp_session_id ?? undefined,
+		});
+
+		const list = (): JobSummary[] => {
 			const rows = db
 				.select()
 				.from(schema.jobs)
@@ -586,16 +601,21 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				)
 				.all();
 
-			return rows.map((row) => ({
-				id: row.uuid,
-				status: row.status,
-				createdAt: row.created_at.getTime(),
-				terminatedAt: row.terminated_at?.getTime(),
-				prompt: row.prompt,
-				cwd: row.cwd,
-				model: row.model ?? undefined,
-				mcpSessionId: row.mcp_session_id ?? undefined,
-			}));
+			return rows.map(toJobSummary);
+		};
+
+		const listByMcpSession = (mcpSessionId: string): JobSummary[] => {
+			const rows = db
+				.select()
+				.from(schema.jobs)
+				.where(eq(schema.jobs.mcp_session_id, mcpSessionId))
+				.orderBy(
+					sql`(${schema.jobs.status} = 'running') DESC`,
+					desc(schema.jobs.created_at),
+				)
+				.all();
+
+			return rows.map(toJobSummary);
 		};
 
 		const getDetail = (
@@ -744,6 +764,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			cancel,
 			wait,
 			list,
+			listByMcpSession,
 			getDetail,
 			subscribe,
 			subscribeJobs,
