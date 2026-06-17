@@ -40,6 +40,33 @@ function formatMonthDay(d: Date): string {
 		.toUpperCase();
 }
 
+export function groupBySession<
+	T extends { createdAt: number; mcpSessionId?: string },
+>(items: T[]): { sessionId: string | null; items: T[] }[] {
+	const groups = new Map<string | null, T[]>();
+
+	for (const item of items) {
+		const key = item.mcpSessionId ?? null;
+		const list = groups.get(key);
+		if (list === undefined) {
+			groups.set(key, [item]);
+		} else {
+			list.push(item);
+		}
+	}
+
+	// Sort groups by most-recent job's createdAt desc; "No session" (null) last
+	return Array.from(groups.entries())
+		.sort(([aKey, aItems], [bKey, bItems]) => {
+			if (aKey === null) return 1;
+			if (bKey === null) return -1;
+			const aMax = Math.max(...aItems.map((i) => i.createdAt));
+			const bMax = Math.max(...bItems.map((i) => i.createdAt));
+			return bMax - aMax;
+		})
+		.map(([sessionId, items]) => ({ sessionId, items }));
+}
+
 export function groupByDay<T extends { createdAt: number }>(
 	items: T[],
 ): { label: string; items: T[] }[] {

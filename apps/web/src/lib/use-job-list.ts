@@ -13,6 +13,7 @@ export type JobListItem = {
 	prompt: string;
 	cwd: string;
 	model?: string;
+	mcpSessionId?: string;
 };
 
 export function useJobList() {

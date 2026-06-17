@@ -34,6 +34,15 @@ export const EmptySelection: Story = {
 						],
 					},
 				]}
+				jobs={[
+					{
+						id: 'job-1',
+						status: 'done',
+						createdAt: Date.now() - 300_000,
+						prompt: 'List files',
+						cwd: '/Users/dev/project',
+					},
+				]}
 				selectedId={undefined}
 				isLoading={false}
 				cwdFilter=""
@@ -70,6 +79,23 @@ export const RunningSession: Story = {
 								cwd: '/Users/dev/project',
 							},
 						],
+					},
+				]}
+				jobs={[
+					{
+						id: 'job-run',
+						status: 'running',
+						createdAt: Date.now() - 120_000,
+						prompt: 'Refactor auth middleware',
+						cwd: '/Users/dev/project',
+						model: 'opencode-go/kimi-k2.6',
+					},
+					{
+						id: 'job-done',
+						status: 'done',
+						createdAt: Date.now() - 400_000,
+						prompt: 'List files in src/',
+						cwd: '/Users/dev/project',
 					},
 				]}
 				selectedId="job-run"

@@ -14,6 +14,7 @@ export function ConsoleLayout() {
 		<div className="flex h-screen w-screen overflow-hidden bg-background">
 			<JobSidebar
 				grouped={jobList.grouped}
+				jobs={jobList.jobs}
 				selectedId={selectedId}
 				isLoading={jobList.isLoading}
 				cwdFilter={jobList.cwdFilter}
