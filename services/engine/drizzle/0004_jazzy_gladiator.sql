@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `mcp_session_id` text;
