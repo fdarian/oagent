@@ -30,6 +30,7 @@ export const jobs = sqliteTable(
 			.$defaultFn(() => new Date()),
 		terminated_at: integer({ mode: 'timestamp_ms' }),
 		session_id: text(),
+		mcp_session_id: text(),
 		text: text(),
 		stop_reason: text(),
 		error_message: text(),

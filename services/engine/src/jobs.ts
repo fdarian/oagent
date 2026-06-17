@@ -333,6 +333,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			prompt: string;
 			model?: string;
 			sessionId?: string;
+			mcpSessionId?: string;
 			cwd: string;
 		}): Effect.Effect<{ jobId: string }, ModelResolutionError, never> =>
 			Effect.gen(function* () {
@@ -358,6 +359,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 						cwd: input.cwd,
 						model: rest,
 						backend,
+						mcp_session_id: input.mcpSessionId,
 					})
 					.returning({ id: schema.jobs.id })
 					.get();

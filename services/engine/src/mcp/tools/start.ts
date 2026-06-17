@@ -88,49 +88,66 @@ type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
 
 export const startTool = {
 	inputSchema,
-	handle(args: Args, ctx: { jobs: Jobs; waitUrlBase: string | undefined }) {
+	handle(
+		args: Args,
+		ctx: {
+			jobs: Jobs;
+			waitUrlBase: string | undefined;
+			mcpSessionId: string | undefined;
+		},
+	) {
 		const runningResponse = (jobId: string) => ({
 			status: 'running' as const,
 			jobId,
 		});
 
-		return ctx.jobs.start(args).pipe(
-			Effect.flatMap((result) => {
-				if (args.background === true) {
-					return Effect.succeed(runningResponse(result.jobId));
-				}
-				return ctx.jobs
-					.wait({
-						jobId: result.jobId,
-						timeoutMs: BLOCKING_WAIT_TIMEOUT_MS,
-					})
-					.pipe(
-						Effect.map((wait) =>
-							wait.status === 'running' ? runningResponse(result.jobId) : wait,
-						),
-						Effect.catchTag('JobNotFound', (err) =>
-							Effect.succeed({
-								status: 'error' as const,
-								message: `Job not found: ${err.jobId}`,
-							}),
-						),
-					);
-			}),
-			Effect.map((response) => ({
-				content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-			})),
-			Effect.catchTag('ModelResolutionError', (err) =>
-				Effect.succeed({
-					content: [
-						{
-							type: 'text' as const,
-							text: JSON.stringify({
-								error: { code: err.code, message: err.message },
-							}),
-						},
-					],
+		return ctx.jobs
+			.start({
+				prompt: args.prompt,
+				cwd: args.cwd,
+				model: args.model,
+				sessionId: args.sessionId,
+				mcpSessionId: ctx.mcpSessionId,
+			})
+			.pipe(
+				Effect.flatMap((result) => {
+					if (args.background === true) {
+						return Effect.succeed(runningResponse(result.jobId));
+					}
+					return ctx.jobs
+						.wait({
+							jobId: result.jobId,
+							timeoutMs: BLOCKING_WAIT_TIMEOUT_MS,
+						})
+						.pipe(
+							Effect.map((wait) =>
+								wait.status === 'running'
+									? runningResponse(result.jobId)
+									: wait,
+							),
+							Effect.catchTag('JobNotFound', (err) =>
+								Effect.succeed({
+									status: 'error' as const,
+									message: `Job not found: ${err.jobId}`,
+								}),
+							),
+						);
 				}),
-			),
-		);
+				Effect.map((response) => ({
+					content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+				})),
+				Effect.catchTag('ModelResolutionError', (err) =>
+					Effect.succeed({
+						content: [
+							{
+								type: 'text' as const,
+								text: JSON.stringify({
+									error: { code: err.code, message: err.message },
+								}),
+							},
+						],
+					}),
+				),
+			);
 	},
 };
