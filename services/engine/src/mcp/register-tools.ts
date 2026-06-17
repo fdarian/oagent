@@ -30,7 +30,14 @@ export function registerTools(
 	const registeredStart = server.registerTool(
 		'start',
 		{ description: buildDescription(jobs.listAliases()), inputSchema },
-		(args) => runHandler(startTool.handle(args, { jobs, waitUrlBase })),
+		(args, extra) =>
+			runHandler(
+				startTool.handle(args, {
+					jobs,
+					waitUrlBase,
+					mcpSessionId: extra.sessionId,
+				}),
+			),
 	);
 
 	// Refresh aliases on every connect so the description reflects current state per session.
