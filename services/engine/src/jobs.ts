@@ -575,6 +575,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			prompt: string;
 			cwd: string;
 			model?: string;
+			mcpSessionId?: string;
 		}[] => {
 			const rows = db
 				.select()
@@ -593,6 +594,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				prompt: row.prompt,
 				cwd: row.cwd,
 				model: row.model ?? undefined,
+				mcpSessionId: row.mcp_session_id ?? undefined,
 			}));
 		};
 

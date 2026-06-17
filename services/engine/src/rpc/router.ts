@@ -22,6 +22,7 @@ const program = Effect.gen(function* () {
 							prompt: v.string(),
 							cwd: v.string(),
 							model: v.optional(v.string()),
+							mcpSessionId: v.optional(v.string()),
 						}),
 					),
 				),
