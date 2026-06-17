@@ -2,6 +2,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Cause, type Effect, Exit, Runtime } from 'effect';
 import type { Jobs } from '../jobs.ts';
 import { cancelTool } from './tools/cancel.ts';
+import { listTool } from './tools/list.ts';
 import { resultTool } from './tools/result.ts';
 import { buildDescription, inputSchema, startTool } from './tools/start.ts';
 
@@ -63,5 +64,17 @@ export function registerTools(
 			inputSchema: cancelTool.inputSchema,
 		},
 		(args) => runHandler(cancelTool.handle(args, { jobs })),
+	);
+
+	server.registerTool(
+		'list',
+		{
+			description: listTool.description,
+			inputSchema: listTool.inputSchema,
+		},
+		(args, extra) =>
+			runHandler(
+				listTool.handle(args, { jobs, mcpSessionId: extra.sessionId }),
+			),
 	);
 }
