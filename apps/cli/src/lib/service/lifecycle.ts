@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import type { Path } from '@effect/platform/Path';
+import { getOagentBaseDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import {
 	ensureMacOs,
@@ -44,11 +46,11 @@ export type InstallResult = {
 	paths: ServicePaths;
 };
 
-export function loadServiceStatus(): Effect.Effect<ServiceStatus, Error> {
+export function loadServiceStatus(): Effect.Effect<ServiceStatus, Error, Path> {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 
-		const paths = getServicePaths();
+		const paths = yield* getServicePaths();
 		const domain = yield* getLaunchctlDomain();
 		const installed = fs.existsSync(paths.plistPath);
 
@@ -97,14 +99,13 @@ export function loadServiceStatus(): Effect.Effect<ServiceStatus, Error> {
 }
 
 /** Writes a fresh plist and bootstraps the service. Does NOT bootout first. */
-export function installAndBootstrap(
-	port: number,
-): Effect.Effect<InstallResult, Error> {
+export function installAndBootstrap(port: number) {
 	return Effect.gen(function* () {
 		const validatedPort = yield* validatePort(port);
 		const binaryPath = yield* getServiceBinaryPath();
 		const pathEnv = yield* getCallerPath();
-		const paths = getServicePaths();
+		const paths = yield* getServicePaths();
+		const workingDirectory = yield* getOagentBaseDir;
 
 		yield* ensureServiceDirectories(paths);
 
@@ -115,6 +116,7 @@ export function installAndBootstrap(
 			stdoutLogPath: paths.stdoutLogPath,
 			stderrLogPath: paths.stderrLogPath,
 			pathEnv,
+			workingDirectory,
 		});
 		yield* writePlistFile(paths.plistPath, plistXml);
 

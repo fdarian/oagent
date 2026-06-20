@@ -1,17 +1,31 @@
-import fs from 'node:fs';
 import os from 'node:os';
-import path from 'node:path';
+import type { PlatformError } from '@effect/platform/Error';
+import { FileSystem } from '@effect/platform/FileSystem';
+import { Path } from '@effect/platform/Path';
+import { Effect } from 'effect';
 
-export function getOagentBaseDir(): string {
-	return path.join(os.homedir(), '.config', 'oagent');
-}
+export const getOagentBaseDir: Effect.Effect<string, never, Path> = Effect.gen(
+	function* () {
+		const path = yield* Path;
+		return path.join(os.homedir(), '.config', 'oagent');
+	},
+);
 
-export function getOagentLogsDir(): string {
-	return path.join(getOagentBaseDir(), 'logs');
-}
+export const getOagentLogsDir: Effect.Effect<string, never, Path> = Effect.gen(
+	function* () {
+		const path = yield* Path;
+		const baseDir = yield* getOagentBaseDir;
+		return path.join(baseDir, 'logs');
+	},
+);
 
-export function ensureOagentLogsDir(): string {
-	const logsDir = getOagentLogsDir();
-	fs.mkdirSync(logsDir, { recursive: true });
+export const ensureOagentLogsDir: Effect.Effect<
+	string,
+	PlatformError,
+	FileSystem | Path
+> = Effect.gen(function* () {
+	const fs = yield* FileSystem;
+	const logsDir = yield* getOagentLogsDir;
+	yield* fs.makeDirectory(logsDir, { recursive: true });
 	return logsDir;
-}
+});

@@ -19,7 +19,7 @@ function writeLines(lines: ReadonlyArray<string>): void {
 	process.stdout.write(`${lines.join('\n')}\n`);
 }
 
-function runStart(port: number): Effect.Effect<void, Error> {
+function runStart(port: number) {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 
@@ -45,11 +45,11 @@ function runStart(port: number): Effect.Effect<void, Error> {
 	});
 }
 
-function runRestart(port: number): Effect.Effect<void, Error> {
+function runRestart(port: number) {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 
-		const paths = getServicePaths();
+		const paths = yield* getServicePaths();
 		yield* bootoutService(paths);
 
 		const result = yield* installAndBootstrap(port);
@@ -64,10 +64,10 @@ function runRestart(port: number): Effect.Effect<void, Error> {
 	});
 }
 
-function runStop(): Effect.Effect<void, Error> {
+function runStop() {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
-		const paths = getServicePaths();
+		const paths = yield* getServicePaths();
 		if (!fs.existsSync(paths.plistPath)) {
 			process.stdout.write('not installed (run `oagent service start`)\n');
 			return;
@@ -84,7 +84,7 @@ function runStop(): Effect.Effect<void, Error> {
 	});
 }
 
-function runStatus(): Effect.Effect<void, Error> {
+function runStatus() {
 	return Effect.gen(function* () {
 		const status = yield* loadServiceStatus();
 

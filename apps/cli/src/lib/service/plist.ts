@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import { getOagentBaseDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import { errorMessage, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 
@@ -19,6 +18,7 @@ export function createPlistXml(params: {
 	stdoutLogPath: string;
 	stderrLogPath: string;
 	pathEnv: string;
+	workingDirectory: string;
 }): string {
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
@@ -45,7 +45,7 @@ export function createPlistXml(params: {
 		'\t<key>StandardErrorPath</key>',
 		`\t<string>${escapeXml(params.stderrLogPath)}</string>`,
 		'\t<key>WorkingDirectory</key>',
-		`\t<string>${escapeXml(getOagentBaseDir())}</string>`,
+		`\t<string>${escapeXml(params.workingDirectory)}</string>`,
 		// launchd starts agents with a minimal PATH; bake in the caller's PATH so
 		// the engine can spawn its ACP backends (opencode, codex-acp, …).
 		'\t<key>EnvironmentVariables</key>',
