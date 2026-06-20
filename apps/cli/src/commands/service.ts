@@ -2,7 +2,11 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command, Options } from '@effect/cli';
-import { ensureOagentLogsDir, getOagentLogsDir } from '@oagent/engine';
+import {
+	ensureOagentLogsDir,
+	getOagentBaseDir,
+	getOagentLogsDir,
+} from '@oagent/engine';
 import { Effect } from 'effect';
 import type { Version } from '#/lib/misc.ts';
 
@@ -156,7 +160,7 @@ function createPlistXml(params: {
 		'\t<key>StandardErrorPath</key>',
 		`\t<string>${escapeXml(params.stderrLogPath)}</string>`,
 		'\t<key>WorkingDirectory</key>',
-		`\t<string>${escapeXml(os.homedir())}</string>`,
+		`\t<string>${escapeXml(getOagentBaseDir())}</string>`,
 		// launchd starts agents with a minimal PATH; bake in the caller's PATH so
 		// the engine can spawn its ACP backends (opencode, codex-acp, …).
 		'\t<key>EnvironmentVariables</key>',
