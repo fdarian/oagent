@@ -75,6 +75,18 @@ function getServiceBinaryPath(): Effect.Effect<string, Error> {
 	return Effect.succeed(binaryPath);
 }
 
+function getCallerPath(): Effect.Effect<string, Error> {
+	const pathEnv = process.env.PATH;
+	if (pathEnv === undefined || pathEnv.length === 0) {
+		return Effect.fail(
+			new Error(
+				'Unable to read PATH from the environment to install the service',
+			),
+		);
+	}
+	return Effect.succeed(pathEnv);
+}
+
 function getServicePaths(): ServicePaths {
 	const logsDir = getOagentLogsDir();
 	const launchAgentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
@@ -117,6 +129,7 @@ function createPlistXml(params: {
 	jsonlLogPath: string;
 	stdoutLogPath: string;
 	stderrLogPath: string;
+	pathEnv: string;
 }): string {
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
@@ -144,6 +157,13 @@ function createPlistXml(params: {
 		`\t<string>${escapeXml(params.stderrLogPath)}</string>`,
 		'\t<key>WorkingDirectory</key>',
 		`\t<string>${escapeXml(os.homedir())}</string>`,
+		// launchd starts agents with a minimal PATH; bake in the caller's PATH so
+		// the engine can spawn its ACP backends (opencode, codex-acp, …).
+		'\t<key>EnvironmentVariables</key>',
+		'\t<dict>',
+		'\t\t<key>PATH</key>',
+		`\t\t<string>${escapeXml(params.pathEnv)}</string>`,
+		'\t</dict>',
 		'</dict>',
 		'</plist>',
 		'',
@@ -337,6 +357,7 @@ function runStart(port: number): Effect.Effect<void, Error> {
 		yield* ensureMacOs();
 		const validatedPort = yield* validatePort(port);
 		const binaryPath = yield* getServiceBinaryPath();
+		const pathEnv = yield* getCallerPath();
 		const paths = getServicePaths();
 
 		yield* ensureServiceDirectories(paths);
@@ -348,6 +369,7 @@ function runStart(port: number): Effect.Effect<void, Error> {
 			jsonlLogPath: paths.jsonlLogPath,
 			stdoutLogPath: paths.stdoutLogPath,
 			stderrLogPath: paths.stderrLogPath,
+			pathEnv,
 		});
 		yield* writePlistFile(paths.plistPath, plistXml);
 
