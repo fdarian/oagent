@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import { Effect } from 'effect';
+import { ServiceError } from '#/lib/service/errors.ts';
 import { errorMessage, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 
 function escapeXml(value: string): string {
@@ -62,19 +63,21 @@ export function createPlistXml(params: {
 export function writePlistFile(
 	plistPath: string,
 	plistXml: string,
-): Effect.Effect<void, Error> {
+): Effect.Effect<void, ServiceError> {
 	return Effect.try({
 		try: () => {
 			fs.writeFileSync(plistPath, plistXml, 'utf8');
 		},
 		catch: (cause) =>
-			new Error(`Failed to write LaunchAgent plist: ${errorMessage(cause)}`),
+			new ServiceError({
+				message: `Failed to write LaunchAgent plist: ${errorMessage(cause)}`,
+			}),
 	});
 }
 
 export function loadConfiguredPort(
 	plistPath: string,
-): Effect.Effect<number, Error> {
+): Effect.Effect<number, ServiceError> {
 	return Effect.try({
 		try: () => {
 			const plist = fs.readFileSync(plistPath, 'utf8');
@@ -82,24 +85,30 @@ export function loadConfiguredPort(
 				/<string>--port<\/string>\s*<string>(\d+)<\/string>/,
 			);
 			if (match === null) {
-				throw new Error(`Unable to parse configured port from ${plistPath}`);
+				throw new ServiceError({
+					message: `Unable to parse configured port from ${plistPath}`,
+				});
 			}
 			const portValue = match[1];
 			if (portValue === undefined) {
-				throw new Error(`Unable to parse configured port from ${plistPath}`);
+				throw new ServiceError({
+					message: `Unable to parse configured port from ${plistPath}`,
+				});
 			}
 			return Number.parseInt(portValue, 10);
 		},
 		catch: (cause) =>
-			cause instanceof Error
+			cause instanceof ServiceError
 				? cause
-				: new Error(
-						`Unable to parse configured port from ${plistPath}: ${errorMessage(cause)}`,
-					),
+				: new ServiceError({
+						message: `Unable to parse configured port from ${plistPath}: ${errorMessage(cause)}`,
+					}),
 	});
 }
 
-export function removePlistFile(plistPath: string): Effect.Effect<void, Error> {
+export function removePlistFile(
+	plistPath: string,
+): Effect.Effect<void, ServiceError> {
 	return Effect.try({
 		try: () => {
 			try {
@@ -112,6 +121,8 @@ export function removePlistFile(plistPath: string): Effect.Effect<void, Error> {
 			}
 		},
 		catch: (cause) =>
-			new Error(`Failed to remove plist file: ${errorMessage(cause)}`),
+			new ServiceError({
+				message: `Failed to remove plist file: ${errorMessage(cause)}`,
+			}),
 	});
 }

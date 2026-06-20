@@ -8,6 +8,7 @@ import {
 	getServiceBinaryPath,
 	validatePort,
 } from '#/lib/service/environment.ts';
+import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	getLaunchctlDomain,
 	isNotLoaded,
@@ -46,7 +47,11 @@ export type InstallResult = {
 	paths: ServicePaths;
 };
 
-export function loadServiceStatus(): Effect.Effect<ServiceStatus, Error, Path> {
+export function loadServiceStatus(): Effect.Effect<
+	ServiceStatus,
+	ServiceError,
+	Path
+> {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 
@@ -82,9 +87,9 @@ export function loadServiceStatus(): Effect.Effect<ServiceStatus, Error, Path> {
 
 		if (printResult.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(
-					`launchctl print failed: ${printResult.stderr.trim() || printResult.stdout.trim()}`,
-				),
+				new ServiceError({
+					message: `launchctl print failed: ${printResult.stderr.trim() || printResult.stdout.trim()}`,
+				}),
 			);
 		}
 
@@ -128,9 +133,9 @@ export function installAndBootstrap(port: number) {
 		]);
 		if (bootstrapResult.exitCode !== 0) {
 			return yield* Effect.fail(
-				new Error(
-					`launchctl bootstrap failed: ${bootstrapResult.stderr.trim() || bootstrapResult.stdout.trim()}`,
-				),
+				new ServiceError({
+					message: `launchctl bootstrap failed: ${bootstrapResult.stderr.trim() || bootstrapResult.stdout.trim()}`,
+				}),
 			);
 		}
 

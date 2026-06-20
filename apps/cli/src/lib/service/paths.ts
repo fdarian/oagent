@@ -3,6 +3,7 @@ import { FileSystem } from '@effect/platform/FileSystem';
 import { Path } from '@effect/platform/Path';
 import { ensureOagentLogsDir, getOagentLogsDir } from '@oagent/engine';
 import { Effect } from 'effect';
+import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	errorMessage,
 	SERVICE_LABEL,
@@ -26,28 +27,26 @@ export function getServicePaths(): Effect.Effect<ServicePaths, never, Path> {
 
 export function ensureServiceDirectories(
 	paths: ServicePaths,
-): Effect.Effect<void, Error, FileSystem | Path> {
+): Effect.Effect<void, ServiceError, FileSystem | Path> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 		yield* ensureOagentLogsDir.pipe(
 			Effect.catchAll((cause) =>
 				Effect.fail(
-					new Error(
-						`Failed to prepare service directories: ${errorMessage(cause)}`,
-					),
+					new ServiceError({
+						message: `Failed to prepare service directories: ${errorMessage(cause)}`,
+					}),
 				),
 			),
 		);
-		yield* fs
-			.makeDirectory(paths.launchAgentsDir, { recursive: true })
-			.pipe(
-				Effect.catchAll((cause) =>
-					Effect.fail(
-						new Error(
-							`Failed to prepare service directories: ${errorMessage(cause)}`,
-						),
-					),
+		yield* fs.makeDirectory(paths.launchAgentsDir, { recursive: true }).pipe(
+			Effect.catchAll((cause) =>
+				Effect.fail(
+					new ServiceError({
+						message: `Failed to prepare service directories: ${errorMessage(cause)}`,
+					}),
 				),
-			);
+			),
+		);
 	});
 }
