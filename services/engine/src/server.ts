@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { Console, Effect, Layer, type Runtime, Schema } from 'effect';
+import { Effect, Layer, type Runtime, Schema } from 'effect';
 import { loadConfig } from './config.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
@@ -195,12 +195,12 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					});
 
 					if (bindResult.didFallback) {
-						console.warn(
+						yield* Effect.logWarning(
 							`port ${resolvedPort} in use, falling back to a free port`,
 						);
 					}
 
-					yield* Console.error(
+					yield* Effect.logInfo(
 						`oagent listening on http://127.0.0.1:${bindResult.server.port}/mcp`,
 					);
 
@@ -211,7 +211,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					if (portlessEnabled) {
 						const portlessBin = Bun.which('portless');
 						if (portlessBin == null) {
-							yield* Console.warn(
+							yield* Effect.logWarning(
 								'portless registration failed — `portless` not found in PATH',
 							);
 						} else {
@@ -238,11 +238,11 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 										PORTLESS_ALIAS,
 									]);
 								});
-								yield* Console.error(
+								yield* Effect.logInfo(
 									`oagent accessible at ${PORTLESS_PUBLIC_BASE}`,
 								);
 							} else {
-								yield* Console.warn(
+								yield* Effect.logWarning(
 									`portless registration failed — run \`portless proxy start\` first for ${PORTLESS_PUBLIC_BASE} access`,
 								);
 							}
