@@ -227,7 +227,9 @@ function isNotLoaded(result: CommandResult): boolean {
 		combined.includes('could not find service') ||
 		combined.includes('could not find specified service') ||
 		combined.includes('service could not be found') ||
-		combined.includes('domain does not support specified action')
+		combined.includes('domain does not support specified action') ||
+		// launchctl phrases "not currently loaded" as errno 3 (ESRCH) on bootout
+		combined.includes('no such process')
 	);
 }
 
