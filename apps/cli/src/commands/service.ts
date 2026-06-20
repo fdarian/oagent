@@ -356,16 +356,41 @@ function bootoutService(_paths: ServicePaths): Effect.Effect<boolean, Error> {
 	});
 }
 
-function runStart(port: number): Effect.Effect<void, Error> {
+/** Returns true when the service is currently loaded in launchd (exit 0 = loaded). */
+function isServiceLoaded(): Effect.Effect<boolean, Error> {
 	return Effect.gen(function* () {
-		yield* ensureMacOs();
+		const domain = yield* getLaunchctlDomain();
+		const result = yield* runLaunchctl(['print', `${domain}/${SERVICE_LABEL}`]);
+		if (result.exitCode === 0) {
+			return true;
+		}
+		if (isNotLoaded(result)) {
+			return false;
+		}
+		return yield* Effect.fail(
+			new Error(
+				`launchctl print failed: ${result.stderr.trim() || result.stdout.trim()}`,
+			),
+		);
+	});
+}
+
+type InstallResult = {
+	port: number;
+	paths: ServicePaths;
+};
+
+/** Writes a fresh plist and bootstraps the service. Does NOT bootout first. */
+function installAndBootstrap(
+	port: number,
+): Effect.Effect<InstallResult, Error> {
+	return Effect.gen(function* () {
 		const validatedPort = yield* validatePort(port);
 		const binaryPath = yield* getServiceBinaryPath();
 		const pathEnv = yield* getCallerPath();
 		const paths = getServicePaths();
 
 		yield* ensureServiceDirectories(paths);
-		yield* bootoutService(paths);
 
 		const plistXml = createPlistXml({
 			binaryPath,
@@ -391,13 +416,69 @@ function runStart(port: number): Effect.Effect<void, Error> {
 			);
 		}
 
+		return { port: validatedPort, paths };
+	});
+}
+
+function runStart(port: number): Effect.Effect<void, Error> {
+	return Effect.gen(function* () {
+		yield* ensureMacOs();
+
+		const loaded = yield* isServiceLoaded();
+		if (loaded) {
+			writeLines([
+				'service already started',
+				`label: ${SERVICE_LABEL}`,
+				'hint: run `oagent service restart` to apply changes',
+			]);
+			return;
+		}
+
+		const result = yield* installAndBootstrap(port);
+
 		writeLines([
 			'service started',
 			`label: ${SERVICE_LABEL}`,
-			`port: ${validatedPort}`,
-			`plist: ${paths.plistPath}`,
-			`jsonl log: ${paths.jsonlLogPath}`,
+			`port: ${result.port}`,
+			`plist: ${result.paths.plistPath}`,
+			`jsonl log: ${result.paths.jsonlLogPath}`,
 		]);
+	});
+}
+
+function runRestart(port: number): Effect.Effect<void, Error> {
+	return Effect.gen(function* () {
+		yield* ensureMacOs();
+
+		const paths = getServicePaths();
+		yield* bootoutService(paths);
+
+		const result = yield* installAndBootstrap(port);
+
+		writeLines([
+			'service restarted',
+			`label: ${SERVICE_LABEL}`,
+			`port: ${result.port}`,
+			`plist: ${result.paths.plistPath}`,
+			`jsonl log: ${result.paths.jsonlLogPath}`,
+		]);
+	});
+}
+
+function removePlistFile(plistPath: string): Effect.Effect<void, Error> {
+	return Effect.try({
+		try: () => {
+			try {
+				fs.rmSync(plistPath);
+			} catch (err) {
+				// tolerate missing file — already gone
+				if (!(err instanceof Error && 'code' in err && err.code === 'ENOENT')) {
+					throw err;
+				}
+			}
+		},
+		catch: (cause) =>
+			new Error(`Failed to remove plist file: ${errorMessage(cause)}`),
 	});
 }
 
@@ -409,21 +490,14 @@ function runStop(): Effect.Effect<void, Error> {
 			process.stdout.write('not installed (run `oagent service start`)\n');
 			return;
 		}
-		const stopped = yield* bootoutService(paths);
 
-		if (!stopped) {
-			writeLines([
-				'service not running',
-				`label: ${SERVICE_LABEL}`,
-				`plist: ${paths.plistPath}`,
-			]);
-			return;
-		}
+		yield* bootoutService(paths);
+		yield* removePlistFile(paths.plistPath);
 
 		writeLines([
 			'service stopped',
 			`label: ${SERVICE_LABEL}`,
-			`plist: ${paths.plistPath}`,
+			'plist removed (service will not relaunch on next login)',
 		]);
 	});
 }
@@ -455,17 +529,25 @@ function runStatus(): Effect.Effect<void, Error> {
 }
 
 export const serviceCmd = (_version: Version) => {
-	const start = Command.make(
-		'start',
-		{
-			port: Options.integer('port').pipe(
-				Options.withDefault(17_777),
-				Options.withDescription('Port to run the background service on'),
-			),
-		},
-		(params) => runStart(params.port),
+	const portOption = Options.integer('port').pipe(
+		Options.withDefault(17_777),
+		Options.withDescription('Port to run the background service on'),
+	);
+
+	const start = Command.make('start', { port: portOption }, (params) =>
+		runStart(params.port),
 	).pipe(
-		Command.withDescription('Install and start the launchd background service'),
+		Command.withDescription(
+			'Install and start the launchd background service (no-op if already running)',
+		),
+	);
+
+	const restart = Command.make('restart', { port: portOption }, (params) =>
+		runRestart(params.port),
+	).pipe(
+		Command.withDescription(
+			'Stop, reinstall, and restart the launchd background service',
+		),
 	);
 
 	const status = Command.make('status', {}, () => runStatus()).pipe(
@@ -473,11 +555,13 @@ export const serviceCmd = (_version: Version) => {
 	);
 
 	const stop = Command.make('stop', {}, () => runStop()).pipe(
-		Command.withDescription('Stop the launchd background service'),
+		Command.withDescription(
+			'Stop and fully uninstall the launchd background service',
+		),
 	);
 
 	return Command.make('service').pipe(
 		Command.withDescription('Manage the macOS launchd background service'),
-		Command.withSubcommands([start, status, stop]),
+		Command.withSubcommands([start, restart, status, stop]),
 	);
 };
