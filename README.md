@@ -1,8 +1,8 @@
 # oagent
 
-MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex — to Claude Code as subagents, semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
+MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex. Semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
 
-Useful when you want Claude Code to delegate a task to a different model or backend, without leaving the Claude Code session.
+https://github.com/user-attachments/assets/59e762b9-cfe7-49c6-80ff-03722baf4a68
 
 ## Prerequisites
 
