@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { compileBinary } from './compile';
 import { prepareAssets } from './prepare-assets';
 
 const targets = [
@@ -28,21 +29,10 @@ for (const target of targets) {
 	fs.mkdirSync(releaseDir, { recursive: true });
 
 	// Cross-target bytecode compilation currently fails on Bun, so release builds use minified native binaries without bytecode.
-	runOrThrow(
-		[
-			'bun',
-			'build',
-			'--compile',
-			`--target=${target.bunTarget}`,
-			'--minify',
-			'./src/index.ts',
-			'.gen/web-ui.gen.ts',
-			'../../services/engine/.gen/migrations.gen.ts',
-			'--outfile',
-			`${outDir}/oagent`,
-		],
-		`bun build failed for target '${target.label}'`,
-	);
+	await compileBinary({
+		outfile: `${outDir}/oagent`,
+		target: target.bunTarget,
+	});
 
 	runOrThrow(
 		[
