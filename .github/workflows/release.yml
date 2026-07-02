@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          registry-url: 'https://registry.npmjs.org'
+          package-manager-cache: false
+      - run: npm install -g npm@latest
+      - run: bun install --frozen-lockfile
+      - id: changesets
+        uses: changesets/action@v1
+        with:
+          version: bun run ci:version
+          publish: bun run ci:release
+          createGithubReleases: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build binaries
+        if: steps.changesets.outputs.published == 'true'
+        run: bun run --cwd apps/cli build:binaries
+
+      - name: Upload release assets
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          VERSION="${{ fromJSON(steps.changesets.outputs.publishedPackages)[0].version }}"
+          TAG="oagent@${VERSION}"
+          gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" --title "$TAG" --notes "Release $VERSION"
+          gh release upload "$TAG" apps/cli/dist/releases/*.tar.gz --clobber
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Update Homebrew formula
+        if: steps.changesets.outputs.published == 'true'
+        run: |
+          VERSION="${{ fromJSON(steps.changesets.outputs.publishedPackages)[0].version }}"
+          VERSION="$VERSION" bun run --cwd apps/cli scripts/update-homebrew.ts
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
