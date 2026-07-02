@@ -20,6 +20,18 @@ function runOrThrow(command: string[], errorPrefix: string): void {
 	}
 }
 
+// Bun's Linux->darwin `--compile` cross-compilation writes an invalid ("linker-signed")
+// ad-hoc signature; Apple Silicon macOS rejects it and SIGKILLs the binary on launch.
+// Re-signing ad-hoc after compilation fixes it. `codesign` is used when running on macOS
+// (local builds), `rcodesign` when running elsewhere (Linux CI, which cross-compiles).
+function signMacBinary(binaryPath: string): void {
+	const command =
+		process.platform === 'darwin'
+			? ['codesign', '--force', '--sign', '-', binaryPath]
+			: ['rcodesign', 'sign', binaryPath];
+	runOrThrow(command, `code signing failed for '${binaryPath}'`);
+}
+
 await prepareAssets();
 
 for (const target of targets) {
@@ -33,6 +45,8 @@ for (const target of targets) {
 		outfile: `${outDir}/oagent`,
 		target: target.bunTarget,
 	});
+
+	if (target.label.startsWith('darwin')) signMacBinary(`${outDir}/oagent`);
 
 	runOrThrow(
 		[
