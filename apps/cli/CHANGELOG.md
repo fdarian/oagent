@@ -1,5 +1,11 @@
 # oagent
 
+## 0.2.2
+
+### Patch Changes
+
+- 503ae65: Lazily start backend agent subprocesses and auto-release them after 5 minutes idle.
+
 ## 0.2.1
 
 ### Patch Changes
