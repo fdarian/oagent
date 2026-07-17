@@ -8,7 +8,7 @@ import {
 	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import { Effect, Schema } from 'effect';
+import { Duration, Effect, RcRef, Schema } from 'effect';
 
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
@@ -345,6 +345,9 @@ export function runAcpTurn(
 	});
 }
 
+/** How long a backend's ACP subprocess stays alive after its last turn finishes. */
+const IDLE_TIME_TO_LIVE = Duration.minutes(5);
+
 export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 	effect: (config: {
 		binary: string;
@@ -353,7 +356,14 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 	}) =>
 		Effect.gen(function* () {
-			const env = yield* createAcpConnection(config);
+			// Non-spawning: RcRef only records how to acquire the connection.
+			// The subprocess is spawned on the first `RcRef.get`, and killed
+			// once the ref count drops to zero and stays there for
+			// `IDLE_TIME_TO_LIVE`.
+			const connectionRef = yield* RcRef.make({
+				acquire: createAcpConnection(config),
+				idleTimeToLive: IDLE_TIME_TO_LIVE,
+			});
 
 			const runTurn = (input: {
 				prompt: string;
@@ -362,19 +372,32 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				cwd: string;
 				onEvent?: (event: SessionUpdate) => void;
 				onExtensionEvent?: (method: string, params: unknown) => void;
-			}) => runAcpTurn(env, input);
+			}) =>
+				Effect.scoped(
+					Effect.gen(function* () {
+						const env = yield* RcRef.get(connectionRef);
+						return yield* runAcpTurn(env, input);
+					}),
+				);
 
+			// Model listing does NOT go through the shared, ref-counted
+			// connection: it spins up its own throwaway connection (scoped to
+			// this call only, killed right after) so that listing models
+			// never spawns/holds the persistent backend harness.
 			const listModels = (): Effect.Effect<
 				ReadonlyArray<{ id: string }>,
 				AcpSessionError,
 				never
 			> =>
-				Effect.tryPromise({
-					try: () =>
-						env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
-					catch: (cause) => new AcpSessionError({ cause }),
-				}).pipe(
-					Effect.map((res) => {
+				Effect.scoped(
+					Effect.gen(function* () {
+						const env = yield* createAcpConnection(config);
+						const res = yield* Effect.tryPromise({
+							try: () =>
+								env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+							catch: (cause) => new AcpSessionError({ cause }),
+						});
+
 						const availableModels =
 							res.models !== undefined && res.models !== null
 								? res.models.availableModels
