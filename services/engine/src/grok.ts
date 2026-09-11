@@ -1,13 +1,14 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { Effect } from 'effect';
+import { Context, Effect, Layer } from 'effect';
 import {
+	type AcpAgent,
 	AcpSessionError,
 	createAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
 
-export class Grok extends Effect.Service<Grok>()('oagent/Grok', {
-	effect: Effect.gen(function* () {
+export class Grok extends Context.Service<Grok>()('oagent/Grok', {
+	make: Effect.gen(function* () {
 		const binary =
 			process.env.OAGENT_GROK_BIN !== undefined
 				? process.env.OAGENT_GROK_BIN
@@ -82,6 +83,8 @@ export class Grok extends Effect.Service<Grok>()('oagent/Grok', {
 				}),
 			);
 
-		return { runTurn, listModels };
+		return { runTurn, listModels } satisfies AcpAgent['Service'];
 	}),
-}) {}
+}) {
+	static readonly layer = Layer.effect(Grok, Grok.make);
+}

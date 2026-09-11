@@ -8,11 +8,11 @@ import {
 	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import { Duration, Effect, RcRef, Schema } from 'effect';
+import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
 
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
-	{ cause: Schema.Defect },
+	{ cause: Schema.Defect() },
 ) {
 	override get message() {
 		return String(this.cause);
@@ -24,7 +24,7 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	{
 		code: Schema.optional(Schema.String),
 		message: Schema.String,
-		cause: Schema.Defect,
+		cause: Schema.Defect(),
 	},
 ) {}
 
@@ -348,13 +348,15 @@ export function runAcpTurn(
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 
-export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
-	effect: (config: {
-		binary: string;
-		args: readonly string[];
-		clientInfoName: string;
-		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-	}) =>
+type AcpAgentConfig = {
+	binary: string;
+	args: readonly string[];
+	clientInfoName: string;
+	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+};
+
+export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
+	make: (config: AcpAgentConfig) =>
 		Effect.gen(function* () {
 			// Non-spawning: RcRef only records how to acquire the connection.
 			// The subprocess is spawned on the first `RcRef.get`, and killed
@@ -419,4 +421,7 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 
 			return { runTurn, listModels };
 		}),
-}) {}
+}) {
+	static readonly layer = (config: AcpAgentConfig) =>
+		Layer.effect(AcpAgent, AcpAgent.make(config));
+}

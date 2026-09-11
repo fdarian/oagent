@@ -11,7 +11,6 @@
 		"build-storybook": "storybook build"
 	},
 	"dependencies": {
-		"@effect/platform": "^0.96.1",
 		"@orpc/client": "latest",
 		"@pierre/diffs": "^1.2.9",
 		"@radix-ui/react-use-controllable-state": "^1.2.2",
@@ -30,7 +29,7 @@
 		"class-variance-authority": "^0.7.1",
 		"clsx": "^2.1.1",
 		"cmdk": "^1.1.1",
-		"effect": "^3.21.2",
+		"effect": "catalog:",
 		"embla-carousel-react": "^8.6.0",
 		"lucide-react": "^1.16.0",
 		"media-chrome": "^4.19.0",

@@ -224,5 +224,5 @@ const program = Effect.gen(function* () {
 	};
 });
 
-export type EngineRouter = Effect.Effect.Success<typeof program>;
+export type EngineRouter = Effect.Success<typeof program>;
 export { program };

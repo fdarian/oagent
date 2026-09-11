@@ -6,7 +6,7 @@ import bundle from '../../.gen/migrations.gen.ts';
 class MigrationError extends Schema.TaggedError<MigrationError>()(
 	'MigrationError',
 	{
-		cause: Schema.Defect,
+		cause: Schema.Defect(),
 	},
 ) {}
 

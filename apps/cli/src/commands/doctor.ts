@@ -1,5 +1,5 @@
-import { Command, Options } from '@effect/cli';
 import { Effect } from 'effect';
+import { Command, Flag } from 'effect/unstable/cli';
 import type { Version } from '#/lib/misc.ts';
 
 type PsProcess = {
@@ -835,7 +835,7 @@ function runMem(params: { json: boolean }) {
 
 		process.stdout.write(renderMarkdown(report));
 	}).pipe(
-		Effect.catchAll((cause) =>
+		Effect.catch((cause) =>
 			Effect.sync(() => {
 				const message = errorMessage(cause);
 				process.stderr.write(
@@ -851,9 +851,9 @@ export const doctorCmd = (_version: Version) => {
 	const mem = Command.make(
 		'mem',
 		{
-			json: Options.boolean('json').pipe(
-				Options.withDefault(false),
-				Options.withDescription(
+			json: Flag.Boolean('json').pipe(
+				Flag.withDefault(false),
+				Flag.withDescription(
 					'Emit full structured report as JSON instead of human-readable markdown.',
 				),
 			),

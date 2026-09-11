@@ -1,4 +1,4 @@
-import { Command, Options } from '@effect/cli';
+import { Command, Flag } from 'effect/unstable/cli';
 import { runChannelServer } from '#/lib/channel.ts';
 import { defaultEngineUrl } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
@@ -7,15 +7,15 @@ export const claudeCmd = (version: Version) => {
 	const serve = Command.make(
 		'serve',
 		{
-			engineUrl: Options.text('engine-url').pipe(
-				Options.withDefault(defaultEngineUrl),
-				Options.withDescription(
+			engineUrl: Flag.String('engine-url').pipe(
+				Flag.withDefault(defaultEngineUrl),
+				Flag.withDescription(
 					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
 				),
 			),
-			mcpName: Options.text('mcp-name').pipe(
-				Options.withDefault('oagent'),
-				Options.withDescription(
+			mcpName: Flag.String('mcp-name').pipe(
+				Flag.withDefault('oagent'),
+				Flag.withDescription(
 					'MCP server name used for channel source and tool descriptions (default: oagent).',
 				),
 			),

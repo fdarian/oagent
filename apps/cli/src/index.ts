@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
-import { Command } from '@effect/cli';
-import { BunContext, BunRuntime } from '@effect/platform-bun';
+import * as BunRuntime from '@effect/platform-bun/BunRuntime';
+import * as BunServices from '@effect/platform-bun/BunServices';
 import { Effect } from 'effect';
+import { Command } from 'effect/unstable/cli';
 import cliPackage from '../package.json' with { type: 'json' };
 import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';
@@ -27,13 +28,12 @@ const cli = Command.make('oagent').pipe(
 	]),
 );
 
-const program = Command.run(cli, {
-	name: 'oagent',
+const program = Command.run({
 	version: version,
-})(process.argv);
+})(cli);
 
 // Each subcommand provides Engine.layer itself where needed. The `claude mcp serve`
 // channel bridge deliberately omits it: it talks to a running engine over HTTP, so
 // building the in-process engine here would open the DB and run orphan-recovery,
 // wrongly marking the live engine's running jobs as errored.
-program.pipe(Effect.provide(BunContext.layer), (e) => BunRuntime.runMain(e));
+BunRuntime.runMain()(program.pipe(Effect.provide(BunServices.layer)));

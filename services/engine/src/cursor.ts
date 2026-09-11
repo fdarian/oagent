@@ -1,4 +1,4 @@
-import { Effect } from 'effect';
+import { Context, Effect, Layer } from 'effect';
 import { AcpAgent } from './acp-agent.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
@@ -18,15 +18,15 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 	Object.entries(CURSOR_MODEL_ALIASES).map(([label, id]) => [id, label]),
 );
 
-export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
-	effect: Effect.gen(function* () {
+export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
+	make: Effect.gen(function* () {
 		const binary =
 			process.env.OAGENT_CURSOR_BIN !== undefined
 				? process.env.OAGENT_CURSOR_BIN
 				: 'cursor-agent';
 		const acpAgent = yield* AcpAgent.pipe(
 			Effect.provide(
-				AcpAgent.Default({
+				AcpAgent.layer({
 					binary,
 					args: ['acp'],
 					clientInfoName: 'oagent',
@@ -63,6 +63,8 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 						})),
 					),
 				),
-		};
+		} satisfies AcpAgent['Service'];
 	}),
-}) {}
+}) {
+	static readonly layer = Layer.effect(Cursor, Cursor.make);
+}

@@ -78,7 +78,7 @@ export const startTool = {
 	handle(
 		args: Args,
 		ctx: {
-			jobs: Jobs;
+			jobs: Jobs['Service'];
 			waitUrlBase: string | undefined;
 			mcpSessionId: string | undefined;
 		},

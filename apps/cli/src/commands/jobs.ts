@@ -1,6 +1,6 @@
-import { Args, Command, Options } from '@effect/cli';
 import { encode } from '@toon-format/toon';
 import { Effect } from 'effect';
+import { Argument, Command, Flag } from 'effect/unstable/cli';
 import {
 	createEngineClient,
 	defaultEngineUrl,
@@ -127,7 +127,7 @@ function runWait(params: {
 		const result = await pollWait(client, params.jobId, params.timeoutMs);
 		process.stdout.write(`${JSON.stringify(result)}\n`);
 	}).pipe(
-		Effect.catchAll((cause) =>
+		Effect.catch((cause) =>
 			Effect.sync(() => {
 				const message = errorMessage(cause).includes('Job not found')
 					? `Job not found: ${params.jobId}`
@@ -199,7 +199,7 @@ function runList(params: {
 
 		process.stdout.write(output);
 	}).pipe(
-		Effect.catchAll((cause) =>
+		Effect.catch((cause) =>
 			Effect.sync(() => {
 				const message = errorMessage(cause);
 				process.stderr.write(
@@ -215,16 +215,16 @@ export const jobsCmd = (_version: Version) => {
 	const wait = Command.make(
 		'wait',
 		{
-			jobId: Args.text({ name: 'jobId' }),
-			engineUrl: Options.text('engine-url').pipe(
-				Options.withDefault(defaultEngineUrl),
-				Options.withDescription(
+			jobId: Argument.String('jobId'),
+			engineUrl: Flag.String('engine-url').pipe(
+				Flag.withDefault(defaultEngineUrl),
+				Flag.withDescription(
 					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
 				),
 			),
-			timeoutMs: Options.integer('timeout-ms').pipe(
-				Options.withDefault(DEFAULT_TIMEOUT_MS),
-				Options.withDescription(
+			timeoutMs: Flag.Int('timeout-ms').pipe(
+				Flag.withDefault(DEFAULT_TIMEOUT_MS),
+				Flag.withDescription(
 					'Overall wait budget in ms before giving up and returning {status:"running"} (default: 10800000 = 3h; a safe upper bound, most agent jobs run 30s–1hr).',
 				),
 			),
@@ -240,21 +240,21 @@ export const jobsCmd = (_version: Version) => {
 	const list = Command.make(
 		'list',
 		{
-			engineUrl: Options.text('engine-url').pipe(
-				Options.withDefault(defaultEngineUrl),
-				Options.withDescription(
+			engineUrl: Flag.String('engine-url').pipe(
+				Flag.withDefault(defaultEngineUrl),
+				Flag.withDescription(
 					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
 				),
 			),
-			limit: Options.integer('limit').pipe(
-				Options.withDefault(10),
-				Options.withDescription(
+			limit: Flag.Int('limit').pipe(
+				Flag.withDefault(10),
+				Flag.withDescription(
 					'Maximum number of jobs to show (default: 10). Raise to see more, e.g. --limit 50.',
 				),
 			),
-			format: Options.choice('format', ['toon', 'json']).pipe(
-				Options.withDefault('toon'),
-				Options.withDescription(
+			format: Flag.Literals('format', ['toon', 'json']).pipe(
+				Flag.withDefault('toon'),
+				Flag.withDescription(
 					'Output format. toon (default) is the compact, token-efficient format for agent/LLM consumption; json is full-fidelity for piping.',
 				),
 			),
