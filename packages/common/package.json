@@ -7,8 +7,8 @@
 		".": "./src/index.ts"
 	},
 	"dependencies": {
-		"@effect/platform-bun": "4.0.0-rc.113",
-		"effect": "4.0.0-rc.113",
+		"@effect/platform-bun": "catalog:",
+		"effect": "catalog:",
 		"get-port": "^7.2.0",
 		"random-word-slugs": "^0.1.7"
 	},
