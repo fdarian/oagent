@@ -32,7 +32,8 @@ type ServerOptions = {
 	portless?: boolean;
 };
 
-const makeEngine = Effect.gen(function* () {
+export class Engine extends Context.Service<Engine>()('engine', {
+	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
 		const engineHandler = yield* createEngineHandler;
 
@@ -251,12 +252,9 @@ const makeEngine = Effect.gen(function* () {
 					yield* Effect.never;
 				}).pipe(Effect.provideService(Jobs, jobs)),
 		};
-});
-
-export class Engine extends Context.Service<Engine, Effect.Success<typeof makeEngine>>()(
-	'engine',
-) {
-	static readonly layer = Layer.effect(Engine, makeEngine).pipe(
+	}),
+}) {
+	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
 		Layer.provide(ModelCatalog.layer),
 	);
