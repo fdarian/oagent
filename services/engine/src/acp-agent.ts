@@ -363,78 +363,82 @@ export type AcpAgentService = {
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 	}) => Effect.Effect<AcpAgentResult, AcpSessionError | AcpTurnFailed>;
-	readonly listModels: () => Effect.Effect<ReadonlyArray<{ id: string }>, AcpSessionError>;
+	readonly listModels: () => Effect.Effect<
+		ReadonlyArray<{ id: string }>,
+		AcpSessionError
+	>;
 };
 
 const makeAcpAgent = (config: {
-		binary: string;
-		args: readonly string[];
-		clientInfoName: string;
-		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-	}) => Effect.gen(function* () {
-			// Non-spawning: RcRef only records how to acquire the connection.
-			// The subprocess is spawned on the first `RcRef.get`, and killed
-			// once the ref count drops to zero and stays there for
-			// `IDLE_TIME_TO_LIVE`.
-			const connectionRef = yield* RcRef.make({
-				acquire: createAcpConnection(config),
-				idleTimeToLive: IDLE_TIME_TO_LIVE,
-			});
-
-			const runTurn = (input: {
-				prompt: string;
-				model?: string;
-				sessionId?: string;
-				cwd: string;
-				onEvent?: (event: SessionUpdate) => void;
-				onExtensionEvent?: (method: string, params: unknown) => void;
-			}) =>
-				Effect.scoped(
-					Effect.gen(function* () {
-						const env = yield* RcRef.get(connectionRef);
-						return yield* runAcpTurn(env, input);
-					}),
-				);
-
-			// Model listing does NOT go through the shared, ref-counted
-			// connection: it spins up its own throwaway connection (scoped to
-			// this call only, killed right after) so that listing models
-			// never spawns/holds the persistent backend harness.
-			const listModels = (): Effect.Effect<
-				ReadonlyArray<{ id: string }>,
-				AcpSessionError,
-				never
-			> =>
-				Effect.scoped(
-					Effect.gen(function* () {
-						const env = yield* createAcpConnection(config);
-						const res = yield* Effect.tryPromise({
-							try: () =>
-								env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
-							catch: (cause) => new AcpSessionError({ cause }),
-						});
-
-						const availableModels =
-							res.models !== undefined && res.models !== null
-								? res.models.availableModels
-								: [];
-						if (availableModels.length > 0) {
-							return availableModels.map((m) => ({ id: m.modelId }));
-						}
-
-						const modelOption = res.configOptions?.find(
-							(opt) => opt.id === 'model',
-						);
-						if (modelOption === undefined || modelOption.type !== 'select') {
-							return [];
-						}
-
-						return extractModelIds(modelOption.options);
-					}),
-				);
-
-			return { runTurn, listModels };
+	binary: string;
+	args: readonly string[];
+	clientInfoName: string;
+	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+}) =>
+	Effect.gen(function* () {
+		// Non-spawning: RcRef only records how to acquire the connection.
+		// The subprocess is spawned on the first `RcRef.get`, and killed
+		// once the ref count drops to zero and stays there for
+		// `IDLE_TIME_TO_LIVE`.
+		const connectionRef = yield* RcRef.make({
+			acquire: createAcpConnection(config),
+			idleTimeToLive: IDLE_TIME_TO_LIVE,
 		});
+
+		const runTurn = (input: {
+			prompt: string;
+			model?: string;
+			sessionId?: string;
+			cwd: string;
+			onEvent?: (event: SessionUpdate) => void;
+			onExtensionEvent?: (method: string, params: unknown) => void;
+		}) =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* RcRef.get(connectionRef);
+					return yield* runAcpTurn(env, input);
+				}),
+			);
+
+		// Model listing does NOT go through the shared, ref-counted
+		// connection: it spins up its own throwaway connection (scoped to
+		// this call only, killed right after) so that listing models
+		// never spawns/holds the persistent backend harness.
+		const listModels = (): Effect.Effect<
+			ReadonlyArray<{ id: string }>,
+			AcpSessionError,
+			never
+		> =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* createAcpConnection(config);
+					const res = yield* Effect.tryPromise({
+						try: () =>
+							env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+						catch: (cause) => new AcpSessionError({ cause }),
+					});
+
+					const availableModels =
+						res.models !== undefined && res.models !== null
+							? res.models.availableModels
+							: [];
+					if (availableModels.length > 0) {
+						return availableModels.map((m) => ({ id: m.modelId }));
+					}
+
+					const modelOption = res.configOptions?.find(
+						(opt) => opt.id === 'model',
+					);
+					if (modelOption === undefined || modelOption.type !== 'select') {
+						return [];
+					}
+
+					return extractModelIds(modelOption.options);
+				}),
+			);
+
+		return { runTurn, listModels };
+	});
 
 export class AcpAgent extends Context.Service<AcpAgent, AcpAgentService>()(
 	'oagent/AcpAgent',

@@ -24,62 +24,65 @@ export class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()(
 ) {}
 
 type ModelCatalogService = {
-	readonly list: (backend: Backend) => Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError>;
+	readonly list: (
+		backend: Backend,
+	) => Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError>;
 };
 
 const makeModelCatalog = Effect.gen(function* () {
-			const opencode = yield* OpenCode;
-			const cursor = yield* Cursor;
-			const grok = yield* Grok;
-			const codex = yield* Codex;
-			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
+	const opencode = yield* OpenCode;
+	const cursor = yield* Cursor;
+	const grok = yield* Grok;
+	const codex = yield* Codex;
+	const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
 
-			const fetch = (
-				backend: Backend,
-			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
-				const inner = (() => {
-					if (backend === 'opencode') return opencode.listModels();
-					if (backend === 'grok') return grok.listModels();
-					if (backend === 'codex') return codex.listModels();
-					return cursor.listModels();
-				})();
-				return inner.pipe(
-					Effect.catch((cause) =>
-						Effect.fail(
-							new ModelCatalogError({
-								backend,
-								message: `Failed to list models for ${backend}: ${String(cause)}`,
-							}),
-						),
-					),
-				);
-			};
+	const fetch = (
+		backend: Backend,
+	): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
+		const inner = (() => {
+			if (backend === 'opencode') return opencode.listModels();
+			if (backend === 'grok') return grok.listModels();
+			if (backend === 'codex') return codex.listModels();
+			return cursor.listModels();
+		})();
+		return inner.pipe(
+			Effect.catch((cause) =>
+				Effect.fail(
+					new ModelCatalogError({
+						backend,
+						message: `Failed to list models for ${backend}: ${String(cause)}`,
+					}),
+				),
+			),
+		);
+	};
 
-			const list = (
-				backend: Backend,
-			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
-				Effect.gen(function* () {
-					const now = Date.now();
-					const current = yield* Ref.get(cache);
-					const entry = current.get(backend);
-					if (entry !== undefined && now - entry.fetchedAt < TTL_MS) {
-						return entry.models;
-					}
-					const models = yield* fetch(backend);
-					yield* Ref.update(cache, (m) => {
-						const next = new Map(m);
-						next.set(backend, { models, fetchedAt: now });
-						return next;
-					});
-					return models;
-				});
-
-			return { list };
+	const list = (
+		backend: Backend,
+	): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
+		Effect.gen(function* () {
+			const now = Date.now();
+			const current = yield* Ref.get(cache);
+			const entry = current.get(backend);
+			if (entry !== undefined && now - entry.fetchedAt < TTL_MS) {
+				return entry.models;
+			}
+			const models = yield* fetch(backend);
+			yield* Ref.update(cache, (m) => {
+				const next = new Map(m);
+				next.set(backend, { models, fetchedAt: now });
+				return next;
+			});
+			return models;
 		});
 
-export class ModelCatalog extends Context.Service<ModelCatalog, ModelCatalogService>()(
-	'oagent/ModelCatalog',
-) {
+	return { list };
+});
+
+export class ModelCatalog extends Context.Service<
+	ModelCatalog,
+	ModelCatalogService
+>()('oagent/ModelCatalog') {
 	static readonly layer = Layer.effect(ModelCatalog, makeModelCatalog).pipe(
 		Layer.provide(OpenCode.layer),
 		Layer.provide(Cursor.layer),

@@ -1,5 +1,9 @@
 import { Context, Effect, Layer } from 'effect';
-import { AcpAgent, AcpSessionError, type AcpAgentService } from './acp-agent.ts';
+import {
+	AcpAgent,
+	type AcpAgentService,
+	type AcpSessionError,
+} from './acp-agent.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	auto: 'default[]',
@@ -20,54 +24,57 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 
 type CursorService = {
 	readonly runTurn: AcpAgentService['runTurn'];
-	readonly listModels: () => Effect.Effect<ReadonlyArray<{ id: string; label: string | undefined }>, AcpSessionError>;
+	readonly listModels: () => Effect.Effect<
+		ReadonlyArray<{ id: string; label: string | undefined }>,
+		AcpSessionError
+	>;
 };
 
 const makeCursor = Effect.gen(function* () {
-		const binary =
-			process.env.OAGENT_CURSOR_BIN !== undefined
-				? process.env.OAGENT_CURSOR_BIN
-				: 'cursor-agent';
-		const acpAgent = yield* AcpAgent.pipe(
-			Effect.provide(
-				AcpAgent.layer({
-					binary,
-					args: ['acp'],
-					clientInfoName: 'oagent',
-					extensionHandlers: {
-						'cursor/ask_question': async () => ({
-							outcome: {
-								outcome: 'skipped',
-								reason: 'auto-skipped by oagent',
-							},
-						}),
-						'cursor/create_plan': async () => ({
-							outcome: {
-								outcome: 'accepted',
-							},
-						}),
-					},
-				}),
-			),
-		);
-		return {
-			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
-				const model =
-					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
-						? CURSOR_MODEL_ALIASES[input.model]
-						: input.model;
-				return acpAgent.runTurn({ ...input, model });
-			},
-			listModels: () =>
-				acpAgent.listModels().pipe(
-					Effect.map((models) =>
-						models.map((entry) => ({
-							id: entry.id,
-							label: CURSOR_ID_TO_LABEL.get(entry.id),
-						})),
-					),
+	const binary =
+		process.env.OAGENT_CURSOR_BIN !== undefined
+			? process.env.OAGENT_CURSOR_BIN
+			: 'cursor-agent';
+	const acpAgent = yield* AcpAgent.pipe(
+		Effect.provide(
+			AcpAgent.layer({
+				binary,
+				args: ['acp'],
+				clientInfoName: 'oagent',
+				extensionHandlers: {
+					'cursor/ask_question': async () => ({
+						outcome: {
+							outcome: 'skipped',
+							reason: 'auto-skipped by oagent',
+						},
+					}),
+					'cursor/create_plan': async () => ({
+						outcome: {
+							outcome: 'accepted',
+						},
+					}),
+				},
+			}),
+		),
+	);
+	return {
+		runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
+			const model =
+				input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
+					? CURSOR_MODEL_ALIASES[input.model]
+					: input.model;
+			return acpAgent.runTurn({ ...input, model });
+		},
+		listModels: () =>
+			acpAgent.listModels().pipe(
+				Effect.map((models) =>
+					models.map((entry) => ({
+						id: entry.id,
+						label: CURSOR_ID_TO_LABEL.get(entry.id),
+					})),
 				),
-		};
+			),
+	};
 });
 
 export class Cursor extends Context.Service<Cursor, CursorService>()(

@@ -1,6 +1,9 @@
 import type { Jobs } from '../jobs.ts';
 
-export function handleJobsStream(jobs: Jobs['Service'], signal: AbortSignal): Response {
+export function handleJobsStream(
+	jobs: Jobs['Service'],
+	signal: AbortSignal,
+): Response {
 	let unsubscribe = (): void => {};
 	let closed = false;
 

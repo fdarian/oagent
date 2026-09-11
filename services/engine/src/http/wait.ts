@@ -1,4 +1,4 @@
-import { Cause, Context, Effect, Exit, Option } from 'effect';
+import { Cause, type Context, Effect, Exit, Option } from 'effect';
 import type { Jobs } from '../jobs.ts';
 
 export async function handleJobWait(

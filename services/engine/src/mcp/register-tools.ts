@@ -1,5 +1,12 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { Cause, Context, Effect, type Effect as EffectType, Exit, Option } from 'effect';
+import {
+	Cause,
+	type Context,
+	Effect,
+	type Effect as EffectType,
+	Exit,
+	Option,
+} from 'effect';
 import type { Jobs } from '../jobs.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
