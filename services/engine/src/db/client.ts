@@ -29,30 +29,28 @@ const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
 		catch: (cause) => new OrphanRecoveryError({ cause }),
 	});
 
-const makeDb = Effect.gen(function* () {
-	const dbPath = yield* resolveDbPath();
-	const sqlite = yield* Effect.acquireRelease(
-		Effect.try({
-			try: () => {
-				const s = new Database(dbPath);
-				s.exec('PRAGMA journal_mode = WAL;');
-				s.exec('PRAGMA synchronous = NORMAL;');
-				s.exec('PRAGMA foreign_keys = ON;');
-				s.exec('PRAGMA busy_timeout = 5000;');
-				return s;
-			},
-			catch: (cause) => new DbOpenError({ cause, path: dbPath }),
-		}),
-		(s) => Effect.sync(() => s.close()),
-	);
-	const db = drizzle(sqlite, { schema });
-	yield* runMigrations(db);
-	yield* recoverOrphanedRunningJobs(db);
-	return { db, sqlite } as const;
-});
-
-export class Db extends Context.Service<Db, Effect.Success<typeof makeDb>>()(
-	'oagent/Db',
-) {
-	static readonly layer = Layer.effect(Db, makeDb);
+export class Db extends Context.Service<Db>()('oagent/Db', {
+	make: Effect.gen(function* () {
+		const dbPath = yield* resolveDbPath();
+		const sqlite = yield* Effect.acquireRelease(
+			Effect.try({
+				try: () => {
+					const s = new Database(dbPath);
+					s.exec('PRAGMA journal_mode = WAL;');
+					s.exec('PRAGMA synchronous = NORMAL;');
+					s.exec('PRAGMA foreign_keys = ON;');
+					s.exec('PRAGMA busy_timeout = 5000;');
+					return s;
+				},
+				catch: (cause) => new DbOpenError({ cause, path: dbPath }),
+			}),
+			(s) => Effect.sync(() => s.close()),
+		);
+		const db = drizzle(sqlite, { schema });
+		yield* runMigrations(db);
+		yield* recoverOrphanedRunningJobs(db);
+		return { db, sqlite } as const;
+	}),
+}) {
+	static readonly layer = Layer.effect(Db, Db.make);
 }
