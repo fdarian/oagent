@@ -348,13 +348,15 @@ export function runAcpTurn(
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 
+type AcpAgentConfig = {
+	binary: string;
+	args: readonly string[];
+	clientInfoName: string;
+	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+};
+
 export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
-	make: (config: {
-		binary: string;
-		args: readonly string[];
-		clientInfoName: string;
-		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-	}) =>
+	make: (config: AcpAgentConfig) =>
 		Effect.gen(function* () {
 			// Non-spawning: RcRef only records how to acquire the connection.
 			// The subprocess is spawned on the first `RcRef.get`, and killed
@@ -420,10 +422,6 @@ export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
 			return { runTurn, listModels };
 		}),
 }) {
-	static readonly layer = (config: {
-		binary: string;
-		args: readonly string[];
-		clientInfoName: string;
-		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-	}) => Layer.effect(AcpAgent, AcpAgent.make(config));
+	static readonly layer = (config: AcpAgentConfig) =>
+		Layer.effect(AcpAgent, AcpAgent.make(config));
 }
