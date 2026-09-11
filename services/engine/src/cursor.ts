@@ -1,5 +1,5 @@
-import { Effect } from 'effect';
-import { AcpAgent } from './acp-agent.ts';
+import { Context, Effect, Layer } from 'effect';
+import { AcpAgent, AcpSessionError, type AcpAgentService } from './acp-agent.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	auto: 'default[]',
@@ -18,15 +18,19 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 	Object.entries(CURSOR_MODEL_ALIASES).map(([label, id]) => [id, label]),
 );
 
-export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
-	effect: Effect.gen(function* () {
+type CursorService = {
+	readonly runTurn: AcpAgentService['runTurn'];
+	readonly listModels: () => Effect.Effect<ReadonlyArray<{ id: string; label: string | undefined }>, AcpSessionError>;
+};
+
+const makeCursor = Effect.gen(function* () {
 		const binary =
 			process.env.OAGENT_CURSOR_BIN !== undefined
 				? process.env.OAGENT_CURSOR_BIN
 				: 'cursor-agent';
 		const acpAgent = yield* AcpAgent.pipe(
 			Effect.provide(
-				AcpAgent.Default({
+				AcpAgent.layer({
 					binary,
 					args: ['acp'],
 					clientInfoName: 'oagent',
@@ -64,5 +68,10 @@ export class Cursor extends Effect.Service<Cursor>()('oagent/Cursor', {
 					),
 				),
 		};
-	}),
-}) {}
+});
+
+export class Cursor extends Context.Service<Cursor, CursorService>()(
+	'oagent/Cursor',
+) {
+	static readonly layer = Layer.effect(Cursor, makeCursor);
+}

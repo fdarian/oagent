@@ -9,11 +9,9 @@ const main = defineDevCli({
 	name: webPackage.name,
 	dir: join(REPO_ROOT, 'apps/web'),
 	options: {
-		local: cli.Options.text('local').pipe(
-			cli.Options.withDefault(''),
-			cli.Options.withDescription(
-				'Use a local engine service (e.g., "engine")',
-			),
+		local: cli.Flag.String('local').pipe(
+			cli.Flag.withDefault(''),
+			cli.Flag.withDescription('Use a local engine service (e.g., "engine")'),
 		),
 	},
 	run: (ctx, opts) =>
@@ -21,7 +19,7 @@ const main = defineDevCli({
 			const s = yield* ctx.session;
 			yield* Effect.logInfo(`[dev] session: ${s.name}`);
 
-			const localEngine = opts.local as string;
+			const localEngine = opts.local;
 			let engineUrl: string;
 
 			if (localEngine === 'engine') {

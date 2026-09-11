@@ -1,11 +1,12 @@
 import { realpathSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import * as cli from '@effect/cli';
-import type { PlatformError } from '@effect/platform/Error';
-import type { FileSystem } from '@effect/platform/FileSystem';
-import type { Path } from '@effect/platform/Path';
-import { BunContext, BunRuntime } from '@effect/platform-bun';
+import * as BunRuntime from '@effect/platform-bun/BunRuntime';
+import * as BunServices from '@effect/platform-bun/BunServices';
 import { Effect, Layer, type Scope } from 'effect';
+import type { FileSystem } from 'effect/FileSystem';
+import type { Path } from 'effect/Path';
+import type { PlatformError } from 'effect/PlatformError';
+import * as cli from 'effect/unstable/cli';
 import {
 	type DevSession,
 	DevSessions,
@@ -42,7 +43,7 @@ type RunContext = {
 type RunEffect = Effect.Effect<
 	void,
 	unknown,
-	DevSessions | BunContext.BunContext | Scope.Scope
+	DevSessions | BunServices.BunServices | Scope.Scope
 >;
 
 type CommandConfig = typeof cli.Command.make extends (
@@ -83,15 +84,13 @@ export const defineDevCli = (config: {
 
 	return (argv) => {
 		const layer = makeDevSessionsLayer(join(config.dir, '.data/sessions')).pipe(
-			Layer.provideMerge(BunContext.layer),
-			Layer.provideMerge(Layer.scope),
+			Layer.provideMerge(BunServices.layer),
 		);
 
-		const program = cli.Command.run(command, {
-			name: config.name,
+		const program = cli.Command.runWith(command, {
 			version: '0.0.0',
 		})(argv);
 
-		BunRuntime.runMain(Effect.provide(program, layer));
+		BunRuntime.runMain(Effect.scoped(Effect.provide(program, layer)));
 	};
 };

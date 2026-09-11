@@ -1,12 +1,13 @@
-import type { PlatformError } from '@effect/platform/Error';
-import { FileSystem } from '@effect/platform/FileSystem';
-import { Path } from '@effect/platform/Path';
-import { Config, type ConfigError, Effect, Option } from 'effect';
+import { Config, Effect, Option } from 'effect';
+import type { ConfigError } from 'effect/Config';
+import { FileSystem } from 'effect/FileSystem';
+import { Path } from 'effect/Path';
+import type { PlatformError } from 'effect/PlatformError';
 import { getOagentBaseDir } from '../paths.ts';
 
 export function resolveDbPath(): Effect.Effect<
 	string,
-	ConfigError.ConfigError | PlatformError,
+	ConfigError | PlatformError,
 	FileSystem | Path
 > {
 	return Effect.gen(function* () {
@@ -14,7 +15,7 @@ export function resolveDbPath(): Effect.Effect<
 		const path = yield* Path;
 
 		const pathFromEnv = Option.getOrNull(
-			yield* Config.string('OAGENT_DB_PATH').pipe(Config.option),
+			yield* Config.String('OAGENT_DB_PATH').pipe(Config.option),
 		);
 		if (pathFromEnv) {
 			const resolved = path.resolve(pathFromEnv);

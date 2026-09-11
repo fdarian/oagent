@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
-import { Effect, Fiber, Schema } from 'effect';
+import { Context, Effect, Fiber, Layer, Schema } from 'effect';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
@@ -20,12 +20,12 @@ class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
 	{
-		code: Schema.Literal(
+		code: Schema.Literals([
 			'MISSING',
 			'INVALID_FORMAT',
 			'UNKNOWN_BACKEND',
 			'UNKNOWN_ALIAS',
-		),
+		]),
 		message: Schema.String,
 	},
 ) {}
@@ -65,8 +65,7 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
-export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
-	effect: Effect.gen(function* () {
+const makeJobs = Effect.gen(function* () {
 		const opencode = yield* OpenCode;
 		const cursor = yield* Cursor;
 		const grok = yield* Grok;
@@ -117,7 +116,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
-		const liveFibers = new Map<string, Fiber.RuntimeFiber<JobOk, unknown>>();
+		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
@@ -429,7 +428,7 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 					});
 				})();
 
-				const fiber = yield* Effect.forkDaemon(
+				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
 							Effect.sync(() => {
@@ -842,15 +841,19 @@ export class Jobs extends Effect.Service<Jobs>()('oagent/Jobs', {
 				return readEventsPage(job.id, sinceId, limit);
 			},
 		};
-	}),
-	dependencies: [
-		OpenCode.Default,
-		Cursor.Default,
-		Grok.Default,
-		Codex.Default,
-		Db.Default,
-	],
-}) {}
+});
+
+export class Jobs extends Context.Service<Jobs, Effect.Success<typeof makeJobs>>()(
+	'oagent/Jobs',
+) {
+	static readonly layer = Layer.effect(Jobs, makeJobs).pipe(
+		Layer.provide(OpenCode.layer),
+		Layer.provide(Cursor.layer),
+		Layer.provide(Grok.layer),
+		Layer.provide(Codex.layer),
+		Layer.provide(Db.layer),
+	);
+}
 
 function toWaitResult(job: {
 	uuid: string;

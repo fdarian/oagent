@@ -1,7 +1,7 @@
 import os from 'node:os';
-import type { PlatformError } from '@effect/platform/Error';
-import { FileSystem } from '@effect/platform/FileSystem';
-import { Path } from '@effect/platform/Path';
+import type { PlatformError } from 'effect/PlatformError';
+import { FileSystem } from 'effect/FileSystem';
+import { Path } from 'effect/Path';
 import { Effect } from 'effect';
 
 export const getOagentBaseDir: Effect.Effect<string, never, Path> = Effect.gen(

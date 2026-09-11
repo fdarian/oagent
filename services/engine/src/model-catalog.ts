@@ -1,4 +1,4 @@
-import { Effect, Ref, Schema } from 'effect';
+import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
@@ -23,10 +23,11 @@ export class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()(
 	},
 ) {}
 
-export class ModelCatalog extends Effect.Service<ModelCatalog>()(
-	'oagent/ModelCatalog',
-	{
-		effect: Effect.gen(function* () {
+type ModelCatalogService = {
+	readonly list: (backend: Backend) => Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError>;
+};
+
+const makeModelCatalog = Effect.gen(function* () {
 			const opencode = yield* OpenCode;
 			const cursor = yield* Cursor;
 			const grok = yield* Grok;
@@ -43,7 +44,7 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 					return cursor.listModels();
 				})();
 				return inner.pipe(
-					Effect.catchAll((cause) =>
+					Effect.catch((cause) =>
 						Effect.fail(
 							new ModelCatalogError({
 								backend,
@@ -74,12 +75,15 @@ export class ModelCatalog extends Effect.Service<ModelCatalog>()(
 				});
 
 			return { list };
-		}),
-		dependencies: [
-			OpenCode.Default,
-			Cursor.Default,
-			Grok.Default,
-			Codex.Default,
-		],
-	},
-) {}
+		});
+
+export class ModelCatalog extends Context.Service<ModelCatalog, ModelCatalogService>()(
+	'oagent/ModelCatalog',
+) {
+	static readonly layer = Layer.effect(ModelCatalog, makeModelCatalog).pipe(
+		Layer.provide(OpenCode.layer),
+		Layer.provide(Cursor.layer),
+		Layer.provide(Grok.layer),
+		Layer.provide(Codex.layer),
+	);
+}

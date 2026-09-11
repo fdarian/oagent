@@ -1,8 +1,8 @@
 import os from 'node:os';
-import { FileSystem } from '@effect/platform/FileSystem';
-import { Path } from '@effect/platform/Path';
 import { ensureOagentLogsDir, getOagentLogsDir } from '@oagent/engine';
 import { Effect } from 'effect';
+import { FileSystem } from 'effect/FileSystem';
+import { Path } from 'effect/Path';
 import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	errorMessage,
@@ -31,7 +31,7 @@ export function ensureServiceDirectories(
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 		yield* ensureOagentLogsDir.pipe(
-			Effect.catchAll((cause) =>
+			Effect.catch((cause) =>
 				Effect.fail(
 					new ServiceError({
 						message: `Failed to prepare service directories: ${errorMessage(cause)}`,
@@ -40,7 +40,7 @@ export function ensureServiceDirectories(
 			),
 		);
 		yield* fs.makeDirectory(paths.launchAgentsDir, { recursive: true }).pipe(
-			Effect.catchAll((cause) =>
+			Effect.catch((cause) =>
 				Effect.fail(
 					new ServiceError({
 						message: `Failed to prepare service directories: ${errorMessage(cause)}`,

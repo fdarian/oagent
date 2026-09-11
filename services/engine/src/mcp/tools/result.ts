@@ -27,7 +27,7 @@ type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
 export const resultTool = {
 	description,
 	inputSchema,
-	handle(args: Args, ctx: { jobs: Jobs }) {
+	handle(args: Args, ctx: { jobs: Jobs['Service'] }) {
 		return Effect.map(
 			ctx.jobs
 				.wait({

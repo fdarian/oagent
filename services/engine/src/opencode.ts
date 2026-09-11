@@ -1,15 +1,16 @@
-import { Effect } from 'effect';
-import { AcpAgent, AcpSessionError } from './acp-agent.ts';
+import { Context, Effect, Layer } from 'effect';
+import { AcpAgent, AcpSessionError, type AcpAgentService } from './acp-agent.ts';
 
-export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
-	effect: Effect.gen(function* () {
+type OpenCodeService = AcpAgentService;
+
+const makeOpenCode = Effect.gen(function* () {
 		const binary =
 			process.env.OAGENT_OPENCODE_BIN !== undefined
 				? process.env.OAGENT_OPENCODE_BIN
 				: 'opencode';
 		const acpAgent = yield* AcpAgent.pipe(
 			Effect.provide(
-				AcpAgent.Default({
+				AcpAgent.layer({
 					binary,
 					args: ['acp'],
 					clientInfoName: 'oagent',
@@ -33,5 +34,10 @@ export class OpenCode extends Effect.Service<OpenCode>()('oagent/OpenCode', {
 			});
 
 		return { runTurn: acpAgent.runTurn, listModels };
-	}),
-}) {}
+});
+
+export class OpenCode extends Context.Service<OpenCode, OpenCodeService>()(
+	'oagent/OpenCode',
+) {
+	static readonly layer = Layer.effect(OpenCode, makeOpenCode);
+}

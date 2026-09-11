@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { Command, Options } from '@effect/cli';
 import { Engine } from '@oagent/engine';
 import { Effect, Logger, Option } from 'effect';
+import { Command, Flag } from 'effect/unstable/cli';
 import type { Version } from '#/lib/misc.ts';
 
 const webFilemap = Effect.tryPromise(
@@ -51,31 +51,31 @@ function getLoggerLayer(logFile: string | undefined) {
 		const logDir = path.dirname(resolvedPath);
 		fs.mkdirSync(logDir, { recursive: true });
 		const fileLogger = Logger.make((options) => {
-			const line = Logger.jsonLogger.log(options);
+			const line = Logger.formatJson.log(options);
 			fs.appendFileSync(resolvedPath, `${line}\n`);
 		});
-		return Logger.replace(Logger.defaultLogger, fileLogger);
+		return Logger.layer([fileLogger]);
 	}
-	return Logger.pretty;
+	return Logger.layer([Logger.consolePretty()]);
 }
 
 export const serveCmd = (version: Version) =>
 	Command.make(
 		'serve',
 		{
-			port: Options.integer('port').pipe(
-				Options.withAlias('p'),
-				Options.withDefault(17_777),
-				Options.withDescription('Port to listen on (default: 17777)'),
+			port: Flag.Int('port').pipe(
+				Flag.withAlias('p'),
+				Flag.withDefault(17_777),
+				Flag.withDescription('Port to listen on (default: 17777)'),
 			),
-			portless: Options.boolean('portless').pipe(
-				Options.withDefault(false),
-				Options.withDescription(
+			portless: Flag.Boolean('portless').pipe(
+				Flag.withDefault(false),
+				Flag.withDescription(
 					'Register with portless proxy for https://oagent.localhost access (also settable in ~/.config/oagent/config.json via "portless": true)',
 				),
 			),
-			logFile: Options.optional(Options.text('log-file')).pipe(
-				Options.withDescription(
+			logFile: Flag.optional(Flag.String('log-file')).pipe(
+				Flag.withDescription(
 					'Write Effect logs as JSONL to the given file instead of pretty console output',
 				),
 			),

@@ -2,20 +2,20 @@
 import { Database } from 'bun:sqlite';
 import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
-import { Effect, Schema } from 'effect';
+import { Context, Effect, Layer, Schema } from 'effect';
 import { runMigrations } from './migrate.ts';
 import { resolveDbPath } from './path.ts';
 import * as schema from './schema.ts';
 
 class DbOpenError extends Schema.TaggedError<DbOpenError>()('DbOpenError', {
-	cause: Schema.Defect,
+	cause: Schema.Defect(),
 	path: Schema.String,
 }) {}
 
 class OrphanRecoveryError extends Schema.TaggedError<OrphanRecoveryError>()(
 	'OrphanRecoveryError',
 	{
-		cause: Schema.Defect,
+		cause: Schema.Defect(),
 	},
 ) {}
 
@@ -29,8 +29,7 @@ const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
 		catch: (cause) => new OrphanRecoveryError({ cause }),
 	});
 
-export class Db extends Effect.Service<Db>()('oagent/Db', {
-	scoped: Effect.gen(function* () {
+const makeDb = Effect.gen(function* () {
 		const dbPath = yield* resolveDbPath();
 		const sqlite = yield* Effect.acquireRelease(
 			Effect.try({
@@ -50,5 +49,10 @@ export class Db extends Effect.Service<Db>()('oagent/Db', {
 		yield* runMigrations(db);
 		yield* recoverOrphanedRunningJobs(db);
 		return { db, sqlite } as const;
-	}),
-}) {}
+});
+
+export class Db extends Context.Service<Db, Effect.Success<typeof makeDb>>()(
+	'oagent/Db',
+) {
+	static readonly layer = Layer.effect(Db, makeDb);
+}

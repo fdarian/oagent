@@ -1,7 +1,7 @@
 import fs from 'node:fs';
-import type { Path } from '@effect/platform/Path';
 import { getOagentBaseDir } from '@oagent/engine';
 import { Effect } from 'effect';
+import type { Path } from 'effect/Path';
 import {
 	ensureMacOs,
 	getCallerPath,

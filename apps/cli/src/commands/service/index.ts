@@ -1,4 +1,4 @@
-import { Command } from '@effect/cli';
+import { Command } from 'effect/unstable/cli';
 import type { Version } from '#/lib/misc.ts';
 import { restart } from './restart.ts';
 import { start } from './start.ts';

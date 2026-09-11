@@ -1,5 +1,5 @@
-import { Command } from '@effect/cli';
 import { Effect } from 'effect';
+import { Command } from 'effect/unstable/cli';
 import { SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { loadServiceStatus } from '#/lib/service/lifecycle.ts';
 import { writeLines } from './shared.ts';

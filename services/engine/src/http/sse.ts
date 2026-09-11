@@ -2,7 +2,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { Jobs } from '../jobs.ts';
 
 export function handleJobEvents(
-	jobs: Jobs,
+	jobs: Jobs['Service'],
 	jobId: string,
 	signal: AbortSignal,
 ): Response {

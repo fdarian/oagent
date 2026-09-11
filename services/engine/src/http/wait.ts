@@ -1,20 +1,20 @@
-import { Cause, Exit, Runtime } from 'effect';
+import { Cause, Context, Effect, Exit, Option } from 'effect';
 import type { Jobs } from '../jobs.ts';
 
 export async function handleJobWait(
-	jobs: Jobs,
+	jobs: Jobs['Service'],
 	jobId: string,
 	timeoutMs: number,
-	rt: Runtime.Runtime<never>,
+	services: Context.Context<never>,
 ): Promise<Response> {
-	const exit = await Runtime.runPromiseExit(rt)(
+	const exit = await Effect.runPromiseExitWith(services)(
 		jobs.wait({ jobId, timeoutMs }),
 	);
 
 	if (Exit.isFailure(exit)) {
-		const cause = exit.cause;
-		if (Cause.isFailType(cause)) {
-			const err = cause.error;
+		const errorOption = Cause.findErrorOption(exit.cause);
+		if (Option.isSome(errorOption)) {
+			const err = errorOption.value;
 			if (
 				err !== null &&
 				typeof err === 'object' &&
@@ -38,7 +38,7 @@ export async function handleJobWait(
 			});
 		}
 		return new Response(
-			JSON.stringify({ status: 'error', message: Cause.pretty(cause) }),
+			JSON.stringify({ status: 'error', message: Cause.pretty(exit.cause) }),
 			{ status: 500, headers: { 'content-type': 'application/json' } },
 		);
 	}

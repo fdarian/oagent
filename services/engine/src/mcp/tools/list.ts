@@ -12,7 +12,7 @@ const inputSchema = {};
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
 
-function formatJobs(jobs: ReturnType<Jobs['listByMcpSession']>): string {
+function formatJobs(jobs: ReturnType<Jobs['Service']['listByMcpSession']>): string {
 	if (jobs.length === 0) {
 		return 'No jobs in this session yet.';
 	}
@@ -36,7 +36,7 @@ function formatJobs(jobs: ReturnType<Jobs['listByMcpSession']>): string {
 export const listTool = {
 	description,
 	inputSchema,
-	handle(_args: Args, ctx: { jobs: Jobs; mcpSessionId: string | undefined }) {
+	handle(_args: Args, ctx: { jobs: Jobs['Service']; mcpSessionId: string | undefined }) {
 		const sessionId = ctx.mcpSessionId;
 		if (sessionId === undefined) {
 			return Effect.fail(

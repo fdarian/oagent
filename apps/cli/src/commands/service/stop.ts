@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import { Command } from '@effect/cli';
 import { Effect } from 'effect';
+import { Command } from 'effect/unstable/cli';
 import { ensureMacOs } from '#/lib/service/environment.ts';
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';

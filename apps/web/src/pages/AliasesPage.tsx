@@ -39,11 +39,25 @@ import { cn } from '@/lib/utils';
 
 type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
+function isBackend(value: string): value is Backend {
+	return (
+		value === 'opencode' ||
+		value === 'cursor' ||
+		value === 'grok' ||
+		value === 'codex'
+	);
+}
+
 type Alias = {
 	name: string;
 	backend: Backend;
 	model_id: string;
 	description?: string;
+};
+
+type ModelEntry = {
+	id: string;
+	label?: string;
 };
 
 type ModelComboboxProps = {
@@ -64,7 +78,9 @@ function ModelCombobox(props: ModelComboboxProps) {
 	const models = modelsQuery.data ?? [];
 
 	// Find the selected entry to render its label in the trigger button.
-	const selectedEntry = models.find((entry) => entry.id === props.value);
+	const selectedEntry = models.find(
+		(entry: ModelEntry) => entry.id === props.value,
+	);
 
 	const triggerContent =
 		props.value.trim() === '' ? (
@@ -121,7 +137,7 @@ function ModelCombobox(props: ModelComboboxProps) {
 							<>
 								<CommandEmpty>No matching models.</CommandEmpty>
 								<CommandGroup>
-									{models.map((entry) => (
+									{models.map((entry: ModelEntry) => (
 										<CommandItem
 											key={entry.id}
 											// Include both label and id so the user can type either to match.
@@ -383,7 +399,12 @@ export function AliasesPage() {
 	const deleteMutation = useMutation({
 		mutationFn: (name: string) => orpc.aliases.delete({ name }),
 		onSuccess: (result) => {
-			if (result.ok) {
+			if (
+				typeof result === 'object' &&
+				result !== null &&
+				'ok' in result &&
+				result.ok === true
+			) {
 				queryClient.invalidateQueries({ queryKey: ['aliases'] });
 				setDeleteTarget(undefined);
 			} else {
@@ -415,7 +436,9 @@ export function AliasesPage() {
 		deleteMutation.mutate(deleteTarget.name);
 	}
 
-	const aliases = (listQuery.data ?? []) as Alias[];
+	const aliases = (listQuery.data ?? []).filter((alias): alias is Alias =>
+		isBackend(alias.backend),
+	);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">

@@ -8,11 +8,11 @@ import {
 	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import { Duration, Effect, RcRef, Schema } from 'effect';
+import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
 
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
-	{ cause: Schema.Defect },
+	{ cause: Schema.Defect() },
 ) {
 	override get message() {
 		return String(this.cause);
@@ -24,7 +24,7 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	{
 		code: Schema.optional(Schema.String),
 		message: Schema.String,
-		cause: Schema.Defect,
+		cause: Schema.Defect(),
 	},
 ) {}
 
@@ -348,14 +348,30 @@ export function runAcpTurn(
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 
-export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
-	effect: (config: {
+export type AcpAgentResult = {
+	readonly sessionId: string;
+	readonly text: string;
+	readonly stopReason: string | undefined;
+};
+
+export type AcpAgentService = {
+	readonly runTurn: (input: {
+		prompt: string;
+		model?: string;
+		sessionId?: string;
+		cwd: string;
+		onEvent?: (event: SessionUpdate) => void;
+		onExtensionEvent?: (method: string, params: unknown) => void;
+	}) => Effect.Effect<AcpAgentResult, AcpSessionError | AcpTurnFailed>;
+	readonly listModels: () => Effect.Effect<ReadonlyArray<{ id: string }>, AcpSessionError>;
+};
+
+const makeAcpAgent = (config: {
 		binary: string;
 		args: readonly string[];
 		clientInfoName: string;
 		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-	}) =>
-		Effect.gen(function* () {
+	}) => Effect.gen(function* () {
 			// Non-spawning: RcRef only records how to acquire the connection.
 			// The subprocess is spawned on the first `RcRef.get`, and killed
 			// once the ref count drops to zero and stays there for
@@ -418,5 +434,15 @@ export class AcpAgent extends Effect.Service<AcpAgent>()('oagent/AcpAgent', {
 				);
 
 			return { runTurn, listModels };
-		}),
-}) {}
+		});
+
+export class AcpAgent extends Context.Service<AcpAgent, AcpAgentService>()(
+	'oagent/AcpAgent',
+) {
+	static readonly layer = (config: {
+		binary: string;
+		args: readonly string[];
+		clientInfoName: string;
+		extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+	}) => Layer.effect(AcpAgent, makeAcpAgent(config));
+}

@@ -1,32 +1,25 @@
-import type { PlatformError } from '@effect/platform/Error';
-import { FileSystem } from '@effect/platform/FileSystem';
-import { Path } from '@effect/platform/Path';
-import {
-	Config,
-	type ConfigError,
-	Effect,
-	Option,
-	type ParseResult,
-	Schema,
-} from 'effect';
+import { Config, Effect, Option, Schema } from 'effect';
+import type { ConfigError } from 'effect/Config';
+import { FileSystem } from 'effect/FileSystem';
+import { Path } from 'effect/Path';
+import type { PlatformError } from 'effect/PlatformError';
 import { getOagentBaseDir } from './paths.ts';
 
 const ConfigSchema = Schema.Struct({
-	portless: Schema.optionalWith(Schema.Boolean, { default: () => false }),
+	portless: Schema.Boolean.pipe(
+		Schema.optional,
+		Schema.withDecodingDefaultType(Effect.succeed(false)),
+	),
 });
-const ConfigSchemaFromJson = Schema.parseJson(ConfigSchema);
+const ConfigSchemaFromJson = Schema.fromJsonString(ConfigSchema);
 
 export type OagentConfig = Schema.Schema.Type<typeof ConfigSchema>;
 
-function resolveConfigPath(): Effect.Effect<
-	string,
-	ConfigError.ConfigError,
-	Path
-> {
+function resolveConfigPath(): Effect.Effect<string, ConfigError, Path> {
 	return Effect.gen(function* () {
 		const path = yield* Path;
 		const pathFromEnv = Option.getOrNull(
-			yield* Config.string('OAGENT_CONFIG_PATH').pipe(Config.option),
+			yield* Config.String('OAGENT_CONFIG_PATH').pipe(Config.option),
 		);
 		if (pathFromEnv) {
 			return path.resolve(pathFromEnv);
@@ -39,7 +32,7 @@ function resolveConfigPath(): Effect.Effect<
 
 export function loadConfig(): Effect.Effect<
 	OagentConfig,
-	ConfigError.ConfigError | ParseResult.ParseError | PlatformError | Error,
+	ConfigError | Schema.SchemaError | PlatformError | Error,
 	FileSystem | Path
 > {
 	return Effect.gen(function* () {
@@ -47,10 +40,10 @@ export function loadConfig(): Effect.Effect<
 		const configPath = yield* resolveConfigPath();
 
 		if (!(yield* fs.exists(configPath))) {
-			return yield* Schema.decode(ConfigSchema)({});
+			return yield* Schema.decodeEffect(ConfigSchema)({});
 		}
 
 		const raw = yield* fs.readFileString(configPath);
-		return yield* Schema.decode(ConfigSchemaFromJson)(raw);
+		return yield* Schema.decodeEffect(ConfigSchemaFromJson)(raw);
 	});
 }

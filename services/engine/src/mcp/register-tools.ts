@@ -1,5 +1,5 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { Cause, type Effect, Exit, Runtime } from 'effect';
+import { Cause, Context, Effect, type Effect as EffectType, Exit, Option } from 'effect';
 import type { Jobs } from '../jobs.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
@@ -8,22 +8,22 @@ import { buildDescription, inputSchema, startTool } from './tools/start.ts';
 
 export function registerTools(
 	server: McpServer,
-	jobs: Jobs,
-	rt: Runtime.Runtime<never>,
+	jobs: Jobs['Service'],
+	services: Context.Context<never>,
 	waitUrlBase: string | undefined,
 ): void {
 	const runHandler = async <A, E>(
-		eff: Effect.Effect<A, E, never>,
+		eff: EffectType.Effect<A, E, never>,
 	): Promise<A> => {
-		const exit = await Runtime.runPromiseExit(rt)(eff);
+		const exit = await Effect.runPromiseExitWith(services)(eff);
 		if (Exit.isFailure(exit)) {
-			const cause = exit.cause;
-			if (Cause.isFailType(cause)) {
-				throw cause.error instanceof Error
-					? cause.error
-					: new Error(String(cause.error));
+			const errorOption = Cause.findErrorOption(exit.cause);
+			if (Option.isSome(errorOption)) {
+				throw errorOption.value instanceof Error
+					? errorOption.value
+					: new Error(String(errorOption.value));
 			}
-			throw new Error(Cause.pretty(cause));
+			throw new Error(Cause.pretty(exit.cause));
 		}
 		return exit.value;
 	};

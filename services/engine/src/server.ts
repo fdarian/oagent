@@ -2,7 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
-import { Effect, Layer, type Runtime, Schema } from 'effect';
+import { Context, Effect, Layer, Schema } from 'effect';
 import { loadConfig } from './config.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
@@ -18,7 +18,7 @@ const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
 
 class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationError>()(
 	'PortlessRegistrationError',
-	{ cause: Schema.Defect },
+	{ cause: Schema.Defect() },
 ) {
 	override get message() {
 		return String(this.cause);
@@ -32,8 +32,7 @@ type ServerOptions = {
 	portless?: boolean;
 };
 
-export class Engine extends Effect.Service<Engine>()('engine', {
-	effect: Effect.gen(function* () {
+const makeEngine = Effect.gen(function* () {
 		const jobs = yield* Jobs;
 		const engineHandler = yield* createEngineHandler;
 
@@ -41,14 +40,14 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 			mcp: {
 				registerTools: (
 					server: McpServer,
-					rt: Runtime.Runtime<never>,
+					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, rt, waitUrlBase),
+				) => registerTools(server, jobs, services, waitUrlBase),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
-					const rt = yield* Effect.runtime<never>();
+					const services = yield* Effect.context<never>();
 
 					const resolvedPort =
 						process.env.OPENCODE_MCP_PORT !== undefined
@@ -98,7 +97,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
-								rt,
+								services,
 								portlessPublicBase ?? url.origin,
 							);
 
@@ -137,7 +136,7 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 								timeoutParam !== null
 									? Number.parseInt(timeoutParam, 10)
 									: 600_000;
-							return handleJobWait(jobs, waitJobId, timeoutMs, rt);
+							return handleJobWait(jobs, waitJobId, timeoutMs, services);
 						}
 
 						// 6. SPA fallback
@@ -252,11 +251,13 @@ export class Engine extends Effect.Service<Engine>()('engine', {
 					yield* Effect.never;
 				}).pipe(Effect.provideService(Jobs, jobs)),
 		};
-	}),
-}) {
-	static layer = Engine.Default.pipe(
-		Layer.provide(Jobs.Default),
-		Layer.provide(ModelCatalog.Default),
-		Layer.provide(Layer.scope),
+});
+
+export class Engine extends Context.Service<Engine, Effect.Success<typeof makeEngine>>()(
+	'engine',
+) {
+	static readonly layer = Layer.effect(Engine, makeEngine).pipe(
+		Layer.provide(Jobs.layer),
+		Layer.provide(ModelCatalog.layer),
 	);
 }
