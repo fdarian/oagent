@@ -201,6 +201,7 @@ export function runAcpTurn(
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 		skipModelSet?: boolean;
+		configOptions?: ReadonlyArray<AcpConfigOption>;
 	},
 ) {
 	return Effect.gen(function* () {
@@ -269,14 +270,21 @@ export function runAcpTurn(
 		});
 
 		const response = yield* Effect.gen(function* () {
-			const model = input.model;
-			if (model !== undefined && input.skipModelSet !== true) {
+			const configOptions =
+				input.skipModelSet === true
+					? []
+					: input.configOptions !== undefined
+						? input.configOptions
+						: input.model === undefined
+							? []
+							: [{ configId: 'model', value: input.model }];
+			for (const configOption of configOptions) {
 				yield* Effect.tryPromise({
 					try: () =>
 						env.conn.setSessionConfigOption({
 							sessionId: sessionResult.sessionId,
-							configId: 'model',
-							value: model,
+							configId: configOption.configId,
+							value: configOption.value,
 						}),
 					catch: (cause) => {
 						const rpcMessage = (() => {
@@ -362,6 +370,11 @@ type AcpAgentConfig = {
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 };
 
+export type AcpConfigOption = {
+	configId: string;
+	value: string;
+};
+
 export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
 	make: (config: AcpAgentConfig) =>
 		Effect.gen(function* () {
@@ -381,6 +394,7 @@ export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
 				cwd: string;
 				onEvent?: (event: SessionUpdate) => void;
 				onExtensionEvent?: (method: string, params: unknown) => void;
+				configOptions?: ReadonlyArray<AcpConfigOption>;
 			}) =>
 				Effect.scoped(
 					Effect.gen(function* () {
