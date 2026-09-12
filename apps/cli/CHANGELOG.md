@@ -1,5 +1,15 @@
 # oagent
 
+## 0.3.0
+
+### Minor Changes
+
+- 09ff46e: Keep `serve` as the foreground logging command, run it quietly in the background with `service start`, and add separate macOS login-item install and uninstall commands.
+
+### Patch Changes
+
+- a136ab5: Fix Codex ACP turns hanging and correctly apply combined model and reasoning selections.
+
 ## 0.2.2
 
 ### Patch Changes
