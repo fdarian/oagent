@@ -1,14 +1,22 @@
 import { Effect } from 'effect';
 import { Command } from 'effect/unstable/cli';
-import { ensureMacOs } from '#/lib/service/environment.ts';
+import {
+	ensureMacOs,
+	getCallerPath,
+	getServiceBinaryPath,
+	validatePort,
+} from '#/lib/service/environment.ts';
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { installAndBootstrap } from '#/lib/service/lifecycle.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';
 import { portOption, writeLines } from './shared.ts';
 
-function runRestart(port: number) {
+function runInstall(port: number) {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
+		yield* validatePort(port);
+		yield* getServiceBinaryPath();
+		yield* getCallerPath();
 
 		const paths = yield* getServicePaths();
 		yield* bootoutService(paths);
@@ -16,7 +24,7 @@ function runRestart(port: number) {
 		const result = yield* installAndBootstrap(port);
 
 		writeLines([
-			'service restarted',
+			'service installed',
 			`label: ${SERVICE_LABEL}`,
 			'run at login: yes',
 			`binary: ${result.binaryPath}`,
@@ -27,8 +35,6 @@ function runRestart(port: number) {
 	});
 }
 
-export const restart = Command.make('restart', { port: portOption }, (params) =>
-	runRestart(params.port),
-).pipe(
-	Command.withDescription('Stop and restart the installed launchd login item'),
-);
+export const install = Command.make('install', { port: portOption }, (params) =>
+	runInstall(params.port),
+).pipe(Command.withDescription('Install oagent to start at login'));

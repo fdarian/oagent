@@ -9,7 +9,15 @@ function runStatus() {
 		const status = yield* loadServiceStatus();
 
 		if (!status.installed) {
-			process.stdout.write('not installed (run `oagent service start`)\n');
+			writeLines([
+				`service: ${SERVICE_LABEL}`,
+				'installed: no',
+				'run at login: no',
+				'loaded: no',
+				'running: no',
+				'binary: not installed',
+				`plist: ${status.paths.plistPath}`,
+			]);
 			return;
 		}
 
@@ -21,8 +29,10 @@ function runStatus() {
 		writeLines([
 			`service: ${SERVICE_LABEL}`,
 			'installed: yes',
+			`run at login: ${status.runAtLoad ? 'yes' : 'no'}`,
 			`loaded: ${status.loaded ? 'yes' : 'no'}`,
 			runningLine,
+			`binary: ${status.binaryPath}`,
 			`port: ${status.port}`,
 			`plist: ${status.paths.plistPath}`,
 			`jsonl log: ${status.paths.jsonlLogPath}`,
@@ -31,5 +41,5 @@ function runStatus() {
 }
 
 export const status = Command.make('status', {}, () => runStatus()).pipe(
-	Command.withDescription('Show launchd service status'),
+	Command.withDescription('Show login item and server status'),
 );

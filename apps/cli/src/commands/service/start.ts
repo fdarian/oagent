@@ -1,40 +1,25 @@
-import { Effect } from 'effect';
-import { Command } from 'effect/unstable/cli';
-import { ensureMacOs } from '#/lib/service/environment.ts';
-import { isServiceLoaded, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
-import { installAndBootstrap } from '#/lib/service/lifecycle.ts';
-import { portOption, writeLines } from './shared.ts';
+import { Option } from 'effect';
+import { Command, Flag } from 'effect/unstable/cli';
+import type { Version } from '#/lib/misc.ts';
+import { runServe } from '../serve.ts';
+import { portOption } from './shared.ts';
 
-function runStart(port: number) {
-	return Effect.gen(function* () {
-		yield* ensureMacOs();
-
-		const loaded = yield* isServiceLoaded();
-		if (loaded) {
-			writeLines([
-				'service already started',
-				`label: ${SERVICE_LABEL}`,
-				'hint: run `oagent service restart` to apply changes',
-			]);
-			return;
-		}
-
-		const result = yield* installAndBootstrap(port);
-
-		writeLines([
-			'service started',
-			`label: ${SERVICE_LABEL}`,
-			`port: ${result.port}`,
-			`plist: ${result.paths.plistPath}`,
-			`jsonl log: ${result.paths.jsonlLogPath}`,
-		]);
-	});
-}
-
-export const start = Command.make('start', { port: portOption }, (params) =>
-	runStart(params.port),
-).pipe(
-	Command.withDescription(
-		'Install and start the launchd background service (no-op if already running)',
-	),
-);
+export const start = (version: Version) =>
+	Command.make(
+		'start',
+		{
+			port: portOption,
+			logFile: Flag.optional(Flag.String('log-file')).pipe(
+				Flag.withDescription(
+					'Write Effect logs as JSONL to the given file instead of pretty console output',
+				),
+			),
+		},
+		(params) =>
+			runServe({
+				port: params.port,
+				portless: false,
+				logFile: Option.getOrUndefined(params.logFile),
+				version,
+			}),
+	).pipe(Command.withDescription('Start the oagent HTTP server'));
