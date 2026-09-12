@@ -54,17 +54,23 @@ export function createAcpConnection(config: {
 	binary: string;
 	args: readonly string[];
 	clientInfoName: string;
+	env?: Record<string, string | undefined>;
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 }) {
 	return Effect.gen(function* () {
 		const subprocess = yield* Effect.acquireRelease(
 			Effect.sync(() => {
 				const transform = new TransformStream<Uint8Array, Uint8Array>();
+				const env =
+					config.env === undefined
+						? undefined
+						: { ...process.env, ...config.env };
 				const proc = Bun.spawn([config.binary, ...config.args], {
 					stdin: transform.readable,
 					stdout: 'pipe',
 					stderr: 'inherit',
 					cwd: process.cwd(),
+					env,
 				});
 				return { transform, proc };
 			}),
@@ -352,6 +358,7 @@ type AcpAgentConfig = {
 	binary: string;
 	args: readonly string[];
 	clientInfoName: string;
+	env?: Record<string, string | undefined>;
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 };
 

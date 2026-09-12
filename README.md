@@ -13,7 +13,13 @@ Install the CLI for whichever backend(s) you plan to use — each backend manage
 | `opencode` | `opencode` | `OAGENT_OPENCODE_BIN` |
 | `cursor` | `cursor-agent` | `OAGENT_CURSOR_BIN` |
 | `grok` | `grok` | `OAGENT_GROK_BIN` |
-| `codex` | `codex-acp` | `OAGENT_CODEX_BIN` |
+| `codex` | `codex-acp` (uses `codex` from `$PATH` when available) | `OAGENT_CODEX_BIN` |
+
+The Codex backend always speaks ACP through `codex-acp`. When a `codex` executable
+is available on `$PATH`, oagent passes its path through `CODEX_PATH` so the adapter
+uses that installed Codex runtime instead of its bundled one. Set `CODEX_PATH`
+explicitly to choose a different Codex runtime; `OAGENT_CODEX_BIN` still selects
+the ACP adapter itself.
 
 <details>
 <summary>Permissions: `--dangerously-skip-permissions` by default</summary>
