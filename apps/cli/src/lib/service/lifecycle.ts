@@ -12,7 +12,6 @@ import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	getLaunchctlDomain,
 	isNotLoaded,
-	parseServicePid,
 	runLaunchctl,
 	SERVICE_LABEL,
 	type ServicePaths,
@@ -26,12 +25,13 @@ import {
 	loadServiceConfiguration,
 	writePlistFile,
 } from '#/lib/service/plist.ts';
+import { loadManagedServerStatus } from '#/lib/service/process.ts';
 
 export type ServiceStatus =
 	| {
 			installed: false;
 			loaded: false;
-			pid: undefined;
+			pid: number | undefined;
 			binaryPath: undefined;
 			runAtLoad: false;
 			port: undefined;
@@ -64,12 +64,13 @@ export function loadServiceStatus(): Effect.Effect<
 		const paths = yield* getServicePaths();
 		const domain = yield* getLaunchctlDomain();
 		const installed = fs.existsSync(paths.plistPath);
+		const managedServer = yield* loadManagedServerStatus(paths.pidPath);
 
 		if (!installed) {
 			return {
 				installed: false,
 				loaded: false,
-				pid: undefined,
+				pid: managedServer.pid,
 				binaryPath: undefined,
 				runAtLoad: false,
 				port: undefined,
@@ -88,7 +89,7 @@ export function loadServiceStatus(): Effect.Effect<
 			return {
 				installed: true,
 				loaded: false,
-				pid: undefined,
+				pid: managedServer.pid,
 				binaryPath: configuration.binaryPath,
 				runAtLoad: configuration.runAtLoad,
 				port: configuration.port,
@@ -107,7 +108,7 @@ export function loadServiceStatus(): Effect.Effect<
 		return {
 			installed: true,
 			loaded: true,
-			pid: parseServicePid(printResult.stdout),
+			pid: managedServer.pid,
 			binaryPath: configuration.binaryPath,
 			runAtLoad: configuration.runAtLoad,
 			port: configuration.port,

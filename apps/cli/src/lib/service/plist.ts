@@ -41,7 +41,7 @@ export function createPlistXml(params: {
 		'\t<key>RunAtLoad</key>',
 		'\t<true/>',
 		'\t<key>KeepAlive</key>',
-		'\t<true/>',
+		'\t<false/>',
 		'\t<key>StandardOutPath</key>',
 		`\t<string>${escapeXml(params.stdoutLogPath)}</string>`,
 		'\t<key>StandardErrorPath</key>',

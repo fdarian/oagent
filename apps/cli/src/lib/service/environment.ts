@@ -26,6 +26,26 @@ export function getServiceBinaryPath(): Effect.Effect<string, ServiceError> {
 	return Effect.succeed(binaryPath);
 }
 
+export function getServiceStartCommand(): Effect.Effect<
+	ReadonlyArray<string>,
+	ServiceError
+> {
+	const binaryPath = process.execPath;
+	if (path.basename(binaryPath) !== 'bun') {
+		return Effect.succeed([binaryPath]);
+	}
+
+	const entrypoint = process.argv[1];
+	if (entrypoint === undefined) {
+		return Effect.fail(
+			new ServiceError({
+				message: 'Unable to determine the oagent CLI entrypoint',
+			}),
+		);
+	}
+	return Effect.succeed([binaryPath, entrypoint]);
+}
+
 export function getCallerPath(): Effect.Effect<string, ServiceError> {
 	const pathEnv = process.env.PATH;
 	if (pathEnv === undefined || pathEnv.length === 0) {

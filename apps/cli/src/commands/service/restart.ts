@@ -4,6 +4,7 @@ import { ensureMacOs } from '#/lib/service/environment.ts';
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { installAndBootstrap } from '#/lib/service/lifecycle.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';
+import { stopManagedServer } from '#/lib/service/process.ts';
 import { portOption, writeLines } from './shared.ts';
 
 function runRestart(port: number) {
@@ -11,6 +12,7 @@ function runRestart(port: number) {
 		yield* ensureMacOs();
 
 		const paths = yield* getServicePaths();
+		yield* stopManagedServer(paths.pidPath);
 		yield* bootoutService(paths);
 
 		const result = yield* installAndBootstrap(port);

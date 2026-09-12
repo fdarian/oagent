@@ -9,12 +9,16 @@ function runStatus() {
 		const status = yield* loadServiceStatus();
 
 		if (!status.installed) {
+			const runningLine =
+				status.pid === undefined
+					? 'running: no'
+					: `running: yes (pid ${status.pid})`;
 			writeLines([
 				`service: ${SERVICE_LABEL}`,
 				'installed: no',
 				'run at login: no',
 				'loaded: no',
-				'running: no',
+				runningLine,
 				'binary: not installed',
 				`plist: ${status.paths.plistPath}`,
 			]);
@@ -22,7 +26,7 @@ function runStatus() {
 		}
 
 		const runningLine =
-			status.loaded && status.pid !== undefined
+			status.pid !== undefined
 				? `running: yes (pid ${status.pid})`
 				: 'running: no';
 

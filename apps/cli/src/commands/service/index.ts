@@ -7,15 +7,8 @@ import { status } from './status.ts';
 import { stop } from './stop.ts';
 import { uninstall } from './uninstall.ts';
 
-export const serviceCmd = (version: Version) =>
+export const serviceCmd = (_version: Version) =>
 	Command.make('service').pipe(
 		Command.withDescription('Manage the macOS launchd background service'),
-		Command.withSubcommands([
-			start(version),
-			install,
-			restart,
-			status,
-			stop,
-			uninstall,
-		]),
+		Command.withSubcommands([start, install, restart, status, stop, uninstall]),
 	);

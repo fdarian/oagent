@@ -3,13 +3,16 @@ import { Command } from 'effect/unstable/cli';
 import { ensureMacOs } from '#/lib/service/environment.ts';
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';
+import { stopManagedServer } from '#/lib/service/process.ts';
 import { writeLines } from './shared.ts';
 
 function runStop() {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 		const paths = yield* getServicePaths();
-		const wasRunning = yield* bootoutService(paths);
+		const server = yield* stopManagedServer(paths.pidPath);
+		const launchdStopped = yield* bootoutService(paths);
+		const wasRunning = server.stopped || launchdStopped;
 
 		writeLines([
 			wasRunning ? 'service stopped' : 'service was not running',

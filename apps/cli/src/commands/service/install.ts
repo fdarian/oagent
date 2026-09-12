@@ -9,6 +9,7 @@ import {
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { installAndBootstrap } from '#/lib/service/lifecycle.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';
+import { stopManagedServer } from '#/lib/service/process.ts';
 import { portOption, writeLines } from './shared.ts';
 
 function runInstall(port: number) {
@@ -19,6 +20,7 @@ function runInstall(port: number) {
 		yield* getCallerPath();
 
 		const paths = yield* getServicePaths();
+		yield* stopManagedServer(paths.pidPath);
 		yield* bootoutService(paths);
 
 		const result = yield* installAndBootstrap(port);

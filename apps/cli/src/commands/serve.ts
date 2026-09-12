@@ -23,7 +23,7 @@ const webFilemap = Effect.tryPromise(
 	Effect.orElseSucceed(() => undefined),
 );
 
-export function runServe(params: {
+function runServe(params: {
 	port: number;
 	portless: boolean;
 	logFile: string | undefined;

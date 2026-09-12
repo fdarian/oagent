@@ -91,7 +91,7 @@ A dedicated stdio MCP that pushes job completions into the Claude Code session i
 
 ### Background Service
 
-Run the oagent HTTP server through the service command (in the foreground):
+Start the oagent HTTP server in the background through the service command:
 
 ```sh
 oagent service start
@@ -116,7 +116,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 ### Commands
 
 **server**
-- `oagent serve` — run the HTTP server daemon in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
+- `oagent serve` — run the HTTP server in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
 - **jobs**
   - `oagent jobs list` — list recent jobs. Flags: `--engine-url`, `--limit` (default 10), `--format` (`toon`|`json`).
   - `oagent jobs wait <jobId>` — block until a job reaches a terminal state. Flags: `--engine-url`, `--timeout-ms` (default 3h).
@@ -127,7 +127,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - `oagent stdio` — run as a per-session stdio MCP server.
 
 **services** (macOS launchd, auto-starts on login)
-- `oagent service start` — run the HTTP server. Flags: `--port` (default 17777), `--log-file <path>`.
+- `oagent service start` — start `oagent serve` in the background. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
 - `oagent service install` — install the macOS login item that runs `oagent service start`. Flag: `--port` (default 17777).
 - `oagent service stop` — stop the running server while retaining the login item.
 - `oagent service restart` — reinstall and restart the login item. Flag: `--port` (default 17777).
