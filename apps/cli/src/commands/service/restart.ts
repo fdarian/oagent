@@ -24,7 +24,6 @@ function runRestart(port: number) {
 			`binary: ${result.binaryPath}`,
 			`port: ${result.port}`,
 			`plist: ${result.paths.plistPath}`,
-			`jsonl log: ${result.paths.jsonlLogPath}`,
 		]);
 	});
 }

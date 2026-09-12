@@ -200,8 +200,8 @@ export function startManagedServer(params: {
 				const spawned = Bun.spawn([...params.command], {
 					detached: true,
 					stdin: 'ignore',
-					stdout: 'inherit',
-					stderr: 'inherit',
+					stdout: 'ignore',
+					stderr: 'ignore',
 				});
 				spawned.unref();
 				return spawned;

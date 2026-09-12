@@ -131,9 +131,6 @@ export function installAndBootstrap(port: number) {
 		const plistXml = createPlistXml({
 			binaryPath,
 			port: validatedPort,
-			jsonlLogPath: paths.jsonlLogPath,
-			stdoutLogPath: paths.stdoutLogPath,
-			stderrLogPath: paths.stderrLogPath,
 			pathEnv,
 			workingDirectory,
 		});

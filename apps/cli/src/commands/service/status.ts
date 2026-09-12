@@ -39,7 +39,6 @@ function runStatus() {
 			`binary: ${status.binaryPath}`,
 			`port: ${status.port}`,
 			`plist: ${status.paths.plistPath}`,
-			`jsonl log: ${status.paths.jsonlLogPath}`,
 		]);
 	});
 }

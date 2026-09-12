@@ -127,7 +127,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - `oagent stdio` — run as a per-session stdio MCP server.
 
 **services** (macOS launchd, auto-starts on login)
-- `oagent service start` — start `oagent serve` in the background. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
+- `oagent service start` — start `oagent serve` quietly in the background. Flags: `--port` (default 17777), `--portless`.
 - `oagent service install` — install the macOS login item that runs `oagent service start`. Flag: `--port` (default 17777).
 - `oagent service stop` — stop the running server while retaining the login item.
 - `oagent service restart` — reinstall and restart the login item. Flag: `--port` (default 17777).

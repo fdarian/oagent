@@ -15,9 +15,6 @@ function escapeXml(value: string): string {
 export function createPlistXml(params: {
 	binaryPath: string;
 	port: number;
-	jsonlLogPath: string;
-	stdoutLogPath: string;
-	stderrLogPath: string;
 	pathEnv: string;
 	workingDirectory: string;
 }): string {
@@ -35,17 +32,15 @@ export function createPlistXml(params: {
 		'\t\t<string>start</string>',
 		'\t\t<string>--port</string>',
 		`\t\t<string>${String(params.port)}</string>`,
-		'\t\t<string>--log-file</string>',
-		`\t\t<string>${escapeXml(params.jsonlLogPath)}</string>`,
 		'\t</array>',
 		'\t<key>RunAtLoad</key>',
 		'\t<true/>',
 		'\t<key>KeepAlive</key>',
 		'\t<false/>',
 		'\t<key>StandardOutPath</key>',
-		`\t<string>${escapeXml(params.stdoutLogPath)}</string>`,
+		'\t<string>/dev/null</string>',
 		'\t<key>StandardErrorPath</key>',
-		`\t<string>${escapeXml(params.stderrLogPath)}</string>`,
+		'\t<string>/dev/null</string>',
 		'\t<key>WorkingDirectory</key>',
 		`\t<string>${escapeXml(params.workingDirectory)}</string>`,
 		// launchd starts agents with a minimal PATH; bake in the caller's PATH so

@@ -12,9 +12,6 @@ export type CommandResult = {
 export type ServicePaths = {
 	plistPath: string;
 	pidPath: string;
-	jsonlLogPath: string;
-	stdoutLogPath: string;
-	stderrLogPath: string;
 	launchAgentsDir: string;
 };
 

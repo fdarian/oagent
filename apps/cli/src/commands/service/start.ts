@@ -1,4 +1,4 @@
-import { Effect, Option } from 'effect';
+import { Effect } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import {
 	ensureMacOs,
@@ -13,19 +13,17 @@ import { startManagedServer } from '#/lib/service/process.ts';
 import { portOption, writeLines } from './shared.ts';
 
 function getServeArgs(params: {
-	logFile: string | undefined;
 	port: number;
 	portless: boolean;
 }): ReadonlyArray<string> {
 	const portlessArgs = params.portless ? ['--portless'] : [];
-	const logFileArgs =
-		params.logFile === undefined ? [] : ['--log-file', params.logFile];
 	return [
 		'serve',
 		'--port',
 		String(params.port),
 		...portlessArgs,
-		...logFileArgs,
+		'--log-level',
+		'none',
 	];
 }
 
@@ -36,11 +34,6 @@ export const start = Command.make(
 		portless: Flag.Boolean('portless').pipe(
 			Flag.withDefault(false),
 			Flag.withDescription('Register the server with the portless proxy'),
-		),
-		logFile: Flag.optional(Flag.String('log-file')).pipe(
-			Flag.withDescription(
-				'Write Effect logs as JSONL to the given file instead of pretty console output',
-			),
 		),
 	},
 	(params) =>
@@ -56,7 +49,6 @@ export const start = Command.make(
 				command: [
 					...startCommand,
 					...getServeArgs({
-						logFile: Option.getOrUndefined(params.logFile),
 						port: params.port,
 						portless: params.portless,
 					}),
