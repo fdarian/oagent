@@ -6,5 +6,5 @@ export function writeLines(lines: ReadonlyArray<string>): void {
 
 export const portOption = Flag.Int('port').pipe(
 	Flag.withDefault(17_777),
-	Flag.withDescription('Port to run the background service on'),
+	Flag.withDescription('Port for the oagent HTTP server'),
 );

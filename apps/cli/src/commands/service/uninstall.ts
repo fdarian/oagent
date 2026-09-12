@@ -3,26 +3,29 @@ import { Command } from 'effect/unstable/cli';
 import { ensureMacOs } from '#/lib/service/environment.ts';
 import { bootoutService, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { getServicePaths } from '#/lib/service/paths.ts';
+import { removePlistFile } from '#/lib/service/plist.ts';
 import { stopManagedServer } from '#/lib/service/process.ts';
 import { writeLines } from './shared.ts';
 
-function runStop() {
+function runUninstall() {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
+
 		const paths = yield* getServicePaths();
 		const launchdStopped = yield* bootoutService(paths);
 		const server = yield* stopManagedServer(paths.pidPath);
-		const wasRunning = server.stopped || launchdStopped;
+		yield* removePlistFile(paths.plistPath);
 
 		writeLines([
-			wasRunning ? 'service stopped' : 'service was not running',
+			'service uninstalled',
 			`label: ${SERVICE_LABEL}`,
-			`plist retained: ${paths.plistPath}`,
-			'run `oagent service uninstall` to remove the login item',
+			`service stopped: ${server.stopped || launchdStopped ? 'yes' : 'no'}`,
+			'run at login: no',
+			'plist removed',
 		]);
 	});
 }
 
-export const stop = Command.make('stop', {}, () => runStop()).pipe(
-	Command.withDescription('Stop the running oagent server'),
-);
+export const uninstall = Command.make('uninstall', {}, () =>
+	runUninstall(),
+).pipe(Command.withDescription('Uninstall the oagent login item'));

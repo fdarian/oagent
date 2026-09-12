@@ -15,9 +15,6 @@ function escapeXml(value: string): string {
 export function createPlistXml(params: {
 	binaryPath: string;
 	port: number;
-	jsonlLogPath: string;
-	stdoutLogPath: string;
-	stderrLogPath: string;
 	pathEnv: string;
 	workingDirectory: string;
 }): string {
@@ -31,20 +28,19 @@ export function createPlistXml(params: {
 		'\t<key>ProgramArguments</key>',
 		'\t<array>',
 		`\t\t<string>${escapeXml(params.binaryPath)}</string>`,
-		'\t\t<string>serve</string>',
+		'\t\t<string>service</string>',
+		'\t\t<string>start</string>',
 		'\t\t<string>--port</string>',
 		`\t\t<string>${String(params.port)}</string>`,
-		'\t\t<string>--log-file</string>',
-		`\t\t<string>${escapeXml(params.jsonlLogPath)}</string>`,
 		'\t</array>',
 		'\t<key>RunAtLoad</key>',
 		'\t<true/>',
 		'\t<key>KeepAlive</key>',
-		'\t<true/>',
+		'\t<false/>',
 		'\t<key>StandardOutPath</key>',
-		`\t<string>${escapeXml(params.stdoutLogPath)}</string>`,
+		'\t<string>/dev/null</string>',
 		'\t<key>StandardErrorPath</key>',
-		`\t<string>${escapeXml(params.stderrLogPath)}</string>`,
+		'\t<string>/dev/null</string>',
 		'\t<key>WorkingDirectory</key>',
 		`\t<string>${escapeXml(params.workingDirectory)}</string>`,
 		// launchd starts agents with a minimal PATH; bake in the caller's PATH so
@@ -75,6 +71,76 @@ export function writePlistFile(
 	});
 }
 
+export type ServiceConfiguration = {
+	binaryPath: string;
+	port: number;
+	runAtLoad: boolean;
+};
+
+function unescapeXml(value: string): string {
+	return value
+		.replaceAll('&apos;', "'")
+		.replaceAll('&quot;', '"')
+		.replaceAll('&gt;', '>')
+		.replaceAll('&lt;', '<')
+		.replaceAll('&amp;', '&');
+}
+
+function parseServiceConfiguration(
+	plistPath: string,
+	plist: string,
+): ServiceConfiguration {
+	const binaryMatch = plist.match(
+		/<key>ProgramArguments<\/key>\s*<array>\s*<string>([\s\S]*?)<\/string>/,
+	);
+	if (binaryMatch === null || binaryMatch[1] === undefined) {
+		throw new ServiceError({
+			message: `Unable to parse binary path from ${plistPath}`,
+		});
+	}
+
+	const portMatch = plist.match(
+		/<string>--port<\/string>\s*<string>(\d+)<\/string>/,
+	);
+	if (portMatch === null || portMatch[1] === undefined) {
+		throw new ServiceError({
+			message: `Unable to parse configured port from ${plistPath}`,
+		});
+	}
+
+	const runAtLoadMatch = plist.match(
+		/<key>RunAtLoad<\/key>\s*(<true\s*\/>|<false\s*\/>)/,
+	);
+	if (runAtLoadMatch === null || runAtLoadMatch[1] === undefined) {
+		throw new ServiceError({
+			message: `Unable to parse login launch setting from ${plistPath}`,
+		});
+	}
+
+	return {
+		binaryPath: unescapeXml(binaryMatch[1]),
+		port: Number.parseInt(portMatch[1], 10),
+		runAtLoad: runAtLoadMatch[1].startsWith('<true'),
+	};
+}
+
+export function loadServiceConfiguration(
+	plistPath: string,
+): Effect.Effect<ServiceConfiguration, ServiceError> {
+	return Effect.try({
+		try: () => {
+			const plist = fs.readFileSync(plistPath, 'utf8');
+			return parseServiceConfiguration(plistPath, plist);
+		},
+		catch: (cause) =>
+			cause instanceof ServiceError
+				? cause
+				: new ServiceError({
+						message: `Unable to parse service configuration from ${plistPath}: ${errorMessage(cause)}`,
+					}),
+	});
+}
+
 export function loadConfiguredPort(
 	plistPath: string,
 ): Effect.Effect<number, ServiceError> {
@@ -84,18 +150,12 @@ export function loadConfiguredPort(
 			const match = plist.match(
 				/<string>--port<\/string>\s*<string>(\d+)<\/string>/,
 			);
-			if (match === null) {
+			if (match === null || match[1] === undefined) {
 				throw new ServiceError({
 					message: `Unable to parse configured port from ${plistPath}`,
 				});
 			}
-			const portValue = match[1];
-			if (portValue === undefined) {
-				throw new ServiceError({
-					message: `Unable to parse configured port from ${plistPath}`,
-				});
-			}
-			return Number.parseInt(portValue, 10);
+			return Number.parseInt(match[1], 10);
 		},
 		catch: (cause) =>
 			cause instanceof ServiceError

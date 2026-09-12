@@ -1,40 +1,67 @@
 import { Effect } from 'effect';
-import { Command } from 'effect/unstable/cli';
-import { ensureMacOs } from '#/lib/service/environment.ts';
-import { isServiceLoaded, SERVICE_LABEL } from '#/lib/service/launchctl.ts';
-import { installAndBootstrap } from '#/lib/service/lifecycle.ts';
+import { Command, Flag } from 'effect/unstable/cli';
+import {
+	ensureMacOs,
+	getServiceStartCommand,
+	validatePort,
+} from '#/lib/service/environment.ts';
+import {
+	ensureServiceDirectories,
+	getServicePaths,
+} from '#/lib/service/paths.ts';
+import { startManagedServer } from '#/lib/service/process.ts';
 import { portOption, writeLines } from './shared.ts';
 
-function runStart(port: number) {
-	return Effect.gen(function* () {
-		yield* ensureMacOs();
-
-		const loaded = yield* isServiceLoaded();
-		if (loaded) {
-			writeLines([
-				'service already started',
-				`label: ${SERVICE_LABEL}`,
-				'hint: run `oagent service restart` to apply changes',
-			]);
-			return;
-		}
-
-		const result = yield* installAndBootstrap(port);
-
-		writeLines([
-			'service started',
-			`label: ${SERVICE_LABEL}`,
-			`port: ${result.port}`,
-			`plist: ${result.paths.plistPath}`,
-			`jsonl log: ${result.paths.jsonlLogPath}`,
-		]);
-	});
+function getServeArgs(params: {
+	port: number;
+	portless: boolean;
+}): ReadonlyArray<string> {
+	const portlessArgs = params.portless ? ['--portless'] : [];
+	return [
+		'serve',
+		'--port',
+		String(params.port),
+		...portlessArgs,
+		'--log-level',
+		'none',
+	];
 }
 
-export const start = Command.make('start', { port: portOption }, (params) =>
-	runStart(params.port),
-).pipe(
-	Command.withDescription(
-		'Install and start the launchd background service (no-op if already running)',
-	),
-);
+export const start = Command.make(
+	'start',
+	{
+		port: portOption,
+		portless: Flag.Boolean('portless').pipe(
+			Flag.withDefault(false),
+			Flag.withDescription('Register the server with the portless proxy'),
+		),
+	},
+	(params) =>
+		Effect.gen(function* () {
+			yield* ensureMacOs();
+			yield* validatePort(params.port);
+
+			const startCommand = yield* getServiceStartCommand();
+			const paths = yield* getServicePaths();
+			yield* ensureServiceDirectories(paths);
+
+			const result = yield* startManagedServer({
+				command: [
+					...startCommand,
+					...getServeArgs({
+						port: params.port,
+						portless: params.portless,
+					}),
+				],
+				pidPath: paths.pidPath,
+			});
+
+			writeLines([
+				result.started
+					? 'oagent serve started in the background'
+					: 'oagent serve is already running',
+				`pid: ${result.pid}`,
+				`port: ${params.port}`,
+			]);
+		}),
+).pipe(Command.withDescription('Start oagent serve in the background'));

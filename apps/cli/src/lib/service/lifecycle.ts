@@ -12,7 +12,6 @@ import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	getLaunchctlDomain,
 	isNotLoaded,
-	parseServicePid,
 	runLaunchctl,
 	SERVICE_LABEL,
 	type ServicePaths,
@@ -23,26 +22,33 @@ import {
 } from '#/lib/service/paths.ts';
 import {
 	createPlistXml,
-	loadConfiguredPort,
+	loadServiceConfiguration,
 	writePlistFile,
 } from '#/lib/service/plist.ts';
+import { loadManagedServerStatus } from '#/lib/service/process.ts';
 
 export type ServiceStatus =
 	| {
 			installed: false;
 			loaded: false;
-			pid: undefined;
+			pid: number | undefined;
+			binaryPath: undefined;
+			runAtLoad: false;
+			port: undefined;
 			paths: ServicePaths;
 	  }
 	| {
 			installed: true;
 			loaded: boolean;
 			pid: number | undefined;
+			binaryPath: string;
+			runAtLoad: boolean;
 			port: number;
 			paths: ServicePaths;
 	  };
 
 export type InstallResult = {
+	binaryPath: string;
 	port: number;
 	paths: ServicePaths;
 };
@@ -58,17 +64,21 @@ export function loadServiceStatus(): Effect.Effect<
 		const paths = yield* getServicePaths();
 		const domain = yield* getLaunchctlDomain();
 		const installed = fs.existsSync(paths.plistPath);
+		const managedServer = yield* loadManagedServerStatus(paths.pidPath);
 
 		if (!installed) {
 			return {
 				installed: false,
 				loaded: false,
-				pid: undefined,
+				pid: managedServer.pid,
+				binaryPath: undefined,
+				runAtLoad: false,
+				port: undefined,
 				paths,
 			};
 		}
 
-		const port = yield* loadConfiguredPort(paths.plistPath);
+		const configuration = yield* loadServiceConfiguration(paths.plistPath);
 
 		const printResult = yield* runLaunchctl([
 			'print',
@@ -79,8 +89,10 @@ export function loadServiceStatus(): Effect.Effect<
 			return {
 				installed: true,
 				loaded: false,
-				pid: undefined,
-				port,
+				pid: managedServer.pid,
+				binaryPath: configuration.binaryPath,
+				runAtLoad: configuration.runAtLoad,
+				port: configuration.port,
 				paths,
 			};
 		}
@@ -96,8 +108,10 @@ export function loadServiceStatus(): Effect.Effect<
 		return {
 			installed: true,
 			loaded: true,
-			pid: parseServicePid(printResult.stdout),
-			port,
+			pid: managedServer.pid,
+			binaryPath: configuration.binaryPath,
+			runAtLoad: configuration.runAtLoad,
+			port: configuration.port,
 			paths,
 		};
 	});
@@ -117,9 +131,6 @@ export function installAndBootstrap(port: number) {
 		const plistXml = createPlistXml({
 			binaryPath,
 			port: validatedPort,
-			jsonlLogPath: paths.jsonlLogPath,
-			stdoutLogPath: paths.stdoutLogPath,
-			stderrLogPath: paths.stderrLogPath,
 			pathEnv,
 			workingDirectory,
 		});
@@ -139,6 +150,6 @@ export function installAndBootstrap(port: number) {
 			);
 		}
 
-		return { port: validatedPort, paths };
+		return { binaryPath, port: validatedPort, paths };
 	});
 }

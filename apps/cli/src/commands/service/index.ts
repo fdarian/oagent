@@ -1,12 +1,14 @@
 import { Command } from 'effect/unstable/cli';
 import type { Version } from '#/lib/misc.ts';
+import { install } from './install.ts';
 import { restart } from './restart.ts';
 import { start } from './start.ts';
 import { status } from './status.ts';
 import { stop } from './stop.ts';
+import { uninstall } from './uninstall.ts';
 
 export const serviceCmd = (_version: Version) =>
 	Command.make('service').pipe(
 		Command.withDescription('Manage the macOS launchd background service'),
-		Command.withSubcommands([start, restart, status, stop]),
+		Command.withSubcommands([start, install, restart, status, stop, uninstall]),
 	);
