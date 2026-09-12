@@ -10,8 +10,8 @@ function runStop() {
 	return Effect.gen(function* () {
 		yield* ensureMacOs();
 		const paths = yield* getServicePaths();
-		const server = yield* stopManagedServer(paths.pidPath);
 		const launchdStopped = yield* bootoutService(paths);
+		const server = yield* stopManagedServer(paths.pidPath);
 		const wasRunning = server.stopped || launchdStopped;
 
 		writeLines([

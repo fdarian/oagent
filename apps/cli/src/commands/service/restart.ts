@@ -12,8 +12,8 @@ function runRestart(port: number) {
 		yield* ensureMacOs();
 
 		const paths = yield* getServicePaths();
-		yield* stopManagedServer(paths.pidPath);
 		yield* bootoutService(paths);
+		yield* stopManagedServer(paths.pidPath);
 
 		const result = yield* installAndBootstrap(port);
 
