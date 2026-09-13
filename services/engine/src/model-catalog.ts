@@ -4,7 +4,7 @@ import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
+export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
 export type ModelEntry = { id: string; label?: string };
 

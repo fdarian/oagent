@@ -2,9 +2,10 @@ import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
-import { Harnesses } from '../harnesses.ts';
+import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
+import { Settings } from '../settings.ts';
 
 type ReasoningEffort =
 	| 'minimal'
@@ -33,10 +34,24 @@ function normalizeReasoningEffort(
 }
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+const harnessesOutput = v.array(
+	v.object({
+		backend: backendSchema,
+		binaryPath: v.string(),
+		detectedAt: v.number(),
+	}),
+);
+
+const toHarnessDto = (harness: Harness) => ({
+	backend: harness.backend,
+	binaryPath: harness.binaryPath,
+	detectedAt: harness.detectedAt.getTime(),
+});
 
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
 	const harnesses = yield* Harnesses;
+	const settings = yield* Settings;
 	const modelCatalog = yield* ModelCatalog;
 
 	return {
@@ -259,7 +274,7 @@ const program = Effect.gen(function* () {
 					)
 					.output(v.object({ minutes: v.number() })),
 				(opt) => {
-					jobs.setSetting(
+					settings.setSetting(
 						'start_timeout_ms',
 						String(opt.input.minutes * 60000),
 					);
@@ -268,55 +283,29 @@ const program = Effect.gen(function* () {
 			),
 			getCodexHome: yield* createHandler(
 				os.input(v.void_()).output(v.object({ home: v.optional(v.string()) })),
-				() => Effect.succeed({ home: jobs.getCodexHome() }),
+				() => Effect.succeed({ home: settings.getCodexHome() }),
 			),
 			setCodexHome: yield* createHandler(
 				os
 					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
 					.output(v.object({ home: v.optional(v.string()) })),
 				(opt) => {
-					jobs.setCodexHome(opt.input.home);
-					return Effect.succeed({ home: jobs.getCodexHome() });
+					settings.setCodexHome(opt.input.home);
+					return Effect.succeed({ home: settings.getCodexHome() });
 				},
 			),
 		},
 		harnesses: {
 			list: yield* createHandler(
-				os.input(v.void_()).output(
-					v.array(
-						v.object({
-							backend: backendSchema,
-							binaryPath: v.string(),
-							detectedAt: v.number(),
-						}),
-					),
-				),
+				os.input(v.void_()).output(harnessesOutput),
 				Effect.fn(function* () {
-					const detected = yield* harnesses.list();
-					return detected.map((harness) => ({
-						backend: harness.backend,
-						binaryPath: harness.binaryPath,
-						detectedAt: harness.detectedAt.getTime(),
-					}));
+					return (yield* harnesses.list()).map(toHarnessDto);
 				}),
 			),
 			refresh: yield* createHandler(
-				os.input(v.void_()).output(
-					v.array(
-						v.object({
-							backend: backendSchema,
-							binaryPath: v.string(),
-							detectedAt: v.number(),
-						}),
-					),
-				),
+				os.input(v.void_()).output(harnessesOutput),
 				Effect.fn(function* () {
-					const detected = yield* harnesses.refresh();
-					return detected.map((harness) => ({
-						backend: harness.backend,
-						binaryPath: harness.binaryPath,
-						detectedAt: harness.detectedAt.getTime(),
-					}));
+					return (yield* harnesses.refresh()).map(toHarnessDto);
 				}),
 			),
 			check: yield* createHandler(

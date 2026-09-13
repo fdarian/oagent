@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer } from 'effect';
 import {
 	type AcpAgent,
@@ -6,8 +5,7 @@ import {
 	type AcpConfigOption,
 	makeAcpAgent,
 } from './acp-agent.ts';
-import { Db } from './db/client.ts';
-import * as schema from './db/schema.ts';
+import { Settings } from './settings.ts';
 
 const CODEX_ACP_BINARY = 'codex-acp';
 
@@ -84,17 +82,9 @@ function getCodexModelId(model: string): string {
 
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
-		const dbService = yield* Db;
+		const settings = yield* Settings;
 		const acpAgent = yield* makeAcpAgent(
-			createCodexAcpConfig(() => {
-				const row = dbService.db
-					.select()
-					.from(schema.settings)
-					.where(eq(schema.settings.key, 'codex_home'))
-					.limit(1)
-					.get();
-				return row?.value;
-			}),
+			createCodexAcpConfig(settings.getCodexHome),
 		);
 		return {
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
@@ -126,6 +116,6 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(
-		Layer.provide(Db.layer),
+		Layer.provide(Settings.layer),
 	);
 }

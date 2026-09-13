@@ -12,6 +12,7 @@ import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
+import { Settings } from './settings.ts';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
 	jobId: Schema.String,
@@ -80,6 +81,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const cursor = yield* Cursor;
 		const grok = yield* Grok;
 		const codex = yield* Codex;
+		const settings = yield* Settings;
 		const { db } = yield* Db;
 
 		const resolveModel = (
@@ -786,50 +788,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return true;
 		};
 
-		const getSetting = (key: string): string | undefined => {
-			const row = db
-				.select()
-				.from(schema.settings)
-				.where(eq(schema.settings.key, key))
-				.limit(1)
-				.get();
-			if (row === undefined) {
-				return undefined;
-			}
-			return row.value;
-		};
-
-		const setSetting = (key: string, value: string) => {
-			const now = new Date();
-			db.insert(schema.settings)
-				.values({
-					key,
-					value,
-					created_at: now,
-					updated_at: now,
-				})
-				.onConflictDoUpdate({
-					target: schema.settings.key,
-					set: {
-						value,
-						updated_at: now,
-					},
-				})
-				.run();
-		};
-
-		const getCodexHome = (): string | undefined => getSetting('codex_home');
-
-		const setCodexHome = (value: string | null | undefined) => {
-			if (value === undefined || value === null || value.trim() === '') {
-				db.delete(schema.settings)
-					.where(eq(schema.settings.key, 'codex_home'))
-					.run();
-				return;
-			}
-			setSetting('codex_home', value);
-		};
-
 		/**
 		 * Max time the start tool blocks waiting for a job before returning a running handle.
 		 *
@@ -842,7 +800,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		 * resume handle if it elapses, rather than trying to detect the client's limit.
 		 */
 		const getStartTimeoutMs = (): number => {
-			const raw = getSetting('start_timeout_ms');
+			const raw = settings.getSetting('start_timeout_ms');
 			if (raw === undefined) {
 				return DEFAULT_START_TIMEOUT_MS;
 			}
@@ -865,10 +823,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listAliases,
 			saveAlias,
 			deleteAlias,
-			getSetting,
-			setSetting,
-			getCodexHome,
-			setCodexHome,
 			getStartTimeoutMs,
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
@@ -888,6 +842,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		Layer.provide(Cursor.layer),
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
+		Layer.provide(Settings.layer),
 		Layer.provide(Db.layer),
 	);
 }

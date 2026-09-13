@@ -6,25 +6,25 @@ import { createCursorAcpConfig, resolveCursorBinary } from './cursor.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { createGrokAcpConfig, resolveGrokBinary } from './grok.ts';
+import type { Backend } from './model-catalog.ts';
 import { createOpenCodeAcpConfig, resolveOpenCodeBinary } from './opencode.ts';
-
-export type HarnessBackend = 'opencode' | 'cursor' | 'grok' | 'codex';
+import { Settings } from './settings.ts';
 
 export type Harness = {
-	backend: HarnessBackend;
+	backend: Backend;
 	binaryPath: string;
 	detectedAt: Date;
 };
 
 export type HarnessCheckResult =
 	| {
-			backend: HarnessBackend;
+			backend: Backend;
 			ok: true;
 			agentName?: string;
 			agentVersion?: string;
 	  }
 	| {
-			backend: HarnessBackend;
+			backend: Backend;
 			ok: false;
 			message: string;
 	  };
@@ -38,7 +38,7 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 ) {}
 
 type HarnessDefinition = {
-	backend: HarnessBackend;
+	backend: Backend;
 	resolveBinary: () => string | undefined;
 	createConfig: () => AcpAgentConfig;
 };
@@ -48,16 +48,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 	{
 		make: Effect.gen(function* () {
 			const dbService = yield* Db;
-
-			const getCodexHome = (): string | undefined => {
-				const row = dbService.db
-					.select()
-					.from(schema.settings)
-					.where(eq(schema.settings.key, 'codex_home'))
-					.limit(1)
-					.get();
-				return row?.value;
-			};
+			const settings = yield* Settings;
 
 			const definitions: ReadonlyArray<HarnessDefinition> = [
 				{
@@ -78,7 +69,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				{
 					backend: 'codex',
 					resolveBinary: resolveCodexBinary,
-					createConfig: () => createCodexAcpConfig(getCodexHome),
+					createConfig: () => createCodexAcpConfig(settings.getCodexHome),
 				},
 			];
 
@@ -152,7 +143,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				});
 
 			const check = (
-				backend: HarnessBackend,
+				backend: Backend,
 			): Effect.Effect<HarnessCheckResult, HarnessesError> =>
 				Effect.gen(function* () {
 					const detected = yield* list();
@@ -195,5 +186,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 ) {
 	static readonly layer = Layer.effect(Harnesses, Harnesses.make).pipe(
 		Layer.provide(Db.layer),
+		Layer.provide(Settings.layer),
 	);
 }

@@ -13,6 +13,7 @@ import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
+import { Settings } from './settings.ts';
 
 const PORTLESS_ALIAS = 'oagent';
 const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
@@ -269,5 +270,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(Jobs.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(ModelCatalog.layer),
+		Layer.provide(Settings.layer),
 	);
 }

@@ -31,3 +31,4 @@ export {
 export { createEngineHandler } from './rpc/handler.ts';
 export type { EngineRouter } from './rpc/router.ts';
 export { Engine } from './server.ts';
+export { Settings } from './settings.ts';
