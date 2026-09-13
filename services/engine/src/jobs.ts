@@ -58,6 +58,15 @@ type JobsChange = {
 	status?: string;
 };
 
+type ReasoningEffort =
+	| 'minimal'
+	| 'low'
+	| 'medium'
+	| 'high'
+	| 'xhigh'
+	| 'max'
+	| 'ultra';
+
 const TIMEOUT_DEFAULT_MS = 50_000;
 
 export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
@@ -76,7 +85,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const resolveModel = (
 			model: string,
 		): Effect.Effect<
-			{ backend: string; modelId: string },
+			{
+				backend: string;
+				modelId: string;
+				reasoningEffort: string | undefined;
+			},
 			ModelResolutionError,
 			never
 		> =>
@@ -96,7 +109,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
 						});
 					}
-					return { backend, modelId };
+					return { backend, modelId, reasoningEffort: undefined };
 				}
 
 				const alias = db
@@ -113,7 +126,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				return { backend: alias.backend, modelId: alias.model_id };
+				return {
+					backend: alias.backend,
+					modelId: alias.model_id,
+					reasoningEffort: alias.reasoning_effort ?? undefined,
+				};
 			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
@@ -350,7 +367,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				const { backend, modelId: rest } = yield* resolveModel(model);
+				const resolvedModel = yield* resolveModel(model);
+				const backend = resolvedModel.backend;
+				const rest = resolvedModel.modelId;
+				const reasoningEffort = resolvedModel.reasoningEffort;
 
 				const jobRow = db
 					.insert(schema.jobs)
@@ -409,6 +429,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						return codex.runTurn({
 							prompt: input.prompt,
 							model: rest,
+							reasoningEffort,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
 							onEvent,
@@ -715,6 +736,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			name: string;
 			backend: string;
 			model_id: string;
+			reasoning_effort?: ReasoningEffort | null;
 			description?: string | null;
 		}) => {
 			const now = new Date();
@@ -723,6 +745,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					name: input.name,
 					backend: input.backend,
 					model_id: input.model_id,
+					reasoning_effort: input.reasoning_effort ?? null,
 					description: input.description ?? null,
 					created_at: now,
 					updated_at: now,
@@ -732,6 +755,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					set: {
 						backend: input.backend,
 						model_id: input.model_id,
+						reasoning_effort: input.reasoning_effort ?? null,
 						description: input.description ?? null,
 						updated_at: now,
 					},
@@ -741,6 +765,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				name: input.name,
 				backend: input.backend,
 				model_id: input.model_id,
+				reasoning_effort: input.reasoning_effort ?? undefined,
 				description: input.description ?? undefined,
 			};
 		};

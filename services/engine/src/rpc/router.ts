@@ -5,6 +5,32 @@ import * as v from 'valibot';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 
+type ReasoningEffort =
+	| 'minimal'
+	| 'low'
+	| 'medium'
+	| 'high'
+	| 'xhigh'
+	| 'max'
+	| 'ultra';
+
+function normalizeReasoningEffort(
+	value: string | null,
+): ReasoningEffort | undefined {
+	if (
+		value === 'minimal' ||
+		value === 'low' ||
+		value === 'medium' ||
+		value === 'high' ||
+		value === 'xhigh' ||
+		value === 'max' ||
+		value === 'ultra'
+	) {
+		return value;
+	}
+	return undefined;
+}
+
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
 	const modelCatalog = yield* ModelCatalog;
@@ -123,6 +149,17 @@ const program = Effect.gen(function* () {
 							name: v.string(),
 							backend: v.string(),
 							model_id: v.string(),
+							reasoning_effort: v.optional(
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
+							),
 							description: v.optional(v.string()),
 						}),
 					),
@@ -133,6 +170,7 @@ const program = Effect.gen(function* () {
 							name: row.name,
 							backend: row.backend,
 							model_id: row.model_id,
+							reasoning_effort: normalizeReasoningEffort(row.reasoning_effort),
 							description: row.description ?? undefined,
 						})),
 					);
@@ -145,6 +183,17 @@ const program = Effect.gen(function* () {
 							name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
 							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
 							model_id: v.pipe(v.string(), v.nonEmpty()),
+							reasoning_effort: v.optional(
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
+							),
 							description: v.optional(v.string()),
 						}),
 					)
@@ -153,6 +202,17 @@ const program = Effect.gen(function* () {
 							name: v.string(),
 							backend: v.string(),
 							model_id: v.string(),
+							reasoning_effort: v.optional(
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
+							),
 							description: v.optional(v.string()),
 						}),
 					),
@@ -162,6 +222,7 @@ const program = Effect.gen(function* () {
 							name: opt.input.name,
 							backend: opt.input.backend,
 							model_id: opt.input.model_id,
+							reasoning_effort: opt.input.reasoning_effort,
 							description: opt.input.description,
 						}),
 					);

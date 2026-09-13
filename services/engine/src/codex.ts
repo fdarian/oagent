@@ -23,24 +23,43 @@ const CODEX_ACP_CONFIG = (() => {
 
 function getCodexConfigOptions(
 	model: string | undefined,
+	reasoningEffort: string | undefined,
 ): ReadonlyArray<AcpConfigOption> | undefined {
 	if (model === undefined) return undefined;
 
 	const openingBracket = model.lastIndexOf('[');
 	if (openingBracket === -1 || !model.endsWith(']')) {
-		return [{ configId: 'model', value: model }];
+		return [
+			{ configId: 'model', value: model },
+			...(reasoningEffort !== undefined
+				? [{ configId: 'reasoning_effort', value: reasoningEffort }]
+				: []),
+		];
 	}
 
 	const modelId = model.slice(0, openingBracket);
-	const reasoningEffort = model.slice(openingBracket + 1, -1);
-	if (modelId.length === 0 || reasoningEffort.length === 0) {
+	const suffixEffort = model.slice(openingBracket + 1, -1);
+	if (modelId.length === 0 || suffixEffort.length === 0) {
 		return [{ configId: 'model', value: model }];
 	}
+	const selectedEffort =
+		reasoningEffort !== undefined ? reasoningEffort : suffixEffort;
 
 	return [
 		{ configId: 'model', value: modelId },
-		{ configId: 'reasoning_effort', value: reasoningEffort },
+		...(selectedEffort !== undefined && selectedEffort.length > 0
+			? [{ configId: 'reasoning_effort', value: selectedEffort }]
+			: []),
 	];
+}
+
+function getCodexModelId(model: string): string {
+	const openingBracket = model.lastIndexOf('[');
+	if (openingBracket === -1 || !model.endsWith(']')) return model;
+
+	const modelId = model.slice(0, openingBracket);
+	const reasoningEffort = model.slice(openingBracket + 1, -1);
+	return modelId.length === 0 || reasoningEffort.length === 0 ? model : modelId;
 }
 
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
@@ -48,14 +67,30 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 		const acpAgent = yield* AcpAgent;
 		return {
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
-				const configOptions = getCodexConfigOptions(input.model);
+				const configOptions = getCodexConfigOptions(
+					input.model,
+					input.reasoningEffort,
+				);
 				return acpAgent.runTurn({
 					...input,
 					model: undefined,
 					configOptions,
 				});
 			},
-			listModels: () => acpAgent.listModels(),
+			listModels: () =>
+				acpAgent.listModels().pipe(
+					Effect.map((models) => {
+						const seen = new Set<string>();
+						const result: Array<{ id: string }> = [];
+						for (const model of models) {
+							const id = getCodexModelId(model.id);
+							if (seen.has(id)) continue;
+							seen.add(id);
+							result.push({ id });
+						}
+						return result;
+					}),
+				),
 		} satisfies AcpAgent['Service'];
 	}),
 }) {
