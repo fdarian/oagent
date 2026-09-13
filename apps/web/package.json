@@ -47,7 +47,7 @@
 		"zod": "^4.4.3"
 	},
 	"devDependencies": {
-		"@oagent/common": "workspace:*",
+		"@effect/platform-bun": "catalog:",
 		"@oagent/config": "workspace:*",
 		"@oagent/engine": "workspace:*",
 		"@orpc/server": "latest",
@@ -58,11 +58,12 @@
 		"@types/bun": "^1.3.14",
 		"@types/react": "^19.2.15",
 		"@types/react-dom": "^19.2.3",
-		"typescript": "catalog:",
 		"@vitejs/plugin-react": "^6.0.2",
 		"agentation": "^3.0.2",
+		"devsess": "^0.3.0",
 		"storybook": "^10.4.1",
 		"tailwindcss": "^4.3.0",
+		"typescript": "catalog:",
 		"vite": "^8.0.14"
 	}
 }

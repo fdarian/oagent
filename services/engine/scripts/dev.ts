@@ -1,35 +1,45 @@
-import { join } from 'node:path';
-import { defineDevCli } from '@oagent/common';
+import * as BunRuntime from '@effect/platform-bun/BunRuntime';
+import * as BunServices from '@effect/platform-bun/BunServices';
+import {
+	CurrentSession,
+	DevSessions,
+	getStickyPort,
+	publishRunning,
+} from 'devsess';
 import { Effect } from 'effect';
+import { Command } from 'effect/unstable/cli';
 import enginePackage from '../package.json' with { type: 'json' };
 import { Engine } from '../src/server.ts';
 
-const REPO_ROOT = join(import.meta.dirname, '../../..');
+const engine = Command.make(enginePackage.name, {}, () =>
+	Effect.gen(function* () {
+		const session = yield* CurrentSession;
+		yield* Effect.logInfo(`[dev] session: ${session.name}`);
 
-const main = defineDevCli({
-	name: enginePackage.name,
-	dir: join(REPO_ROOT, 'services/engine'),
-	run: (ctx) =>
-		Effect.gen(function* () {
-			const s = yield* ctx.session;
-			yield* Effect.logInfo(`[dev] session: ${s.name}`);
+		process.env.OAGENT_DB_PATH = yield* session.path('sqlite.db');
 
-			process.env.OAGENT_DB_PATH = yield* s.path('sqlite.db');
+		const port = yield* getStickyPort(session);
+		const url = `http://127.0.0.1:${port}`;
+		yield* Effect.logInfo(`[dev] port: ${port} (${url})`);
 
-			const port = yield* ctx.getStickyPort();
-			const url = `http://127.0.0.1:${port}`;
-			yield* Effect.logInfo(`[dev] port: ${port} (${url})`);
+		yield* publishRunning({ url });
 
-			yield* ctx.publishRunning({ url });
+		yield* Effect.gen(function* () {
+			const service = yield* Engine;
+			yield* service.startServer({
+				port,
+				serverInfo: { name: 'oagent', version: enginePackage.version },
+			});
+		}).pipe(Effect.provide(Engine.layer));
+	}).pipe(Effect.provide(CurrentSession.layer)),
+);
 
-			yield* Effect.gen(function* () {
-				const engine = yield* Engine;
-				yield* engine.startServer({
-					port,
-					serverInfo: { name: 'oagent', version: enginePackage.version },
-				});
-			}).pipe(Effect.provide(Engine.layer));
-		}),
-});
+const program = Command.run({ version: enginePackage.version })(engine);
 
-main(process.argv);
+BunRuntime.runMain()(
+	program.pipe(
+		Effect.provide(DevSessions.layer),
+		Effect.provide(BunServices.layer),
+		Effect.scoped,
+	),
+);
