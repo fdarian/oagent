@@ -215,11 +215,11 @@ export class Harnesses extends Context.Service<Harnesses>()(
 							}
 						}
 						reader.releaseLock();
-						const stderr =
-							process.stderr instanceof ReadableStream
-								? await new Response(process.stderr).text()
-								: '';
-						const message = stripAnsi(`${output}\n${stderr}`).trim();
+						let message = stripAnsi(output).trim();
+						if (process.stderr instanceof ReadableStream) {
+							const stderr = await new Response(process.stderr).text();
+							message = stripAnsi(`${output}\n${stderr}`).trim();
+						}
 						throw new Error(
 							message.length > 0
 								? message
