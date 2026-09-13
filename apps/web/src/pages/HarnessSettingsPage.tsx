@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import { useEffect, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
@@ -9,10 +10,12 @@ import { Spinner } from '@/components/ui/spinner';
 import {
 	type Backend,
 	HARNESS_NAMES,
+	harnessAuthStatusQueryOptions,
 	harnessesQueryOptions,
 	isBackend,
 } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
+import { queryKeys } from '@/lib/query-keys';
 
 export function HarnessSettingsPage() {
 	const params = useParams({ from: '/settings/harnesses/$backend' });
@@ -35,6 +38,9 @@ export function HarnessSettingsPage() {
 			orpc.settings.setCodexHome({ home }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ['settings', 'codexHome'] });
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.harnessAuthStatus('codex'),
+			});
 			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
 		},
 	});
@@ -175,6 +181,8 @@ export function HarnessSettingsPage() {
 
 					{backend === 'codex' ? (
 						<div className="grid max-w-xl gap-4 border-t border-border pt-8">
+							<CodexAuthSection />
+
 							<div>
 								<h2 className="text-base font-medium text-foreground">
 									Codex home
@@ -236,6 +244,205 @@ export function HarnessSettingsPage() {
 					) : null}
 				</div>
 			</main>
+		</div>
+	);
+}
+
+function CodexAuthSection() {
+	const queryClient = useQueryClient();
+	const [loginPrompt, setLoginPrompt] = useState<
+		{ verificationUrl: string; userCode: string } | undefined
+	>(undefined);
+	const authStatusQuery = useQuery(harnessAuthStatusQueryOptions('codex'));
+	const loginMutation = useMutation({
+		mutationFn: () => orpc.harnesses.login({ backend: 'codex' }),
+		onSuccess: (result) => {
+			if (result.status === 'pending') {
+				setLoginPrompt({
+					verificationUrl: result.verificationUrl,
+					userCode: result.userCode,
+				});
+				queryClient.setQueryData(queryKeys.harnessAuthStatus('codex'), {
+					backend: 'codex',
+					status: 'pending',
+				});
+				return;
+			}
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.harnessAuthStatus('codex'),
+			});
+		},
+	});
+	const cancelMutation = useMutation({
+		mutationFn: () => orpc.harnesses.cancelLogin({ backend: 'codex' }),
+		onSuccess: () => {
+			setLoginPrompt(undefined);
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.harnessAuthStatus('codex'),
+			});
+		},
+	});
+	const logoutMutation = useMutation({
+		mutationFn: () => orpc.harnesses.logout({ backend: 'codex' }),
+		onSuccess: () => {
+			setLoginPrompt(undefined);
+			queryClient.invalidateQueries({
+				queryKey: queryKeys.harnessAuthStatus('codex'),
+			});
+			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
+		},
+	});
+
+	useEffect(() => {
+		const status = authStatusQuery.data?.status;
+		if (status === 'logged_in') {
+			setLoginPrompt(undefined);
+			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
+		}
+		if (status === 'logged_out' && !loginMutation.isPending) {
+			setLoginPrompt(undefined);
+		}
+	}, [authStatusQuery.data?.status, loginMutation.isPending, queryClient]);
+
+	const status = authStatusQuery.data?.status;
+	const authStatus = authStatusQuery.data;
+	const isLoginBusy =
+		loginMutation.isPending ||
+		cancelMutation.isPending ||
+		logoutMutation.isPending;
+
+	return (
+		<div className="grid gap-4 border-b border-border pb-8">
+			<div>
+				<h2 className="text-base font-medium text-foreground">Codex login</h2>
+				<p className="mt-1 text-sm text-muted-foreground">
+					Authentication for the currently effective{' '}
+					<code className="font-mono">CODEX_HOME</code>.
+				</p>
+			</div>
+
+			{authStatusQuery.isLoading ? (
+				<p className="text-sm text-muted-foreground">
+					Checking Codex login status…
+				</p>
+			) : authStatusQuery.isError ? (
+				<Alert variant="destructive">
+					<AlertTitle>Could not check login status</AlertTitle>
+					<AlertDescription>{authStatusQuery.error.message}</AlertDescription>
+				</Alert>
+			) : authStatus?.status === 'logged_in' ? (
+				<div className="flex flex-col items-start gap-3">
+					<div className="flex items-center gap-2">
+						<Badge variant="outline">Logged in</Badge>
+						{authStatus.method !== undefined ? (
+							<span className="text-sm text-muted-foreground">
+								via {authStatus.method}
+							</span>
+						) : null}
+					</div>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={isLoginBusy}
+						onClick={() => logoutMutation.mutate()}
+					>
+						{logoutMutation.isPending ? (
+							<>
+								<Spinner />
+								Logging out…
+							</>
+						) : (
+							'Log out'
+						)}
+					</Button>
+				</div>
+			) : status === 'pending' ? (
+				<div className="grid gap-3">
+					<Alert>
+						<AlertTitle>Login is waiting for confirmation</AlertTitle>
+						<AlertDescription>
+							{loginPrompt === undefined ? (
+								'Complete the Codex device login if it is still open.'
+							) : (
+								<div className="grid gap-3">
+									<a
+										href={loginPrompt.verificationUrl}
+										target="_blank"
+										rel="noreferrer"
+										className="text-primary underline underline-offset-4"
+									>
+										Open the Codex login page
+									</a>
+									<Field>
+										<FieldLabel htmlFor="codex-login-code">
+											Device code
+										</FieldLabel>
+										<Input
+											id="codex-login-code"
+											readOnly
+											value={loginPrompt.userCode}
+											className="font-mono"
+											onFocus={(event) => event.currentTarget.select()}
+										/>
+									</Field>
+								</div>
+							)}
+						</AlertDescription>
+					</Alert>
+					<Button
+						type="button"
+						variant="outline"
+						disabled={isLoginBusy}
+						onClick={() => cancelMutation.mutate()}
+					>
+						{cancelMutation.isPending ? 'Cancelling…' : 'Cancel login'}
+					</Button>
+				</div>
+			) : status === 'unsupported' ? (
+				<Alert>
+					<AlertTitle>Login is unavailable</AlertTitle>
+					<AlertDescription>
+						The Codex CLI is not available on the engine host.
+					</AlertDescription>
+				</Alert>
+			) : (
+				<div className="flex flex-col items-start gap-3">
+					<Badge variant="outline">Logged out</Badge>
+					<Button
+						type="button"
+						disabled={isLoginBusy}
+						onClick={() => loginMutation.mutate()}
+					>
+						{loginMutation.isPending ? (
+							<>
+								<Spinner />
+								Starting login…
+							</>
+						) : (
+							'Log in'
+						)}
+					</Button>
+				</div>
+			)}
+
+			{loginMutation.isError ? (
+				<Alert variant="destructive">
+					<AlertTitle>Login failed</AlertTitle>
+					<AlertDescription>{loginMutation.error.message}</AlertDescription>
+				</Alert>
+			) : null}
+			{cancelMutation.isError || logoutMutation.isError ? (
+				<Alert variant="destructive">
+					<AlertTitle>Could not update login</AlertTitle>
+					<AlertDescription>
+						{cancelMutation.isError
+							? cancelMutation.error.message
+							: logoutMutation.isError
+								? logoutMutation.error.message
+								: null}
+					</AlertDescription>
+				</Alert>
+			) : null}
 		</div>
 	);
 }

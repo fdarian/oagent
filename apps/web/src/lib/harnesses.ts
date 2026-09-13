@@ -27,3 +27,16 @@ export function harnessesQueryOptions() {
 		staleTime: Infinity,
 	};
 }
+
+export function harnessAuthStatusQueryOptions(backend: Backend) {
+	return {
+		queryKey: queryKeys.harnessAuthStatus(backend),
+		queryFn: () => orpc.harnesses.authStatus({ backend }),
+		enabled: backend === 'codex',
+		refetchInterval: (query: {
+			state: {
+				data: Awaited<ReturnType<typeof orpc.harnesses.authStatus>> | undefined;
+			};
+		}) => (query.state.data?.status === 'pending' ? 2_000 : false),
+	};
+}
