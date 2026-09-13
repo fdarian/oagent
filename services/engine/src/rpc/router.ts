@@ -357,11 +357,7 @@ const program = Effect.gen(function* () {
 					.input(v.object({ backend: backendSchema }))
 					.output(harnessAuthStatusOutput),
 				Effect.fn(function* (opt) {
-					const status = yield* harnesses.authStatus(opt.input.backend);
-					if (status.backend === 'codex' && status.status === 'logged_in') {
-						yield* modelCatalog.invalidate('codex');
-					}
-					return status;
+					return yield* harnesses.authStatus(opt.input.backend);
 				}),
 			),
 			login: yield* createHandler(
@@ -386,9 +382,6 @@ const program = Effect.gen(function* () {
 					.output(harnessAuthStatusOutput),
 				Effect.fn(function* (opt) {
 					const status = yield* harnesses.logout(opt.input.backend);
-					if (status.backend === 'codex' && status.status === 'logged_out') {
-						yield* modelCatalog.invalidate('codex');
-					}
 					return status;
 				}),
 			),

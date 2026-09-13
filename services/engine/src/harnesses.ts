@@ -10,7 +10,7 @@ import { createCursorAcpConfig, resolveCursorBinary } from './cursor.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { createGrokAcpConfig, resolveGrokBinary } from './grok.ts';
-import type { Backend } from './model-catalog.ts';
+import { type Backend, ModelCatalog } from './model-catalog.ts';
 import { createOpenCodeAcpConfig, resolveOpenCodeBinary } from './opencode.ts';
 import { Settings } from './settings.ts';
 
@@ -131,6 +131,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 		make: Effect.gen(function* () {
 			const dbService = yield* Db;
 			const settings = yield* Settings;
+			const modelCatalog = yield* ModelCatalog;
 			const pendingLogins = new Map<Backend, PendingLogin>();
 
 			const createCodexEnv = (includeNoBrowser = false) => {
@@ -229,19 +230,36 @@ export class Harnesses extends Context.Service<Harnesses>()(
 					catch: (cause) => new HarnessesError({ operation: 'login', cause }),
 				});
 
+			const drainLoginStream = (stream: ReadableStream<Uint8Array>) =>
+				Effect.tryPromise({
+					try: () => new Response(stream).arrayBuffer(),
+					catch: (cause) => new HarnessesError({ operation: 'login', cause }),
+				}).pipe(
+					Effect.map(() => undefined),
+					Effect.catch(() => Effect.succeed(undefined)),
+				);
+
 			const monitorLogin = (backend: Backend, process: Bun.Subprocess) =>
-				Effect.raceFirst(
-					Effect.tryPromise({
-						try: () => process.exited,
-						catch: (cause) => new HarnessesError({ operation: 'login', cause }),
-					}),
-					Effect.sleep(AUTH_LOGIN_TIMEOUT_MS),
-				).pipe(
-					Effect.tap(() =>
-						Effect.sync(() => {
-							if (process.exitCode === null) process.kill();
+				Effect.gen(function* () {
+					const stdout = process.stdout;
+					if (stdout instanceof ReadableStream) {
+						yield* Effect.forkScoped(drainLoginStream(stdout));
+					}
+					const stderr = process.stderr;
+					if (stderr instanceof ReadableStream) {
+						yield* Effect.forkScoped(drainLoginStream(stderr));
+					}
+					const exitCode = yield* Effect.raceFirst(
+						Effect.tryPromise({
+							try: () => process.exited,
+							catch: (cause) =>
+								new HarnessesError({ operation: 'login', cause }),
 						}),
-					),
+						Effect.sleep(AUTH_LOGIN_TIMEOUT_MS),
+					);
+					if (exitCode === 0) yield* modelCatalog.invalidate('codex');
+					if (process.exitCode === null) process.kill();
+				}).pipe(
 					Effect.catch(() => Effect.succeed(undefined)),
 					Effect.ensuring(
 						Effect.sync(() => clearPendingLogin(backend, process)),
@@ -460,7 +478,9 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						),
 					);
 					pendingLogins.set(backend, { process: childProcess, prompt });
-					yield* Effect.forkDetach(monitorLogin(backend, childProcess));
+					yield* Effect.forkDetach(
+						Effect.scoped(monitorLogin(backend, childProcess)),
+					);
 					return { backend, status: 'pending', ...prompt };
 				});
 
@@ -499,6 +519,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 							cause: new Error(message),
 						});
 					}
+					yield* modelCatalog.invalidate('codex');
 					return { backend, status: 'logged_out' };
 				});
 
@@ -517,5 +538,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 	static readonly layer = Layer.effect(Harnesses, Harnesses.make).pipe(
 		Layer.provide(Db.layer),
 		Layer.provide(Settings.layer),
+		Layer.provideMerge(ModelCatalog.layer),
 	);
 }

@@ -11,7 +11,6 @@ import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
-import { ModelCatalog } from './model-catalog.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import { Settings } from './settings.ts';
 
@@ -269,7 +268,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
 		Layer.provide(Harnesses.layer),
-		Layer.provide(ModelCatalog.layer),
 		Layer.provide(Settings.layer),
 	);
 }

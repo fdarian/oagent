@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -250,6 +250,7 @@ export function HarnessSettingsPage() {
 
 function CodexAuthSection() {
 	const queryClient = useQueryClient();
+	const previousAuthStatus = useRef<string | undefined>(undefined);
 	const [loginPrompt, setLoginPrompt] = useState<
 		{ verificationUrl: string; userCode: string } | undefined
 	>(undefined);
@@ -295,13 +296,16 @@ function CodexAuthSection() {
 
 	useEffect(() => {
 		const status = authStatusQuery.data?.status;
+		if (previousAuthStatus.current === 'pending' && status === 'logged_in') {
+			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
+		}
 		if (status === 'logged_in') {
 			setLoginPrompt(undefined);
-			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
 		}
 		if (status === 'logged_out' && !loginMutation.isPending) {
 			setLoginPrompt(undefined);
 		}
+		previousAuthStatus.current = status;
 	}, [authStatusQuery.data?.status, loginMutation.isPending, queryClient]);
 
 	const status = authStatusQuery.data?.status;
