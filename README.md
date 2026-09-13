@@ -111,6 +111,8 @@ oagent service install
 
 Then connect Claude Code the same way as in [Getting Started](#getting-started). The port defaults to `17777` and can be overridden with `--port <n>`. Manage the login item and its running server with `oagent service stop|restart|status|uninstall`.
 
+The background service writes JSONL logs to `~/Library/Logs/com.fdarian.oagent/oagent-YYYY-MM-DD.jsonl` and removes files older than 30 days. Set `OAGENT_LOG_DIR` to choose another log directory. Foreground `serve` can use the same daily directory format with `--log-dir <path>`, or keep the existing single-file `--log-file <path>` mode.
+
 ### Web UI
 
 In `serve`/`service` (HTTP) mode, open `http://localhost:17777/` in a browser to see the live job list. Click a job to see its event timeline — text deltas, tool calls, status updates, and errors — streamed live via SSE while the job is running. The UI is a React 19 + Vite + Tailwind v4 SPA, embedded into the standalone binary at build time.
@@ -122,7 +124,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 ### Commands
 
 **server**
-- `oagent serve` — run the HTTP server in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
+- `oagent serve` — run the HTTP server in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`, `--log-dir <path>`.
 - **jobs**
   - `oagent jobs list` — list recent jobs. Flags: `--engine-url`, `--limit` (default 10), `--format` (`toon`|`json`).
   - `oagent jobs wait <jobId>` — block until a job reaches a terminal state. Flags: `--engine-url`, `--timeout-ms` (default 3h).
@@ -133,7 +135,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - `oagent stdio` — run as a per-session stdio MCP server.
 
 **services** (macOS launchd, auto-starts on login)
-- `oagent service start` — start `oagent serve` quietly in the background. Flags: `--port` (default 17777), `--portless`.
+- `oagent service start` — start `oagent serve` in the background with daily JSONL logging. Flags: `--port` (default 17777), `--portless`.
 - `oagent service install` — install the macOS login item that runs `oagent service start`. Flag: `--port` (default 17777).
 - `oagent service stop` — stop the running server while retaining the login item.
 - `oagent service restart` — reinstall and restart the login item. Flag: `--port` (default 17777).
