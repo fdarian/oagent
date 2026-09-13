@@ -2,6 +2,7 @@ import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
+import { Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 
@@ -31,8 +32,11 @@ function normalizeReasoningEffort(
 	return undefined;
 }
 
+const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
+	const harnesses = yield* Harnesses;
 	const modelCatalog = yield* ModelCatalog;
 
 	return {
@@ -262,13 +266,86 @@ const program = Effect.gen(function* () {
 					return Effect.succeed({ minutes: opt.input.minutes });
 				},
 			),
+			getCodexHome: yield* createHandler(
+				os.input(v.void_()).output(v.object({ home: v.optional(v.string()) })),
+				() => Effect.succeed({ home: jobs.getCodexHome() }),
+			),
+			setCodexHome: yield* createHandler(
+				os
+					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
+					.output(v.object({ home: v.optional(v.string()) })),
+				(opt) => {
+					jobs.setCodexHome(opt.input.home);
+					return Effect.succeed({ home: jobs.getCodexHome() });
+				},
+			),
+		},
+		harnesses: {
+			list: yield* createHandler(
+				os.input(v.void_()).output(
+					v.array(
+						v.object({
+							backend: backendSchema,
+							binaryPath: v.string(),
+							detectedAt: v.number(),
+						}),
+					),
+				),
+				Effect.fn(function* () {
+					const detected = yield* harnesses.list();
+					return detected.map((harness) => ({
+						backend: harness.backend,
+						binaryPath: harness.binaryPath,
+						detectedAt: harness.detectedAt.getTime(),
+					}));
+				}),
+			),
+			refresh: yield* createHandler(
+				os.input(v.void_()).output(
+					v.array(
+						v.object({
+							backend: backendSchema,
+							binaryPath: v.string(),
+							detectedAt: v.number(),
+						}),
+					),
+				),
+				Effect.fn(function* () {
+					const detected = yield* harnesses.refresh();
+					return detected.map((harness) => ({
+						backend: harness.backend,
+						binaryPath: harness.binaryPath,
+						detectedAt: harness.detectedAt.getTime(),
+					}));
+				}),
+			),
+			check: yield* createHandler(
+				os.input(v.object({ backend: backendSchema })).output(
+					v.union([
+						v.object({
+							backend: backendSchema,
+							ok: v.literal(true),
+							agentName: v.optional(v.string()),
+							agentVersion: v.optional(v.string()),
+						}),
+						v.object({
+							backend: backendSchema,
+							ok: v.literal(false),
+							message: v.string(),
+						}),
+					]),
+				),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.check(opt.input.backend);
+				}),
+			),
 		},
 		models: {
 			list: yield* createHandler(
 				os
 					.input(
 						v.object({
-							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+							backend: backendSchema,
 						}),
 					)
 					.output(

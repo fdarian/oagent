@@ -818,6 +818,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				.run();
 		};
 
+		const getCodexHome = (): string | undefined => getSetting('codex_home');
+
+		const setCodexHome = (value: string | null | undefined) => {
+			if (value === undefined || value === null || value.trim() === '') {
+				db.delete(schema.settings)
+					.where(eq(schema.settings.key, 'codex_home'))
+					.run();
+				return;
+			}
+			setSetting('codex_home', value);
+		};
+
 		/**
 		 * Max time the start tool blocks waiting for a job before returning a running handle.
 		 *
@@ -855,6 +867,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			deleteAlias,
 			getSetting,
 			setSetting,
+			getCodexHome,
+			setCodexHome,
 			getStartTimeoutMs,
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db

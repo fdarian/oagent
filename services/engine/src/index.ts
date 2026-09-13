@@ -7,6 +7,7 @@ export type {
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
+export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';

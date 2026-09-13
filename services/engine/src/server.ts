@@ -4,6 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { loadConfig } from './config.ts';
+import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
@@ -35,7 +36,17 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
+		yield* Effect.forkDetach(
+			harnesses
+				.refresh()
+				.pipe(
+					Effect.catchTag('HarnessesError', (error) =>
+						Effect.logWarning(`harness detection failed: ${error.message}`),
+					),
+				),
+		);
 
 		return {
 			mcp: {
@@ -256,6 +267,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(Harnesses.layer),
 		Layer.provide(ModelCatalog.layer),
 	);
 }
