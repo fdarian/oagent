@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { parseLoginPrompt } from './harnesses.ts';
 
 const capturedLoginOutput = [
+	'',
 	'Welcome to Codex [v\u001b[90m0.154.0\u001b[0m]',
 	"\u001b[90mOpenAI's command-line coding agent\u001b[0m",
 	'',
@@ -14,6 +15,7 @@ const capturedLoginOutput = [
 	'   \u001b[94mAWXP-X8EU4\u001b[0m',
 	'',
 	'\u001b[90mContinue only if you started this login in Codex. If a website or another person gave you this code, cancel.\u001b[0m',
+	'',
 	'',
 ].join('\n');
 
