@@ -98,11 +98,13 @@ export function HarnessSettingsPage() {
 
 	const canSaveCodexHome =
 		!codexHomeMutation.isPending && !codexHomeQuery.isLoading;
+	const trimmedCodexHome = codexHome.trim();
+	const draftCodexHome = trimmedCodexHome === '' ? undefined : trimmedCodexHome;
+	const isCodexHomeChanged = draftCodexHome !== codexHomeQuery.data?.home;
 
 	function saveCodexHome() {
-		if (!canSaveCodexHome) return;
-		const trimmedHome = codexHome.trim();
-		codexHomeMutation.mutate(trimmedHome === '' ? undefined : trimmedHome);
+		if (!canSaveCodexHome || !isCodexHomeChanged) return;
+		codexHomeMutation.mutate(draftCodexHome);
 	}
 
 	function clearCodexHome() {
@@ -219,7 +221,7 @@ export function HarnessSettingsPage() {
 									<div className="flex gap-2">
 										<Button
 											type="button"
-											disabled={!canSaveCodexHome}
+											disabled={!canSaveCodexHome || !isCodexHomeChanged}
 											onClick={saveCodexHome}
 										>
 											{codexHomeMutation.isPending ? 'Saving…' : 'Save'}
