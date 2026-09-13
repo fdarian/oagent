@@ -1,6 +1,7 @@
 import fs from 'node:fs';
-import { getOagentBaseDir } from '@oagent/engine';
+import { getOagentHomeDir } from '@oagent/engine';
 import { Effect } from 'effect';
+import type { ConfigError } from 'effect/Config';
 import type { Path } from 'effect/Path';
 import {
 	ensureMacOs,
@@ -55,7 +56,7 @@ export type InstallResult = {
 
 export function loadServiceStatus(): Effect.Effect<
 	ServiceStatus,
-	ServiceError,
+	ServiceError | ConfigError,
 	Path
 > {
 	return Effect.gen(function* () {
@@ -124,7 +125,7 @@ export function installAndBootstrap(port: number) {
 		const binaryPath = yield* getServiceBinaryPath();
 		const pathEnv = yield* getCallerPath();
 		const paths = yield* getServicePaths();
-		const workingDirectory = yield* getOagentBaseDir;
+		const homeDirectory = yield* getOagentHomeDir;
 
 		yield* ensureServiceDirectories(paths);
 
@@ -132,7 +133,7 @@ export function installAndBootstrap(port: number) {
 			binaryPath,
 			port: validatedPort,
 			pathEnv,
-			workingDirectory,
+			homeDirectory,
 		});
 		yield* writePlistFile(paths.plistPath, plistXml);
 

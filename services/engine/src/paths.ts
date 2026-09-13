@@ -5,12 +5,33 @@ import { FileSystem } from 'effect/FileSystem';
 import { Path } from 'effect/Path';
 import type { PlatformError } from 'effect/PlatformError';
 
-export const getOagentBaseDir: Effect.Effect<string, never, Path> = Effect.gen(
-	function* () {
+export const getOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
 		const path = yield* Path;
-		return path.join(os.homedir(), '.config', 'oagent');
-	},
-);
+		const defaultHomeDir = path.join(os.homedir(), '.config', 'oagent');
+		const configuredHomeDir = Option.getOrNull(
+			yield* Config.String('OAGENT_HOME_DIR').pipe(Config.option),
+		);
+		const homeDir =
+			configuredHomeDir === null || configuredHomeDir.length === 0
+				? defaultHomeDir
+				: configuredHomeDir;
+		return path.resolve(homeDir);
+	});
+
+export const getOagentConfigPath: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
+		const path = yield* Path;
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'config.json');
+	});
+
+export const getOagentDbPath: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
+		const path = yield* Path;
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'sqlite.db');
+	});
 
 export const getOagentLogsDir: Effect.Effect<string, ConfigError, Path> =
 	Effect.gen(function* () {
@@ -18,11 +39,12 @@ export const getOagentLogsDir: Effect.Effect<string, ConfigError, Path> =
 		const pathFromEnv = Option.getOrNull(
 			yield* Config.String('OAGENT_LOG_DIR').pipe(Config.option),
 		);
-		if (pathFromEnv) {
+		if (pathFromEnv !== null && pathFromEnv.length > 0) {
 			return path.resolve(pathFromEnv);
 		}
 
-		return path.join(os.homedir(), 'Library', 'Logs', 'com.fdarian.oagent');
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'logs');
 	});
 
 export const ensureOagentLogsDir: Effect.Effect<

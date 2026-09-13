@@ -27,6 +27,10 @@ oagent looks up `portless` via `$PATH` after binding and calls `portless alias o
 
 When the process exits the route is removed automatically (`portless alias --remove oagent`).
 
+To enable portless without passing the flag, set `"portless": true` in the
+oagent home directory's `config.json`. The home directory is selected with
+`OAGENT_HOME_DIR` and defaults to `~/.config/oagent`.
+
 ## Register with Claude Code
 
 ```sh

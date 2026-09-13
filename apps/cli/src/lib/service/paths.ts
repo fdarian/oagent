@@ -1,6 +1,7 @@
 import os from 'node:os';
-import { getOagentBaseDir } from '@oagent/engine';
+import { getOagentHomeDir } from '@oagent/engine';
 import { Effect } from 'effect';
+import type { ConfigError } from 'effect/Config';
 import { FileSystem } from 'effect/FileSystem';
 import { Path } from 'effect/Path';
 import { ServiceError } from '#/lib/service/errors.ts';
@@ -10,14 +11,18 @@ import {
 	type ServicePaths,
 } from '#/lib/service/launchctl.ts';
 
-export function getServicePaths(): Effect.Effect<ServicePaths, never, Path> {
+export function getServicePaths(): Effect.Effect<
+	ServicePaths,
+	ConfigError,
+	Path
+> {
 	return Effect.gen(function* () {
 		const path = yield* Path;
-		const baseDir = yield* getOagentBaseDir;
+		const homeDir = yield* getOagentHomeDir;
 		const launchAgentsDir = path.join(os.homedir(), 'Library', 'LaunchAgents');
 		return {
 			plistPath: path.join(launchAgentsDir, `${SERVICE_LABEL}.plist`),
-			pidPath: path.join(baseDir, 'service.pid'),
+			pidPath: path.join(homeDir, 'service.pid'),
 			launchAgentsDir,
 		};
 	});

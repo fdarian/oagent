@@ -62,7 +62,7 @@ The architecture is designed to support multiple ACP backends. While the primary
 
 The `Db` service provides a scoped, managed interface to the SQLite database.
 - **Responsibilities**:
-  - **Connection Management**: It opens the SQLite database file (located at `~/.config/oagent/sqlite.db`) with specific pragmas like `WAL` mode, `foreign_keys`, and `busy_timeout` to ensure reliability and performance.
+  - **Connection Management**: It opens the SQLite database file at `$OAGENT_HOME_DIR/sqlite.db` (default `~/.config/oagent/sqlite.db`) with specific pragmas like `WAL` mode, `foreign_keys`, and `busy_timeout` to ensure reliability and performance.
   - **Lifecycle Management**: Using Effect's `Scope`, it ensures that the database connection is properly closed when the service is no longer needed.
   - **Migration Execution**: On startup, it runs the embedded migration runner (`migrate.ts`) to ensure the database schema is up to date. It also performs "orphan recovery," marking any jobs that were in a `running` state at shutdown as `error`, preventing them from being stuck in limbo.
 

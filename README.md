@@ -111,7 +111,7 @@ oagent service install
 
 Then connect Claude Code the same way as in [Getting Started](#getting-started). The port defaults to `17777` and can be overridden with `--port <n>`. Manage the login item and its running server with `oagent service stop|restart|status|uninstall`.
 
-The background service writes JSONL logs to `~/Library/Logs/com.fdarian.oagent/oagent.jsonl` and prunes entries older than 30 days. Set `OAGENT_LOG_DIR` to choose another log directory. Foreground `serve` can write to any path with `--log-file <path>`.
+The background service writes JSONL logs to `$OAGENT_HOME_DIR/logs/oagent.jsonl` (default `~/.config/oagent/logs`) and prunes entries older than 30 days. Set `OAGENT_LOG_DIR` to choose another log directory. Foreground `serve` can write to any path with `--log-file <path>`.
 
 ### Web UI
 
@@ -196,7 +196,7 @@ The following are intentionally not supported:
 - Streaming partial output — you only see the aggregated text on `done`
 - No auth — the HTTP daemon binds to `127.0.0.1` only; no token is required or checked
 
-Jobs and events persist to SQLite at `~/.config/oagent/sqlite.db` (override with `OAGENT_DB_PATH`). On restart, any jobs that were in-flight are marked as errored automatically.
+Jobs and events persist to SQLite at `$OAGENT_HOME_DIR/sqlite.db` (default `~/.config/oagent/sqlite.db`). Set `OAGENT_HOME_DIR` to choose the oagent home directory; its `config.json` and `logs/` paths are derived from the same directory. On restart, any jobs that were in-flight are marked as errored automatically.
 
 ## Diagnostics
 

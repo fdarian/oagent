@@ -16,7 +16,7 @@ export function createPlistXml(params: {
 	binaryPath: string;
 	port: number;
 	pathEnv: string;
-	workingDirectory: string;
+	homeDirectory: string;
 }): string {
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
@@ -42,13 +42,15 @@ export function createPlistXml(params: {
 		'\t<key>StandardErrorPath</key>',
 		'\t<string>/dev/null</string>',
 		'\t<key>WorkingDirectory</key>',
-		`\t<string>${escapeXml(params.workingDirectory)}</string>`,
+		`\t<string>${escapeXml(params.homeDirectory)}</string>`,
 		// launchd starts agents with a minimal PATH; bake in the caller's PATH so
 		// the engine can spawn its ACP backends (opencode, codex-acp, …).
 		'\t<key>EnvironmentVariables</key>',
 		'\t<dict>',
 		'\t\t<key>PATH</key>',
 		`\t\t<string>${escapeXml(params.pathEnv)}</string>`,
+		'\t\t<key>OAGENT_HOME_DIR</key>',
+		`\t\t<string>${escapeXml(params.homeDirectory)}</string>`,
 		'\t</dict>',
 		'</dict>',
 		'</plist>',

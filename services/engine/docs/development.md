@@ -10,13 +10,13 @@ pnpm --filter '@oagent/engine' dev
 
 ## Sessions
 
-`pnpm dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session contains:
+`pnpm dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session is used as `OAGENT_HOME_DIR` and contains:
 
 - `sqlite.db` — engine DB
 - `logs/` — development JSONL logs
 - `sess.json` — per-session persistent state (sticky port, etc.)
 
-By default `services/engine/scripts/dev.ts` picks the most recently used session, or creates a new one with a random-noun slug on first run.
+By default `services/engine/scripts/dev.ts` picks the most recently used session, or creates a new one with a random-noun slug on first run. The session home keeps development config and data separate from the installed app; without a session `config.json`, portless stays disabled.
 
 To force a fresh session: delete the latest slug dir, or delete all of `services/engine/.data/sessions/`.
 
@@ -34,12 +34,11 @@ For probing tools on the running engine, see the `test-oagent-mcp` skill at `.cl
 
 ## Environment variables
 
-| Variable         | Default                      | Description                                                                         |
-| ---------------- | ---------------------------- | ----------------------------------------------------------------------------------- |
-| `OAGENT_DB_PATH` | `~/.config/oagent/sqlite.db` | SQLite path. `services/engine/scripts/dev.ts` sets it to the session's `sqlite.db`. |
-| `OAGENT_LOG_DIR` | `~/Library/Logs/com.fdarian.oagent` | JSONL log directory. `services/engine/scripts/dev.ts` sets it to the session's `logs/` directory. |
-| `OAGENT_CONFIG_PATH` | `~/.config/oagent/config.json` | Config file path. Optional JSON with schema-validated fields (e.g. `"portless": true`). |
+| Variable          | Default            | Description                                                                                       |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| `OAGENT_HOME_DIR` | `~/.config/oagent` | Base directory for oagent-owned files. `config.json`, `sqlite.db`, and `logs/` are derived from it. |
+| `OAGENT_LOG_DIR`  | `$OAGENT_HOME_DIR/logs` | Overrides the directory used for JSONL service logs.                                             |
 
 ## Logging
 
-`oagent service start` passes `<OAGENT_LOG_DIR>/oagent.jsonl` (or the default macOS log directory) to `serve`, which writes one JSON record per line. Entries older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
+`oagent service start` passes `<OAGENT_LOG_DIR>/oagent.jsonl` (or the default `$OAGENT_HOME_DIR/logs` directory) to `serve`, which writes one JSON record per line. Entries older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
