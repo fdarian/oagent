@@ -1,8 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { Engine } from '@oagent/engine';
-import { Effect, Logger, Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
+import { createLoggerSetup } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
 
 const webFilemap = Effect.tryPromise(
@@ -27,6 +26,7 @@ function runServe(params: {
 	port: number;
 	portless: boolean;
 	logFile: string | undefined;
+	logDir: string | undefined;
 	version: Version;
 }) {
 	const baseProgram = Effect.gen(function* () {
@@ -40,23 +40,16 @@ function runServe(params: {
 		});
 	}).pipe(Effect.provide(Engine.layer));
 
-	const loggerLayer = getLoggerLayer(params.logFile);
-
-	return baseProgram.pipe(Effect.provide(loggerLayer));
-}
-
-function getLoggerLayer(logFile: string | undefined) {
-	if (logFile !== undefined) {
-		const resolvedPath = path.resolve(logFile);
-		const logDir = path.dirname(resolvedPath);
-		fs.mkdirSync(logDir, { recursive: true });
-		const fileLogger = Logger.make((options) => {
-			const line = Logger.formatJson.log(options);
-			fs.appendFileSync(resolvedPath, `${line}\n`);
-		});
-		return Logger.layer([fileLogger]);
-	}
-	return Logger.layer([Logger.consolePretty()]);
+	return Effect.scoped(
+		Effect.gen(function* () {
+			const loggerSetup = yield* createLoggerSetup({
+				logFile: params.logFile,
+				logDir: params.logDir,
+			});
+			yield* Effect.forkScoped(loggerSetup.maintenance);
+			yield* baseProgram.pipe(Effect.provide(loggerSetup.layer));
+		}),
+	);
 }
 
 export const serveCmd = (version: Version) =>
@@ -79,12 +72,18 @@ export const serveCmd = (version: Version) =>
 					'Write Effect logs as JSONL to the given file instead of pretty console output',
 				),
 			),
+			logDir: Flag.optional(Flag.String('log-dir')).pipe(
+				Flag.withDescription(
+					'Write Effect logs as daily JSONL files in the given directory instead of pretty console output',
+				),
+			),
 		},
 		(params) =>
 			runServe({
 				port: params.port,
 				portless: params.portless,
 				logFile: Option.getOrUndefined(params.logFile),
+				logDir: Option.getOrUndefined(params.logDir),
 				version,
 			}),
 	);

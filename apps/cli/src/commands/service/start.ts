@@ -1,3 +1,4 @@
+import { getOagentLogsDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import {
@@ -15,6 +16,7 @@ import { portOption, writeLines } from './shared.ts';
 function getServeArgs(params: {
 	port: number;
 	portless: boolean;
+	logDir: string;
 }): ReadonlyArray<string> {
 	const portlessArgs = params.portless ? ['--portless'] : [];
 	return [
@@ -22,8 +24,10 @@ function getServeArgs(params: {
 		'--port',
 		String(params.port),
 		...portlessArgs,
+		'--log-dir',
+		params.logDir,
 		'--log-level',
-		'none',
+		'info',
 	];
 }
 
@@ -42,6 +46,7 @@ export const start = Command.make(
 			yield* validatePort(params.port);
 
 			const startCommand = yield* getServiceStartCommand();
+			const logDir = yield* getOagentLogsDir;
 			const paths = yield* getServicePaths();
 			yield* ensureServiceDirectories(paths);
 
@@ -51,6 +56,7 @@ export const start = Command.make(
 					...getServeArgs({
 						port: params.port,
 						portless: params.portless,
+						logDir,
 					}),
 				],
 				pidPath: paths.pidPath,
