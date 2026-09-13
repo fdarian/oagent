@@ -23,6 +23,9 @@ export { OpenCode } from './opencode.ts';
 export {
 	ensureOagentLogsDir,
 	getOagentBaseDir,
+	getOagentConfigPath,
+	getOagentDbPath,
+	getOagentHomeDir,
 	getOagentLogsDir,
 } from './paths.ts';
 export { createEngineHandler } from './rpc/handler.ts';

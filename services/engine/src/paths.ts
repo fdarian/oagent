@@ -1,27 +1,53 @@
 import os from 'node:os';
-import { Effect } from 'effect';
+import { Config, Effect, Option } from 'effect';
+import type { ConfigError } from 'effect/Config';
 import { FileSystem } from 'effect/FileSystem';
 import { Path } from 'effect/Path';
 import type { PlatformError } from 'effect/PlatformError';
 
-export const getOagentBaseDir: Effect.Effect<string, never, Path> = Effect.gen(
-	function* () {
+const resolveOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
 		const path = yield* Path;
-		return path.join(os.homedir(), '.config', 'oagent');
-	},
-);
+		const defaultHomeDir = path.join(os.homedir(), '.config', 'oagent');
+		const configuredHomeDir = Option.getOrNull(
+			yield* Config.String('OAGENT_HOME_DIR').pipe(Config.option),
+		);
+		const homeDir =
+			configuredHomeDir === null || configuredHomeDir.length === 0
+				? defaultHomeDir
+				: configuredHomeDir;
+		return path.resolve(homeDir);
+	});
 
-export const getOagentLogsDir: Effect.Effect<string, never, Path> = Effect.gen(
-	function* () {
+export const getOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
+	resolveOagentHomeDir;
+
+export const getOagentBaseDir = getOagentHomeDir;
+
+export const getOagentConfigPath: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
 		const path = yield* Path;
-		const baseDir = yield* getOagentBaseDir;
-		return path.join(baseDir, 'logs');
-	},
-);
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'config.json');
+	});
+
+export const getOagentDbPath: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
+		const path = yield* Path;
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'sqlite.db');
+	});
+
+export const getOagentLogsDir: Effect.Effect<string, ConfigError, Path> =
+	Effect.gen(function* () {
+		const path = yield* Path;
+		const homeDir = yield* getOagentHomeDir;
+		return path.join(homeDir, 'logs');
+	});
 
 export const ensureOagentLogsDir: Effect.Effect<
 	string,
-	PlatformError,
+	ConfigError | PlatformError,
 	FileSystem | Path
 > = Effect.gen(function* () {
 	const fs = yield* FileSystem;

@@ -194,7 +194,7 @@ The following are intentionally not supported:
 - Streaming partial output — you only see the aggregated text on `done`
 - No auth — the HTTP daemon binds to `127.0.0.1` only; no token is required or checked
 
-Jobs and events persist to SQLite at `~/.config/oagent/sqlite.db` (override with `OAGENT_DB_PATH`). On restart, any jobs that were in-flight are marked as errored automatically.
+Jobs and events persist to SQLite at `$OAGENT_HOME_DIR/sqlite.db` (default `~/.config/oagent/sqlite.db`). Set `OAGENT_HOME_DIR` to choose the oagent home directory; its `config.json` and `logs/` paths are derived from the same directory. On restart, any jobs that were in-flight are marked as errored automatically.
 
 ## Diagnostics
 

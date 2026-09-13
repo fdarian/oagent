@@ -17,7 +17,15 @@ export function createPlistXml(params: {
 	port: number;
 	pathEnv: string;
 	workingDirectory: string;
+	homeDirectory?: string;
 }): string {
+	const homeDirectoryEnvironment =
+		params.homeDirectory === undefined
+			? []
+			: [
+					'\t\t<key>OAGENT_HOME_DIR</key>',
+					`\t\t<string>${escapeXml(params.homeDirectory)}</string>`,
+				];
 	return [
 		'<?xml version="1.0" encoding="UTF-8"?>',
 		'<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
@@ -49,6 +57,7 @@ export function createPlistXml(params: {
 		'\t<dict>',
 		'\t\t<key>PATH</key>',
 		`\t\t<string>${escapeXml(params.pathEnv)}</string>`,
+		...homeDirectoryEnvironment,
 		'\t</dict>',
 		'</dict>',
 		'</plist>',

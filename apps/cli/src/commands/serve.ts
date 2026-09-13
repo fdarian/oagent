@@ -71,7 +71,7 @@ export const serveCmd = (version: Version) =>
 			portless: Flag.Boolean('portless').pipe(
 				Flag.withDefault(false),
 				Flag.withDescription(
-					'Register with portless proxy for https://oagent.localhost access (also settable in ~/.config/oagent/config.json via "portless": true)',
+					'Register with portless proxy for https://oagent.localhost access (also settable in $OAGENT_HOME_DIR/config.json, default ~/.config/oagent/config.json, via "portless": true)',
 				),
 			),
 			logFile: Flag.optional(Flag.String('log-file')).pipe(

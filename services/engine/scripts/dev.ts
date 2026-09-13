@@ -16,7 +16,7 @@ const engine = Command.make(enginePackage.name, {}, () =>
 		const session = yield* CurrentSession;
 		yield* Effect.logInfo(`[dev] session: ${session.name}`);
 
-		process.env.OAGENT_DB_PATH = yield* session.path('sqlite.db');
+		process.env.OAGENT_HOME_DIR = yield* session.path('.');
 
 		const port = yield* getStickyPort(session);
 		const url = `http://127.0.0.1:${port}`;
