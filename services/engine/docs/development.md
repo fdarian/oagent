@@ -42,4 +42,4 @@ For probing tools on the running engine, see the `test-oagent-mcp` skill at `.cl
 
 ## Logging
 
-`oagent service start` passes the resolved `OAGENT_LOG_DIR` (or the default macOS log directory) to `serve`, which writes one JSON record per line to `oagent-YYYY-MM-DD.jsonl`. Files older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
+`oagent service start` passes `<OAGENT_LOG_DIR>/oagent.jsonl` (or the default macOS log directory) to `serve`, which writes one JSON record per line. Entries older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
