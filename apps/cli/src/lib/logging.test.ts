@@ -1,28 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { filterExpiredLogFiles, getDailyLogFileName } from './logging.ts';
-
-describe('oagent log file naming', () => {
-	test('uses the local calendar date', () => {
-		const date = new Date(2026, 8, 13, 23, 59, 58);
-
-		expect(getDailyLogFileName(date)).toBe('oagent-2026-09-13.jsonl');
-	});
-});
+import { filterRetainedLogLines } from './logging.ts';
 
 describe('oagent log retention', () => {
-	test('filters only dated files older than 30 days', () => {
-		const now = new Date(2026, 8, 13, 12);
-		const fileNames = [
-			'oagent-2026-08-13.jsonl',
-			'oagent-2026-08-14.jsonl',
-			'oagent-2026-09-13.jsonl',
-			'oagent-2026-09-14.jsonl',
-			'oagent-2026-99-99.jsonl',
-			'other-2026-08-01.jsonl',
-		];
+	test('keeps recent records and reports dropped unparseable lines', () => {
+		const now = new Date('2026-09-13T12:00:00.000Z');
+		const recentLine =
+			'{"timestamp":"2026-08-14T12:00:00.001Z","message":"recent"}';
+		const oldLine = '{"timestamp":"2026-08-14T11:59:59.999Z","message":"old"}';
+		const futureLine =
+			'{"timestamp":"2026-09-14T12:00:00.000Z","message":"future"}';
+		const result = filterRetainedLogLines(
+			[recentLine, oldLine, futureLine, 'not json', '{"message":"missing"}'],
+			now,
+		);
 
-		expect(filterExpiredLogFiles(fileNames, now)).toEqual([
-			'oagent-2026-08-13.jsonl',
-		]);
+		expect(result.lines).toEqual([recentLine, futureLine]);
+		expect(result.unparseableCount).toBe(2);
 	});
 });

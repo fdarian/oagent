@@ -26,7 +26,6 @@ function runServe(params: {
 	port: number;
 	portless: boolean;
 	logFile: string | undefined;
-	logDir: string | undefined;
 	version: Version;
 }) {
 	const baseProgram = Effect.gen(function* () {
@@ -40,10 +39,7 @@ function runServe(params: {
 		});
 	}).pipe(Effect.provide(Engine.layer));
 
-	const loggerLayer = getLoggerLayer({
-		logFile: params.logFile,
-		logDir: params.logDir,
-	});
+	const loggerLayer = getLoggerLayer(params.logFile);
 
 	return baseProgram.pipe(Effect.provide(loggerLayer));
 }
@@ -68,18 +64,12 @@ export const serveCmd = (version: Version) =>
 					'Write Effect logs as JSONL to the given file instead of pretty console output',
 				),
 			),
-			logDir: Flag.optional(Flag.String('log-dir')).pipe(
-				Flag.withDescription(
-					'Write Effect logs as daily JSONL files in the given directory instead of pretty console output',
-				),
-			),
 		},
 		(params) =>
 			runServe({
 				port: params.port,
 				portless: params.portless,
 				logFile: Option.getOrUndefined(params.logFile),
-				logDir: Option.getOrUndefined(params.logDir),
 				version,
 			}),
 	);

@@ -1,10 +1,14 @@
-import { Effect, Layer, Logger, Schema } from 'effect';
+import { Effect, Exit, Layer, Logger, Schema, Semaphore } from 'effect';
+import type { FileSystem as FileSystemService } from 'effect/FileSystem';
 import { FileSystem } from 'effect/FileSystem';
 import { Path } from 'effect/Path';
 import type { Scope } from 'effect/Scope';
 
-const dailyLogFilePattern = /^oagent-(\d{4}-\d{2}-\d{2})\.jsonl$/;
 const retentionDays = 30;
+const logRecordSchema = Schema.fromJsonString(
+	Schema.Struct({ timestamp: Schema.String }),
+);
+const decodeLogRecord = Schema.decodeUnknownExit(logRecordSchema);
 
 export class LoggingError extends Schema.TaggedError<LoggingError>()(
 	'LoggingError',
@@ -18,105 +22,120 @@ export class LoggingError extends Schema.TaggedError<LoggingError>()(
 	}
 }
 
-type JsonLogEntry = {
-	readonly date: Date;
-	readonly line: string;
-};
-
-function formatLocalDate(date: Date): string {
-	const year = String(date.getFullYear()).padStart(4, '0');
-	const month = String(date.getMonth() + 1).padStart(2, '0');
-	const day = String(date.getDate()).padStart(2, '0');
-	return `${year}-${month}-${day}`;
-}
-
-export function getDailyLogFileName(date: Date): string {
-	return `oagent-${formatLocalDate(date)}.jsonl`;
-}
-
-function getCapturedLogDate(fileName: string): string | undefined {
-	const match = fileName.match(dailyLogFilePattern);
-	return match === null ? undefined : match[1];
-}
-
-function getRetentionCutoffDate(now: Date): string {
-	const cutoff = new Date(now.getTime());
-	cutoff.setHours(0, 0, 0, 0);
-	cutoff.setDate(cutoff.getDate() - retentionDays);
-	return formatLocalDate(cutoff);
-}
-
-export function filterExpiredLogFiles(
-	fileNames: ReadonlyArray<string>,
-	now: Date,
-): ReadonlyArray<string> {
-	const cutoffDate = getRetentionCutoffDate(now);
-	return fileNames.filter((fileName) => {
-		const fileDate = getCapturedLogDate(fileName);
-		return fileDate !== undefined && fileDate < cutoffDate;
-	});
-}
-
 function loggingError(operation: string, cause: unknown): LoggingError {
 	return new LoggingError({ operation, cause });
 }
 
-function ensureLogDirectory(
-	logDir: string,
-): Effect.Effect<string, LoggingError, FileSystem | Path> {
-	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		const path = yield* Path;
-		const resolvedDir = path.resolve(logDir);
-		yield* fs
-			.makeDirectory(resolvedDir, { recursive: true })
-			.pipe(
-				Effect.mapError((cause) =>
-					loggingError(`Failed to create log directory ${resolvedDir}`, cause),
-				),
-			);
-		return resolvedDir;
-	});
+function getRetentionCutoff(now: Date): number {
+	const cutoff = new Date(now.getTime());
+	cutoff.setDate(cutoff.getDate() - retentionDays);
+	return cutoff.getTime();
 }
 
-function pruneExpiredLogFiles(
-	logDir: string,
-): Effect.Effect<void, LoggingError, FileSystem | Path> {
+function getLogTimestamp(line: string): number | undefined {
+	const decoded = decodeLogRecord(line);
+	if (Exit.isFailure(decoded)) {
+		return undefined;
+	}
+
+	const timestamp = Date.parse(decoded.value.timestamp);
+	return Number.isNaN(timestamp) ? undefined : timestamp;
+}
+
+export function filterRetainedLogLines(
+	lines: ReadonlyArray<string>,
+	now: Date,
+): {
+	readonly lines: ReadonlyArray<string>;
+	readonly unparseableCount: number;
+} {
+	const cutoff = getRetentionCutoff(now);
+	const retainedLines: Array<string> = [];
+	let unparseableCount = 0;
+
+	for (const line of lines) {
+		const timestamp = getLogTimestamp(line);
+		if (timestamp === undefined) {
+			unparseableCount += 1;
+			continue;
+		}
+		if (timestamp >= cutoff) {
+			retainedLines.push(line);
+		}
+	}
+
+	return { lines: retainedLines, unparseableCount };
+}
+
+function splitLogLines(content: string): ReadonlyArray<string> {
+	const lines = content.split('\n');
+	if (lines.length > 0 && lines[lines.length - 1] === '') {
+		return lines.slice(0, -1);
+	}
+	return lines;
+}
+
+function formatLogLines(lines: ReadonlyArray<string>): string {
+	return lines.length === 0 ? '' : `${lines.join('\n')}\n`;
+}
+
+function pruneLogFile(
+	logFile: string,
+): Effect.Effect<number, LoggingError, FileSystem | Path> {
 	return Effect.gen(function* () {
 		const fs = yield* FileSystem;
 		const path = yield* Path;
-		const fileNames = yield* fs
-			.readDirectory(logDir)
+		const content = yield* fs
+			.readFileString(logFile)
+			.pipe(
+				Effect.catchTag('PlatformError', (error) =>
+					error.reason._tag === 'NotFound'
+						? Effect.succeed(undefined)
+						: Effect.fail(
+								loggingError(`Failed to read log file ${logFile}`, error),
+							),
+				),
+			);
+		if (content === undefined) {
+			return 0;
+		}
+
+		const result = filterRetainedLogLines(splitLogLines(content), new Date());
+		const tempFile = yield* fs
+			.makeTempFile({
+				directory: path.dirname(logFile),
+				prefix: '.oagent-',
+				suffix: '.jsonl.tmp',
+			})
 			.pipe(
 				Effect.mapError((cause) =>
-					loggingError(`Failed to read log directory ${logDir}`, cause),
+					loggingError(
+						`Failed to create temporary log file for ${logFile}`,
+						cause,
+					),
 				),
 			);
 
-		for (const fileName of filterExpiredLogFiles(fileNames, new Date())) {
-			const filePath = path.join(logDir, fileName);
-			const info = yield* fs
-				.stat(filePath)
-				.pipe(
-					Effect.mapError((cause) =>
-						loggingError(`Failed to inspect log file ${filePath}`, cause),
-					),
-				);
-			if (info.type !== 'File') {
-				continue;
-			}
-
+		yield* Effect.gen(function* () {
 			yield* fs
-				.remove(filePath, { force: true })
+				.writeFileString(tempFile, formatLogLines(result.lines))
 				.pipe(
 					Effect.mapError((cause) =>
-						loggingError(
-							`Failed to remove expired log file ${filePath}`,
-							cause,
-						),
+						loggingError(`Failed to rewrite log file ${logFile}`, cause),
 					),
 				);
-		}
+			yield* fs
+				.rename(tempFile, logFile)
+				.pipe(
+					Effect.mapError((cause) =>
+						loggingError(`Failed to replace log file ${logFile}`, cause),
+					),
+				);
+		}).pipe(
+			Effect.ensuring(fs.remove(tempFile, { force: true }).pipe(Effect.ignore)),
+		);
+
+		return result.unparseableCount;
 	});
 }
 
@@ -126,78 +145,63 @@ function millisecondsUntilNextLocalMidnight(now: Date): number {
 	return Math.max(nextMidnight.getTime() - now.getTime(), 1);
 }
 
+function logUnparseableWarning(
+	logFile: string,
+	unparseableCount: number,
+): Effect.Effect<void> {
+	return unparseableCount === 0
+		? Effect.void
+		: Effect.logWarning(
+				`Dropped ${unparseableCount} log line(s) with an invalid timestamp while pruning ${logFile}`,
+			);
+}
+
 function pruneWithWarning(
-	logDir: string,
+	logFile: string,
+	semaphore: Semaphore.Semaphore,
 ): Effect.Effect<void, never, FileSystem | Path> {
-	return pruneExpiredLogFiles(logDir).pipe(
+	return semaphore.withPermit(pruneLogFile(logFile)).pipe(
 		Effect.catchTag('LoggingError', (error) =>
-			Effect.logWarning(`Failed to prune old oagent logs in ${logDir}`, error),
+			Effect.logWarning(
+				`Failed to prune old oagent logs in ${logFile}`,
+				error,
+			).pipe(Effect.as(0)),
+		),
+		Effect.flatMap((unparseableCount) =>
+			logUnparseableWarning(logFile, unparseableCount),
 		),
 	);
 }
 
 function createDailyPruneLoop(
-	logDir: string,
+	logFile: string,
+	semaphore: Semaphore.Semaphore,
 ): Effect.Effect<never, never, FileSystem | Path> {
 	return Effect.gen(function* () {
 		while (true) {
 			yield* Effect.sleep(millisecondsUntilNextLocalMidnight(new Date()));
-			yield* pruneWithWarning(logDir);
+			yield* pruneWithWarning(logFile, semaphore);
 		}
 	});
 }
 
-function createDailyBatchedLogger(
-	logDir: string,
-): Effect.Effect<
-	Logger.Logger<unknown, void>,
-	never,
-	Scope | FileSystem | Path
-> {
-	return Effect.gen(function* () {
-		const fs = yield* FileSystem;
-		const path = yield* Path;
-		const jsonLogger = Logger.make(
-			(options): JsonLogEntry => ({
-				date: options.date,
-				line: Logger.formatJson.log(options),
-			}),
-		);
-
-		return yield* Logger.batched(jsonLogger, {
-			window: 100,
-			flush: (entries) =>
-				Effect.gen(function* () {
-					const linesByPath = new Map<string, Array<string>>();
-
-					for (const entry of entries) {
-						const filePath = path.join(logDir, getDailyLogFileName(entry.date));
-						const lines = linesByPath.get(filePath);
-						if (lines === undefined) {
-							linesByPath.set(filePath, [entry.line]);
-							continue;
-						}
-						lines.push(entry.line);
-					}
-
-					for (const filePath of linesByPath.keys()) {
-						const lines = linesByPath.get(filePath);
-						if (lines === undefined) {
-							continue;
-						}
-
-						yield* fs
-							.writeFileString(filePath, `${lines.join('\n')}\n`, {
-								flag: 'a',
-							})
-							.pipe(Effect.ignore);
-					}
-				}),
-		});
+function createBatchedFileLogger(
+	logFile: string,
+	semaphore: Semaphore.Semaphore,
+	fs: FileSystemService,
+): Effect.Effect<Logger.Logger<unknown, void>, never, Scope> {
+	return Logger.batched(Logger.formatJson, {
+		window: 100,
+		flush: (lines) =>
+			semaphore.withPermit(
+				fs
+					.writeFileString(logFile, `${lines.join('\n')}\n`, { flag: 'a' })
+					.pipe(Effect.ignore),
+			),
 	});
 }
 
-function createSingleFileLayer(
+function createFileLayer(
 	logFile: string,
 ): Layer.Layer<never, LoggingError, FileSystem | Path> {
 	return Layer.unwrap(
@@ -216,42 +220,35 @@ function createSingleFileLayer(
 					),
 				);
 
-			const fileLogger = yield* Logger.toFile(Logger.formatJson, resolvedPath, {
-				batchWindow: 100,
-			}).pipe(
-				Effect.mapError((cause) =>
-					loggingError(`Failed to open log file ${resolvedPath}`, cause),
+			const semaphore = yield* Semaphore.make(1);
+			const logger = yield* createBatchedFileLogger(
+				resolvedPath,
+				semaphore,
+				fs,
+			);
+			const loggerLayer = Logger.layer([Logger.tracerLogger, logger]);
+
+			yield* semaphore.withPermit(pruneLogFile(resolvedPath)).pipe(
+				Effect.flatMap((unparseableCount) =>
+					logUnparseableWarning(resolvedPath, unparseableCount),
+				),
+				Effect.provide(loggerLayer),
+			);
+			yield* Effect.forkScoped(
+				createDailyPruneLoop(resolvedPath, semaphore).pipe(
+					Effect.provide(loggerLayer),
 				),
 			);
 
-			return Logger.layer([Logger.tracerLogger, fileLogger]);
+			return loggerLayer;
 		}),
 	);
 }
 
-function createDailyDirectoryLayer(
-	logDir: string,
+export function getLoggerLayer(
+	logFile: string | undefined,
 ): Layer.Layer<never, LoggingError, FileSystem | Path> {
-	return Layer.unwrap(
-		Effect.gen(function* () {
-			const resolvedDir = yield* ensureLogDirectory(logDir);
-			yield* pruneExpiredLogFiles(resolvedDir);
-			yield* Effect.forkScoped(createDailyPruneLoop(resolvedDir));
-			const logger = yield* createDailyBatchedLogger(resolvedDir);
-			return Logger.layer([Logger.tracerLogger, logger]);
-		}),
-	);
-}
-
-export function getLoggerLayer(params: {
-	logFile: string | undefined;
-	logDir: string | undefined;
-}): Layer.Layer<never, LoggingError, FileSystem | Path> {
-	if (params.logFile !== undefined) {
-		return createSingleFileLayer(params.logFile);
-	}
-	if (params.logDir !== undefined) {
-		return createDailyDirectoryLayer(params.logDir);
-	}
-	return Logger.layer([Logger.tracerLogger, Logger.consolePretty()]);
+	return logFile === undefined
+		? Logger.layer([Logger.tracerLogger, Logger.consolePretty()])
+		: createFileLayer(logFile);
 }
