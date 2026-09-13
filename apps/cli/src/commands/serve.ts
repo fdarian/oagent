@@ -1,8 +1,7 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import { Engine } from '@oagent/engine';
-import { Effect, Logger, Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
+import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
 
 const webFilemap = Effect.tryPromise(
@@ -43,20 +42,6 @@ function runServe(params: {
 	const loggerLayer = getLoggerLayer(params.logFile);
 
 	return baseProgram.pipe(Effect.provide(loggerLayer));
-}
-
-function getLoggerLayer(logFile: string | undefined) {
-	if (logFile !== undefined) {
-		const resolvedPath = path.resolve(logFile);
-		const logDir = path.dirname(resolvedPath);
-		fs.mkdirSync(logDir, { recursive: true });
-		const fileLogger = Logger.make((options) => {
-			const line = Logger.formatJson.log(options);
-			fs.appendFileSync(resolvedPath, `${line}\n`);
-		});
-		return Logger.layer([fileLogger]);
-	}
-	return Logger.layer([Logger.consolePretty()]);
 }
 
 export const serveCmd = (version: Version) =>
