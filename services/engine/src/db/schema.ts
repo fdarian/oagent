@@ -173,6 +173,7 @@ export const modelAliases = sqliteTable(
 		name: text().notNull(),
 		backend: text().notNull(),
 		model_id: text().notNull(),
+		reasoning_effort: text(),
 		description: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()

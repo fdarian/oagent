@@ -17,6 +17,7 @@ export type AliasPreset = {
 	name: string;
 	backend: string;
 	model_id: string;
+	reasoning_effort?: string | null;
 	description: string | null;
 };
 
@@ -29,11 +30,17 @@ export function formatPresets(aliases: AliasPreset[]): string {
 	const maxNameLen = Math.max(...aliases.map((a) => a.name.length));
 	const lines = aliases.map((a) => {
 		const padded = a.name.padEnd(maxNameLen, ' ');
+		const reasoningSuffix =
+			a.reasoning_effort !== undefined &&
+			a.reasoning_effort !== null &&
+			a.reasoning_effort !== ''
+				? `[${a.reasoning_effort}]`
+				: '';
 		const desc =
 			a.description !== null && a.description !== ''
 				? ` — ${a.description}`
 				: '';
-		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${desc}`;
+		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${reasoningSuffix}${desc}`;
 	});
 
 	return `

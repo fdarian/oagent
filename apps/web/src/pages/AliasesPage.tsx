@@ -39,6 +39,21 @@ import { cn } from '@/lib/utils';
 
 type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
+type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffortSelection = ReasoningEffort | 'default';
+
+const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
+	value: ReasoningEffortSelection;
+	label: string;
+}> = [
+	{ value: 'default', label: 'Default' },
+	{ value: 'minimal', label: 'Minimal' },
+	{ value: 'low', label: 'Low' },
+	{ value: 'medium', label: 'Medium' },
+	{ value: 'high', label: 'High' },
+	{ value: 'xhigh', label: 'Extra high' },
+];
+
 function isBackend(value: string): value is Backend {
 	return (
 		value === 'opencode' ||
@@ -48,10 +63,21 @@ function isBackend(value: string): value is Backend {
 	);
 }
 
+function isReasoningEffort(value: string): value is ReasoningEffort {
+	return (
+		value === 'minimal' ||
+		value === 'low' ||
+		value === 'medium' ||
+		value === 'high' ||
+		value === 'xhigh'
+	);
+}
+
 type Alias = {
 	name: string;
 	backend: Backend;
 	model_id: string;
+	reasoning_effort?: ReasoningEffort;
 	description?: string;
 };
 
@@ -201,6 +227,7 @@ function AliasForm(props: AliasFormProps) {
 			name: string;
 			backend: Backend;
 			model_id: string;
+			reasoning_effort?: ReasoningEffort;
 			description?: string;
 		}) => orpc.aliases.save(input),
 		onSuccess: () => {
@@ -217,14 +244,22 @@ function AliasForm(props: AliasFormProps) {
 			name: props.editingAlias?.name ?? '',
 			backend: props.editingAlias?.backend ?? 'opencode',
 			model_id: props.editingAlias?.model_id ?? '',
+			reasoning_effort:
+				props.editingAlias?.reasoning_effort ?? ('default' as const),
 			description: props.editingAlias?.description ?? '',
 		},
-		onSubmit: ({ value }) => {
+		onSubmit: (submission) => {
+			const value = submission.value;
 			setServerModelError(undefined);
+			const reasoningEffort =
+				value.backend === 'codex' && isReasoningEffort(value.reasoning_effort)
+					? value.reasoning_effort
+					: undefined;
 			saveMutation.mutate({
 				name: value.name.trim(),
 				backend: value.backend,
 				model_id: value.model_id.trim(),
+				reasoning_effort: reasoningEffort,
 				description:
 					value.description.trim() === ''
 						? undefined
@@ -349,6 +384,33 @@ function AliasForm(props: AliasFormProps) {
 				}}
 			</form.Field>
 
+			{backend === 'codex' && (
+				<form.Field name="reasoning_effort">
+					{(field) => (
+						<Field>
+							<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
+							<Select
+								value={field.state.value}
+								onValueChange={(value) =>
+									field.handleChange(value as ReasoningEffortSelection)
+								}
+							>
+								<SelectTrigger id={field.name}>
+									<SelectValue placeholder="Select reasoning effort" />
+								</SelectTrigger>
+								<SelectContent>
+									{REASONING_EFFORT_OPTIONS.map((option) => (
+										<SelectItem key={option.value} value={option.value}>
+											{option.label}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</Field>
+					)}
+				</form.Field>
+			)}
+
 			<form.Field name="description">
 				{(field) => (
 					<Field>
@@ -436,8 +498,11 @@ export function AliasesPage() {
 		deleteMutation.mutate(deleteTarget.name);
 	}
 
-	const aliases = (listQuery.data ?? []).filter((alias): alias is Alias =>
-		isBackend(alias.backend),
+	const aliases = (listQuery.data ?? []).filter(
+		(alias): alias is Alias =>
+			isBackend(alias.backend) &&
+			(alias.reasoning_effort === undefined ||
+				isReasoningEffort(alias.reasoning_effort)),
 	);
 
 	return (
@@ -470,6 +535,7 @@ export function AliasesPage() {
 									<th className="py-3 pr-4 font-normal">Name</th>
 									<th className="py-3 pr-4 font-normal">Backend</th>
 									<th className="py-3 pr-4 font-normal">Model ID</th>
+									<th className="py-3 pr-4 font-normal">Reasoning</th>
 									<th className="py-3 pr-4 font-normal">Description</th>
 									<th className="py-3 text-right font-normal">Actions</th>
 								</tr>
@@ -488,6 +554,9 @@ export function AliasesPage() {
 										</td>
 										<td className="py-3 pr-4 font-mono text-muted-foreground">
 											{alias.model_id}
+										</td>
+										<td className="py-3 pr-4 text-muted-foreground">
+											{alias.reasoning_effort ?? 'Default'}
 										</td>
 										<td className="py-3 pr-4 text-muted-foreground">
 											{alias.description}

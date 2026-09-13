@@ -187,6 +187,7 @@ async function fetchAliasPresets(client: EngineClient): Promise<AliasPreset[]> {
 				name: row.name,
 				backend: row.backend,
 				model_id: row.model_id,
+				reasoning_effort: row.reasoning_effort,
 				description: row.description ?? null,
 			}),
 		);

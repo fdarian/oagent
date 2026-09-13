@@ -196,6 +196,7 @@ export function runAcpTurn(
 	input: {
 		prompt: string;
 		model?: string;
+		reasoningEffort?: string;
 		sessionId?: string;
 		cwd: string;
 		onEvent?: (event: SessionUpdate) => void;
@@ -270,14 +271,24 @@ export function runAcpTurn(
 		});
 
 		const response = yield* Effect.gen(function* () {
-			const configOptions =
+			const configOptions: ReadonlyArray<AcpConfigOption> =
 				input.skipModelSet === true
 					? []
 					: input.configOptions !== undefined
 						? input.configOptions
-						: input.model === undefined
-							? []
-							: [{ configId: 'model', value: input.model }];
+						: [
+								...(input.model !== undefined
+									? [{ configId: 'model', value: input.model }]
+									: []),
+								...(input.reasoningEffort !== undefined
+									? [
+											{
+												configId: 'reasoning_effort',
+												value: input.reasoningEffort,
+											},
+										]
+									: []),
+							];
 			for (const configOption of configOptions) {
 				yield* Effect.tryPromise({
 					try: () =>
@@ -390,6 +401,7 @@ export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
 			const runTurn = (input: {
 				prompt: string;
 				model?: string;
+				reasoningEffort?: string;
 				sessionId?: string;
 				cwd: string;
 				onEvent?: (event: SessionUpdate) => void;
