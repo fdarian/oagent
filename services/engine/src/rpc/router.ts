@@ -5,7 +5,14 @@ import * as v from 'valibot';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 
-type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort =
+	| 'minimal'
+	| 'low'
+	| 'medium'
+	| 'high'
+	| 'xhigh'
+	| 'max'
+	| 'ultra';
 
 function normalizeReasoningEffort(
 	value: string | null,
@@ -15,7 +22,9 @@ function normalizeReasoningEffort(
 		value === 'low' ||
 		value === 'medium' ||
 		value === 'high' ||
-		value === 'xhigh'
+		value === 'xhigh' ||
+		value === 'max' ||
+		value === 'ultra'
 	) {
 		return value;
 	}
@@ -141,7 +150,15 @@ const program = Effect.gen(function* () {
 							backend: v.string(),
 							model_id: v.string(),
 							reasoning_effort: v.optional(
-								v.picklist(['minimal', 'low', 'medium', 'high', 'xhigh']),
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
 							),
 							description: v.optional(v.string()),
 						}),
@@ -167,7 +184,15 @@ const program = Effect.gen(function* () {
 							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
 							model_id: v.pipe(v.string(), v.nonEmpty()),
 							reasoning_effort: v.optional(
-								v.picklist(['minimal', 'low', 'medium', 'high', 'xhigh']),
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
 							),
 							description: v.optional(v.string()),
 						}),
@@ -178,7 +203,15 @@ const program = Effect.gen(function* () {
 							backend: v.string(),
 							model_id: v.string(),
 							reasoning_effort: v.optional(
-								v.picklist(['minimal', 'low', 'medium', 'high', 'xhigh']),
+								v.picklist([
+									'minimal',
+									'low',
+									'medium',
+									'high',
+									'xhigh',
+									'max',
+									'ultra',
+								]),
 							),
 							description: v.optional(v.string()),
 						}),

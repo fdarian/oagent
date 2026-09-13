@@ -58,7 +58,14 @@ type JobsChange = {
 	status?: string;
 };
 
-type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort =
+	| 'minimal'
+	| 'low'
+	| 'medium'
+	| 'high'
+	| 'xhigh'
+	| 'max'
+	| 'ultra';
 
 const TIMEOUT_DEFAULT_MS = 50_000;
 

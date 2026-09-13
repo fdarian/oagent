@@ -39,7 +39,14 @@ import { cn } from '@/lib/utils';
 
 type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
-type ReasoningEffort = 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+type ReasoningEffort =
+	| 'minimal'
+	| 'low'
+	| 'medium'
+	| 'high'
+	| 'xhigh'
+	| 'max'
+	| 'ultra';
 type ReasoningEffortSelection = ReasoningEffort | 'default';
 
 const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
@@ -52,6 +59,8 @@ const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
 	{ value: 'medium', label: 'Medium' },
 	{ value: 'high', label: 'High' },
 	{ value: 'xhigh', label: 'Extra high' },
+	{ value: 'max', label: 'Max' },
+	{ value: 'ultra', label: 'Ultra' },
 ];
 
 function isBackend(value: string): value is Backend {
@@ -69,7 +78,9 @@ function isReasoningEffort(value: string): value is ReasoningEffort {
 		value === 'low' ||
 		value === 'medium' ||
 		value === 'high' ||
-		value === 'xhigh'
+		value === 'xhigh' ||
+		value === 'max' ||
+		value === 'ultra'
 	);
 }
 

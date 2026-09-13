@@ -53,6 +53,15 @@ function getCodexConfigOptions(
 	];
 }
 
+function getCodexModelId(model: string): string {
+	const openingBracket = model.lastIndexOf('[');
+	if (openingBracket === -1 || !model.endsWith(']')) return model;
+
+	const modelId = model.slice(0, openingBracket);
+	const reasoningEffort = model.slice(openingBracket + 1, -1);
+	return modelId.length === 0 || reasoningEffort.length === 0 ? model : modelId;
+}
+
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
@@ -68,7 +77,20 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 					configOptions,
 				});
 			},
-			listModels: () => acpAgent.listModels(),
+			listModels: () =>
+				acpAgent.listModels().pipe(
+					Effect.map((models) => {
+						const seen = new Set<string>();
+						const result: Array<{ id: string }> = [];
+						for (const model of models) {
+							const id = getCodexModelId(model.id);
+							if (seen.has(id)) continue;
+							seen.add(id);
+							result.push({ id });
+						}
+						return result;
+					}),
+				),
 		} satisfies AcpAgent['Service'];
 	}),
 }) {
