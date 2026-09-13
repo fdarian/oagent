@@ -2,6 +2,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+	HARNESS_NAMES,
+	harnessesQueryOptions,
+	isBackend,
+} from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
@@ -11,37 +16,15 @@ const NAV = [
 	{ label: 'Timeout', to: '/settings/timeout' as const },
 ];
 
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
-
-const HARNESS_NAMES: Record<Backend, string> = {
-	opencode: 'OpenCode',
-	cursor: 'Cursor',
-	grok: 'Grok',
-	codex: 'Codex',
-};
-
 const navItemClass = 'border-l px-22 py-15 text-caption transition-colors';
 const activeNavItemClass =
 	'border-l-ink bg-[color-mix(in_srgb,var(--color-ink)_3%,var(--color-canvas))] text-foreground dark:bg-[color-mix(in_srgb,var(--color-ink)_8%,var(--color-canvas))]';
 const inactiveNavItemClass =
 	'border-l-transparent text-muted-foreground hover:bg-[color-mix(in_srgb,var(--color-ink)_1%,var(--color-canvas))] hover:text-foreground dark:hover:bg-[color-mix(in_srgb,var(--color-ink)_5%,var(--color-canvas))]';
 
-function isBackend(value: string): value is Backend {
-	return (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	);
-}
-
 export function SettingsSidebar() {
 	const queryClient = useQueryClient();
-	const harnessesQuery = useQuery({
-		queryKey: queryKeys.harnesses(),
-		queryFn: () => orpc.harnesses.list(),
-		staleTime: Infinity,
-	});
+	const harnessesQuery = useQuery(harnessesQueryOptions());
 	const refreshMutation = useMutation({
 		mutationFn: () => orpc.harnesses.refresh(),
 		onSuccess: (harnesses) => {

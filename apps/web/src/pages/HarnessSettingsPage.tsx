@@ -6,26 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
+import {
+	type Backend,
+	HARNESS_NAMES,
+	harnessesQueryOptions,
+	isBackend,
+} from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
-
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
-
-const HARNESS_NAMES: Record<Backend, string> = {
-	opencode: 'OpenCode',
-	cursor: 'Cursor',
-	grok: 'Grok',
-	codex: 'Codex',
-};
-
-function isBackend(value: string): value is Backend {
-	return (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	);
-}
 
 export function HarnessSettingsPage() {
 	const params = useParams({ from: '/settings/harnesses/$backend' });
@@ -33,11 +20,7 @@ export function HarnessSettingsPage() {
 	const queryClient = useQueryClient();
 	const [codexHome, setCodexHome] = useState('');
 
-	const harnessesQuery = useQuery({
-		queryKey: queryKeys.harnesses(),
-		queryFn: () => orpc.harnesses.list(),
-		staleTime: Infinity,
-	});
+	const harnessesQuery = useQuery(harnessesQueryOptions());
 	const codexHomeQuery = useQuery({
 		queryKey: ['settings', 'codexHome'],
 		queryFn: () => orpc.settings.getCodexHome(),
