@@ -68,7 +68,13 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 		operation: Schema.String,
 		cause: Schema.Defect(),
 	},
-) {}
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `${this.operation} failed: ${detail}`;
+	}
+}
 
 type HarnessDefinition = {
 	backend: Backend;
@@ -104,13 +110,13 @@ function stripAnsi(value: string): string {
 	return value.replace(ansiPattern, '');
 }
 
-function parseLoginPrompt(value: string): LoginPrompt | undefined {
+export function parseLoginPrompt(value: string): LoginPrompt | undefined {
 	const clean = stripAnsi(value);
 	const urlMatch = clean.match(
-		/https:\/\/auth\.openai\.com\/codex\/device[^\s)]+/,
+		/https:\/\/auth\.openai\.com\/codex\/device(?:[/?][^\s)]*)?/,
 	);
 	if (urlMatch === null) return undefined;
-	const codeMatch = clean.match(/\b[A-Z0-9]{4,8}-[A-Z0-9]{4,8}\b/);
+	const codeMatch = clean.match(/\b[A-Z0-9]{3,8}-[A-Z0-9]{3,8}\b/);
 	if (codeMatch === null) return undefined;
 	return {
 		verificationUrl: urlMatch[0],
@@ -465,10 +471,15 @@ export class Harnesses extends Context.Service<Harnesses>()(
 					pendingLogins.set(backend, { process: childProcess });
 					const prompt = yield* readLoginPrompt(childProcess).pipe(
 						Effect.timeout(AUTH_PROMPT_TIMEOUT_MS),
-						Effect.mapError((cause) =>
-							cause instanceof HarnessesError
-								? cause
-								: new HarnessesError({ operation: 'login', cause }),
+						Effect.catchTag(
+							'TimeoutError',
+							() =>
+								new HarnessesError({
+									operation: 'login',
+									cause: new Error(
+										'Codex login did not show a device code within 15 seconds',
+									),
+								}),
 						),
 						Effect.tapError(() =>
 							Effect.sync(() => {
