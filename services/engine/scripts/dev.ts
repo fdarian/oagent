@@ -17,6 +17,7 @@ const engine = Command.make(enginePackage.name, {}, () =>
 		yield* Effect.logInfo(`[dev] session: ${session.name}`);
 
 		process.env.OAGENT_HOME_DIR = yield* session.path('.');
+		process.env.OAGENT_LOG_DIR = yield* session.path('logs');
 
 		const port = yield* getStickyPort(session);
 		const url = `http://127.0.0.1:${port}`;

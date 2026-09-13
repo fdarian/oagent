@@ -36,6 +36,13 @@ export const getOagentDbPath: Effect.Effect<string, ConfigError, Path> =
 export const getOagentLogsDir: Effect.Effect<string, ConfigError, Path> =
 	Effect.gen(function* () {
 		const path = yield* Path;
+		const pathFromEnv = Option.getOrNull(
+			yield* Config.String('OAGENT_LOG_DIR').pipe(Config.option),
+		);
+		if (pathFromEnv !== null && pathFromEnv.length > 0) {
+			return path.resolve(pathFromEnv);
+		}
+
 		const homeDir = yield* getOagentHomeDir;
 		return path.join(homeDir, 'logs');
 	});

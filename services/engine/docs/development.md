@@ -13,6 +13,7 @@ pnpm --filter '@oagent/engine' dev
 `pnpm dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session is used as `OAGENT_HOME_DIR` and contains:
 
 - `sqlite.db` — engine DB
+- `logs/` — development JSONL logs
 - `sess.json` — per-session persistent state (sticky port, etc.)
 
 By default `services/engine/scripts/dev.ts` picks the most recently used session, or creates a new one with a random-noun slug on first run. The session home keeps development config and data separate from the installed app; without a session `config.json`, portless stays disabled.
@@ -33,6 +34,11 @@ For probing tools on the running engine, see the `test-oagent-mcp` skill at `.cl
 
 ## Environment variables
 
-| Variable          | Default            | Description                                                                                  |
-| ----------------- | ------------------ | -------------------------------------------------------------------------------------------- |
+| Variable          | Default            | Description                                                                                       |
+| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
 | `OAGENT_HOME_DIR` | `~/.config/oagent` | Base directory for oagent-owned files. `config.json`, `sqlite.db`, and `logs/` are derived from it. |
+| `OAGENT_LOG_DIR`  | `$OAGENT_HOME_DIR/logs` | Overrides the directory used for JSONL service logs.                                             |
+
+## Logging
+
+`oagent service start` passes `<OAGENT_LOG_DIR>/oagent.jsonl` (or the default `$OAGENT_HOME_DIR/logs` directory) to `serve`, which writes one JSON record per line. Entries older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
