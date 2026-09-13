@@ -2,17 +2,36 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer } from 'effect';
 import {
 	type AcpAgent,
+	type AcpAgentConfig,
 	AcpSessionError,
 	createAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
 
+const GROK_BINARY = 'grok';
+
+export function getGrokBinary(): string {
+	return process.env.OAGENT_GROK_BIN ?? GROK_BINARY;
+}
+
+export function resolveGrokBinary(): string | undefined {
+	return Bun.which(getGrokBinary()) ?? undefined;
+}
+
+export function createGrokAcpConfig(model?: string): AcpAgentConfig {
+	return {
+		binary: resolveGrokBinary() ?? getGrokBinary(),
+		args:
+			model === undefined
+				? ['agent', 'stdio']
+				: ['agent', '-m', model, 'stdio'],
+		clientInfoName: 'oagent',
+	};
+}
+
 export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 	make: Effect.gen(function* () {
-		const binary =
-			process.env.OAGENT_GROK_BIN !== undefined
-				? process.env.OAGENT_GROK_BIN
-				: 'grok';
+		const binary = resolveGrokBinary() ?? getGrokBinary();
 
 		const listModels = () =>
 			Effect.tryPromise({
@@ -67,15 +86,9 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 		}) =>
 			Effect.scoped(
 				Effect.gen(function* () {
-					const args =
-						input.model !== undefined
-							? ['agent', '-m', input.model, 'stdio']
-							: ['agent', 'stdio'];
-					const connEnv = yield* createAcpConnection({
-						binary,
-						args,
-						clientInfoName: 'oagent',
-					});
+					const connEnv = yield* createAcpConnection(
+						createGrokAcpConfig(input.model),
+					);
 					// WORKAROUND: grok cannot change the model once a session has been created
 					// (unlike opencode/cursor which switch model per-turn over ACP), so the model
 					// must be fixed at process launch via -m. This requires a fresh subprocess per turn.
