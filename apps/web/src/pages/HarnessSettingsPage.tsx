@@ -35,6 +35,7 @@ export function HarnessSettingsPage() {
 			orpc.settings.setCodexHome({ home }),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: ['settings', 'codexHome'] });
+			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
 		},
 	});
 

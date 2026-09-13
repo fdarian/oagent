@@ -423,6 +423,7 @@ export function runAcpTurn(
 
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
+const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 export type AcpConfigOption = {
 	configId: string;
@@ -492,6 +493,13 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 
 					return extractModelIds(modelOption.options);
 				}),
+			).pipe(
+				Effect.timeout(MODEL_LIST_TIMEOUT_MS),
+				Effect.mapError((cause) =>
+					cause instanceof AcpSessionError
+						? cause
+						: new AcpSessionError({ cause }),
+				),
 			);
 
 		return { runTurn, listModels };

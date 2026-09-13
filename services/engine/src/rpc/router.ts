@@ -289,10 +289,11 @@ const program = Effect.gen(function* () {
 				os
 					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
 					.output(v.object({ home: v.optional(v.string()) })),
-				(opt) => {
+				Effect.fn(function* (opt) {
 					settings.setCodexHome(opt.input.home);
-					return Effect.succeed({ home: settings.getCodexHome() });
-				},
+					yield* modelCatalog.invalidate('codex');
+					return { home: settings.getCodexHome() };
+				}),
 			),
 		},
 		harnesses: {

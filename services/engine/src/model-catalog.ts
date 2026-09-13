@@ -73,7 +73,14 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 					return models;
 				});
 
-			return { list };
+			const invalidate = (backend: Backend) =>
+				Ref.update(cache, (current) => {
+					const next = new Map(current);
+					next.delete(backend);
+					return next;
+				});
+
+			return { list, invalidate };
 		}),
 	},
 ) {
