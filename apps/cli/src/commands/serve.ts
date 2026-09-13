@@ -1,7 +1,7 @@
 import { Engine } from '@oagent/engine';
 import { Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
-import { createLoggerSetup } from '#/lib/logging.ts';
+import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
 
 const webFilemap = Effect.tryPromise(
@@ -40,16 +40,12 @@ function runServe(params: {
 		});
 	}).pipe(Effect.provide(Engine.layer));
 
-	return Effect.scoped(
-		Effect.gen(function* () {
-			const loggerSetup = yield* createLoggerSetup({
-				logFile: params.logFile,
-				logDir: params.logDir,
-			});
-			yield* Effect.forkScoped(loggerSetup.maintenance);
-			yield* baseProgram.pipe(Effect.provide(loggerSetup.layer));
-		}),
-	);
+	const loggerLayer = getLoggerLayer({
+		logFile: params.logFile,
+		logDir: params.logDir,
+	});
+
+	return baseProgram.pipe(Effect.provide(loggerLayer));
 }
 
 export const serveCmd = (version: Version) =>
