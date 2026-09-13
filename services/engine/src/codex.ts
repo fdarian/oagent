@@ -8,6 +8,7 @@ import {
 import { Settings } from './settings.ts';
 
 const CODEX_ACP_BINARY = 'codex-acp';
+const CODEX_CLI_BINARY = 'codex';
 
 export function getCodexBinary(): string {
 	return process.env.OAGENT_CODEX_BIN ?? CODEX_ACP_BINARY;
@@ -15,6 +16,14 @@ export function getCodexBinary(): string {
 
 export function resolveCodexBinary(): string | undefined {
 	return Bun.which(getCodexBinary()) ?? undefined;
+}
+
+export function getCodexCliBinary(): string {
+	return process.env.CODEX_PATH ?? CODEX_CLI_BINARY;
+}
+
+export function resolveCodexCliBinary(): string | undefined {
+	return Bun.which(getCodexCliBinary()) ?? undefined;
 }
 
 export function createCodexAcpConfig(
@@ -26,12 +35,11 @@ export function createCodexAcpConfig(
 		clientInfoName: 'oagent',
 		env: () => {
 			const configuredBinary = process.env.OAGENT_CODEX_BIN;
-			const codexPath =
-				configuredBinary === undefined
-					? (process.env.CODEX_PATH ?? Bun.which('codex') ?? undefined)
-					: undefined;
 			const env: Record<string, string | undefined> = {};
-			if (codexPath !== undefined) env.CODEX_PATH = codexPath;
+			if (configuredBinary === undefined) {
+				const codexPath = resolveCodexCliBinary();
+				if (codexPath !== undefined) env.CODEX_PATH = codexPath;
+			}
 			const codexHome = getCodexHome();
 			if (codexHome !== undefined) env.CODEX_HOME = codexHome;
 			return env;

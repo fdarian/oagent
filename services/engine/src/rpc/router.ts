@@ -48,6 +48,28 @@ const toHarnessDto = (harness: Harness) => ({
 	detectedAt: harness.detectedAt.getTime(),
 });
 
+const harnessAuthStatusOutput = v.union([
+	v.object({
+		backend: backendSchema,
+		status: v.literal('logged_in'),
+		method: v.optional(v.string()),
+		account: v.optional(v.string()),
+	}),
+	v.object({ backend: backendSchema, status: v.literal('logged_out') }),
+	v.object({ backend: backendSchema, status: v.literal('pending') }),
+	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
+]);
+
+const harnessLoginOutput = v.union([
+	v.object({
+		backend: backendSchema,
+		status: v.literal('pending'),
+		verificationUrl: v.string(),
+		userCode: v.string(),
+	}),
+	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
+]);
+
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
 	const harnesses = yield* Harnesses;
@@ -290,6 +312,7 @@ const program = Effect.gen(function* () {
 					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
 					.output(v.object({ home: v.optional(v.string()) })),
 				Effect.fn(function* (opt) {
+					yield* harnesses.cancelLogin('codex');
 					settings.setCodexHome(opt.input.home);
 					yield* modelCatalog.invalidate('codex');
 					return { home: settings.getCodexHome() };
@@ -327,6 +350,46 @@ const program = Effect.gen(function* () {
 				),
 				Effect.fn(function* (opt) {
 					return yield* harnesses.check(opt.input.backend);
+				}),
+			),
+			authStatus: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessAuthStatusOutput),
+				Effect.fn(function* (opt) {
+					const status = yield* harnesses.authStatus(opt.input.backend);
+					if (status.backend === 'codex' && status.status === 'logged_in') {
+						yield* modelCatalog.invalidate('codex');
+					}
+					return status;
+				}),
+			),
+			login: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessLoginOutput),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.login(opt.input.backend);
+				}),
+			),
+			cancelLogin: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(v.object({ backend: backendSchema, cancelled: v.boolean() })),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.cancelLogin(opt.input.backend);
+				}),
+			),
+			logout: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessAuthStatusOutput),
+				Effect.fn(function* (opt) {
+					const status = yield* harnesses.logout(opt.input.backend);
+					if (status.backend === 'codex' && status.status === 'logged_out') {
+						yield* modelCatalog.invalidate('codex');
+					}
+					return status;
 				}),
 			),
 		},
