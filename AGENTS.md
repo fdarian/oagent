@@ -15,7 +15,6 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 - `apps/cli` (`@oagent/cli`) — thin binary entry point.
 - `apps/web` (`@oagent/web`) — Vite + React SPA; type-imports `EngineRouter` from `@oagent/engine`.
 - `services/engine` (`@oagent/engine`) — Effect services (`Jobs`, `OpenCode`), HTTP handlers, oRPC router.
-- `packages/common` (`@oagent/common`) — shared dev utilities (DevSessions).
 
 ## Dev
 
