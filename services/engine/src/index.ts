@@ -22,7 +22,6 @@ export {
 export { OpenCode } from './opencode.ts';
 export {
 	ensureOagentLogsDir,
-	getOagentBaseDir,
 	getOagentConfigPath,
 	getOagentDbPath,
 	getOagentHomeDir,

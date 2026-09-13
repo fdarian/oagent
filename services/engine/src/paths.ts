@@ -5,7 +5,7 @@ import { FileSystem } from 'effect/FileSystem';
 import { Path } from 'effect/Path';
 import type { PlatformError } from 'effect/PlatformError';
 
-const resolveOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
+export const getOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
 	Effect.gen(function* () {
 		const path = yield* Path;
 		const defaultHomeDir = path.join(os.homedir(), '.config', 'oagent');
@@ -18,11 +18,6 @@ const resolveOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
 				: configuredHomeDir;
 		return path.resolve(homeDir);
 	});
-
-export const getOagentHomeDir: Effect.Effect<string, ConfigError, Path> =
-	resolveOagentHomeDir;
-
-export const getOagentBaseDir = getOagentHomeDir;
 
 export const getOagentConfigPath: Effect.Effect<string, ConfigError, Path> =
 	Effect.gen(function* () {

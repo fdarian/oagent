@@ -133,7 +133,6 @@ export function installAndBootstrap(port: number) {
 			binaryPath,
 			port: validatedPort,
 			pathEnv,
-			workingDirectory: homeDirectory,
 			homeDirectory,
 		});
 		yield* writePlistFile(paths.plistPath, plistXml);
