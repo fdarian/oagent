@@ -1,7 +1,0 @@
-{
-	"extends": "@oagent/config/tsconfig-library.json",
-	"compilerOptions": {
-		"types": ["bun"]
-	},
-	"include": ["src/**/*"]
-}

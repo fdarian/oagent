@@ -2,7 +2,7 @@
 
 ## 1. Executive Summary
 
-The `oagent` project is a sophisticated monorepo designed to bridge AI agents, specifically OpenCode, with external interfaces like Claude Code and a custom web-based observability dashboard. It functions as a Model Context Protocol (MCP) server and an Agent Client Protocol (ACP) client. The architecture is split into four main packages: a lightweight CLI entry point (`apps/cli`), a reactive web single-page application (`apps/web`), a robust backend engine (`services/engine`), and shared development utilities (`packages/common`). The entire stack is built on Bun and TypeScript, with the backend heavily leveraging Effect-TS for functional, composable, and type-safe asynchronous operations. The system persists job states and agent output streams in an embedded SQLite database, ensuring durability and providing a historical record of all agent activities. A key design goal is the ability to run agents as background "jobs," monitor their progress in real-time via Server-Sent Events (SSE), and manage their lifecycle through a typed RPC interface.
+The `oagent` project is a sophisticated monorepo designed to bridge AI agents, specifically OpenCode, with external interfaces like Claude Code and a custom web-based observability dashboard. It functions as a Model Context Protocol (MCP) server and an Agent Client Protocol (ACP) client. The architecture centers on a lightweight CLI entry point (`apps/cli`), a reactive web single-page application (`apps/web`), and a robust backend engine (`services/engine`). The entire stack is built on Bun and TypeScript, with the backend heavily leveraging Effect-TS for functional, composable, and type-safe asynchronous operations. The system persists job states and agent output streams in an embedded SQLite database, ensuring durability and providing a historical record of all agent activities. A key design goal is the ability to run agents as background "jobs," monitor their progress in real-time via Server-Sent Events (SSE), and manage their lifecycle through a typed RPC interface.
 
 ## 2. Monorepo Structure and Technology Stack
 
@@ -10,10 +10,9 @@ The project is organized as a monorepo, which allows for clear separation of con
 
 ### 2.1. Workspace Packages
 
-- **`apps/cli` (`@oagent/cli`)**: This package serves as the primary binary entry point for the application. It is responsible for parsing command-line arguments, initializing the correct runtime mode (e.g., serving the web UI, running as an MCP server over stdio, or bridging to Claude Code), and orchestrating the startup of the engine. It depends on the `engine` and `common` packages.
+- **`apps/cli` (`@oagent/cli`)**: This package serves as the primary binary entry point for the application. It is responsible for parsing command-line arguments, initializing the correct runtime mode (e.g., serving the web UI, running as an MCP server over stdio, or bridging to Claude Code), and orchestrating the startup of the engine. It depends on the `engine` package.
 - **`apps/web` (`@oagent/web`)**: This is the user-facing observability dashboard. It is a modern React Single Page Application (SPA) built with Vite. It provides a real-time view into the jobs managed by the engine, allowing users to see agent output, tool calls, reasoning, and errors as they happen. It communicates with the engine via a typed oRPC client.
 - **`services/engine` (`@oagent/engine`)**: The core of the `oagent` system. This package contains all the business logic for managing agent jobs, communicating with ACP backends (like OpenCode), persisting data, and serving the API. It is designed to be agnostic of the specific transport layer (MCP, HTTP) and is purely focused on the domain logic of running and monitoring agent tasks.
-- **`packages/common` (`@oagent/common`)**: A shared library containing utility functions and abstractions used by other packages, primarily focused on the development workflow. It includes helpers for managing development sessions, running subprocesses, and handling inter-process communication signals.
 
 ### 2.2. Core Technologies
 
@@ -232,21 +231,9 @@ The `apps/web/src/components/ai-elements/` directory contains a rich library of 
 
 The `components/ui/` directory contains the base design system components, largely following the `shadcn/ui` pattern but customized for the project's aesthetic. These are built on top of Radix UI primitives and styled with Tailwind CSS. Examples include `button`, `dialog`, `select`, `tooltip`, `badge`, `card`, `command` (for command palettes), and `carousel`. These components use `data-slot` attributes for styling hooks and `cn()` (from `tailwind-merge` and `clsx`) for conditional class merging.
 
-## 6. Development Utilities (`packages/common`)
+## 6. Development Workflow
 
-This package provides shared infrastructure for the development workflow, particularly for managing the multiple processes involved in a monorepo.
-
-### 6.1. `DevSessions`
-
-The `DevSessions` service manages temporary development sessions. When running in dev mode, the engine and web server need to coordinate on things like port numbers. This service creates a unique session directory (using a random noun slug) inside `.data/sessions`. It provides an API to get the latest session or create a new one, allowing dev processes to persist state across restarts.
-
-### 6.2. `defineDevCli`
-
-This is a helper function used by the dev scripts of both the engine and the web app. It wraps `@effect/cli` to create a CLI that can manage a dev session, get a sticky port, run managed subprocesses, and publish/await "running signals." This allows, for example, the engine's dev script to publish its URL to a file, and the web's dev script to wait for that file to appear before starting its proxy.
-
-### 6.3. `running-signal.ts`
-
-This module implements a simple but robust inter-process communication mechanism. A process can "publish" a running signal by atomically writing a JSON file to a known location. Another process can "await" that signal by watching the parent directory for file creation events and then parsing the file. This is used to handle the startup race condition between the engine and the web dev server.
+The engine and web development scripts use [`devsess`](https://devsess.fdarian.com/getting-started) to coordinate isolated sessions, sticky ports, running-service discovery, and managed subprocess cleanup. The engine publishes its URL to the session, and the web script can wait for it with `--local engine`.
 
 ## 7. Data Flow and Key Interactions
 
