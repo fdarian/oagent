@@ -2,8 +2,10 @@ import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
+import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
+import { Settings } from '../settings.ts';
 
 type ReasoningEffort =
 	| 'minimal'
@@ -31,8 +33,47 @@ function normalizeReasoningEffort(
 	return undefined;
 }
 
+const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+const harnessesOutput = v.array(
+	v.object({
+		backend: backendSchema,
+		binaryPath: v.string(),
+		detectedAt: v.number(),
+	}),
+);
+
+const toHarnessDto = (harness: Harness) => ({
+	backend: harness.backend,
+	binaryPath: harness.binaryPath,
+	detectedAt: harness.detectedAt.getTime(),
+});
+
+const harnessAuthStatusOutput = v.union([
+	v.object({
+		backend: backendSchema,
+		status: v.literal('logged_in'),
+		method: v.optional(v.string()),
+		account: v.optional(v.string()),
+	}),
+	v.object({ backend: backendSchema, status: v.literal('logged_out') }),
+	v.object({ backend: backendSchema, status: v.literal('pending') }),
+	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
+]);
+
+const harnessLoginOutput = v.union([
+	v.object({
+		backend: backendSchema,
+		status: v.literal('pending'),
+		verificationUrl: v.string(),
+		userCode: v.string(),
+	}),
+	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
+]);
+
 const program = Effect.gen(function* () {
 	const jobs = yield* Jobs;
+	const harnesses = yield* Harnesses;
+	const settings = yield* Settings;
 	const modelCatalog = yield* ModelCatalog;
 
 	return {
@@ -255,12 +296,94 @@ const program = Effect.gen(function* () {
 					)
 					.output(v.object({ minutes: v.number() })),
 				(opt) => {
-					jobs.setSetting(
+					settings.setSetting(
 						'start_timeout_ms',
 						String(opt.input.minutes * 60000),
 					);
 					return Effect.succeed({ minutes: opt.input.minutes });
 				},
+			),
+			getCodexHome: yield* createHandler(
+				os.input(v.void_()).output(v.object({ home: v.optional(v.string()) })),
+				() => Effect.succeed({ home: settings.getCodexHome() }),
+			),
+			setCodexHome: yield* createHandler(
+				os
+					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
+					.output(v.object({ home: v.optional(v.string()) })),
+				Effect.fn(function* (opt) {
+					yield* harnesses.cancelLogin('codex');
+					settings.setCodexHome(opt.input.home);
+					yield* modelCatalog.invalidate('codex');
+					return { home: settings.getCodexHome() };
+				}),
+			),
+		},
+		harnesses: {
+			list: yield* createHandler(
+				os.input(v.void_()).output(harnessesOutput),
+				Effect.fn(function* () {
+					return (yield* harnesses.list()).map(toHarnessDto);
+				}),
+			),
+			refresh: yield* createHandler(
+				os.input(v.void_()).output(harnessesOutput),
+				Effect.fn(function* () {
+					return (yield* harnesses.refresh()).map(toHarnessDto);
+				}),
+			),
+			check: yield* createHandler(
+				os.input(v.object({ backend: backendSchema })).output(
+					v.union([
+						v.object({
+							backend: backendSchema,
+							ok: v.literal(true),
+							agentName: v.optional(v.string()),
+							agentVersion: v.optional(v.string()),
+						}),
+						v.object({
+							backend: backendSchema,
+							ok: v.literal(false),
+							message: v.string(),
+						}),
+					]),
+				),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.check(opt.input.backend);
+				}),
+			),
+			authStatus: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessAuthStatusOutput),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.authStatus(opt.input.backend);
+				}),
+			),
+			login: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessLoginOutput),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.login(opt.input.backend);
+				}),
+			),
+			cancelLogin: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(v.object({ backend: backendSchema, cancelled: v.boolean() })),
+				Effect.fn(function* (opt) {
+					return yield* harnesses.cancelLogin(opt.input.backend);
+				}),
+			),
+			logout: yield* createHandler(
+				os
+					.input(v.object({ backend: backendSchema }))
+					.output(harnessAuthStatusOutput),
+				Effect.fn(function* (opt) {
+					const status = yield* harnesses.logout(opt.input.backend);
+					return status;
+				}),
 			),
 		},
 		models: {
@@ -268,7 +391,7 @@ const program = Effect.gen(function* () {
 				os
 					.input(
 						v.object({
-							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+							backend: backendSchema,
 						}),
 					)
 					.output(

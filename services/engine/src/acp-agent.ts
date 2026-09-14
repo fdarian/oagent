@@ -10,6 +10,18 @@ import {
 } from '@agentclientprotocol/sdk';
 import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
 
+type AcpEnv =
+	| Record<string, string | undefined>
+	| (() => Record<string, string | undefined>);
+
+export type AcpAgentConfig = {
+	binary: string;
+	args: readonly string[];
+	clientInfoName: string;
+	env?: AcpEnv;
+	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+};
+
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
 	{ cause: Schema.Defect() },
@@ -54,17 +66,23 @@ export function createAcpConnection(config: {
 	binary: string;
 	args: readonly string[];
 	clientInfoName: string;
-	env?: Record<string, string | undefined>;
+	env?: AcpEnv;
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 }) {
 	return Effect.gen(function* () {
 		const subprocess = yield* Effect.acquireRelease(
 			Effect.sync(() => {
 				const transform = new TransformStream<Uint8Array, Uint8Array>();
-				const env =
+				const configuredEnv =
 					config.env === undefined
 						? undefined
-						: { ...process.env, ...config.env };
+						: typeof config.env === 'function'
+							? config.env()
+							: config.env;
+				const env =
+					configuredEnv === undefined
+						? undefined
+						: { ...process.env, ...configuredEnv };
 				const proc = Bun.spawn([config.binary, ...config.args], {
 					stdin: transform.readable,
 					stdout: 'pipe',
@@ -165,7 +183,7 @@ export function createAcpConnection(config: {
 			stream,
 		);
 
-		yield* Effect.tryPromise({
+		const initializeResponse = yield* Effect.tryPromise({
 			try: () =>
 				conn.initialize({
 					protocolVersion: PROTOCOL_VERSION,
@@ -176,9 +194,42 @@ export function createAcpConnection(config: {
 				}),
 			catch: (cause) => new AcpSessionError({ cause }),
 		});
+		const agentInfo =
+			initializeResponse.agentInfo === null
+				? undefined
+				: initializeResponse.agentInfo;
 
-		return { conn, registerListener, extNotificationHandlers };
+		return { conn, registerListener, extNotificationHandlers, agentInfo };
 	});
+}
+
+export type AcpProbeInfo = {
+	agentName?: string;
+	agentVersion?: string;
+};
+
+/** Performs the ACP handshake and disposes the subprocess when it completes. */
+export function probeAcpConnection(
+	config: AcpAgentConfig,
+	timeoutMs = 15_000,
+): Effect.Effect<AcpProbeInfo, AcpSessionError, never> {
+	return Effect.scoped(
+		Effect.gen(function* () {
+			const connection = yield* createAcpConnection(config).pipe(
+				Effect.timeout(timeoutMs),
+				Effect.mapError((cause) =>
+					cause instanceof AcpSessionError
+						? cause
+						: new AcpSessionError({ cause }),
+				),
+			);
+			const agentInfo = connection.agentInfo;
+			return {
+				agentName: agentInfo === undefined ? undefined : agentInfo.name,
+				agentVersion: agentInfo === undefined ? undefined : agentInfo.version,
+			};
+		}),
+	);
 }
 
 export function runAcpTurn(
@@ -372,89 +423,92 @@ export function runAcpTurn(
 
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
-
-type AcpAgentConfig = {
-	binary: string;
-	args: readonly string[];
-	clientInfoName: string;
-	env?: Record<string, string | undefined>;
-	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-};
+const MODEL_LIST_TIMEOUT_MS = 15_000;
 
 export type AcpConfigOption = {
 	configId: string;
 	value: string;
 };
 
+export function makeAcpAgent(config: AcpAgentConfig) {
+	return Effect.gen(function* () {
+		// Non-spawning: RcRef only records how to acquire the connection.
+		// The subprocess is spawned on the first `RcRef.get`, and killed
+		// once the ref count drops to zero and stays there for
+		// `IDLE_TIME_TO_LIVE`.
+		const connectionRef = yield* RcRef.make({
+			acquire: createAcpConnection(config),
+			idleTimeToLive: IDLE_TIME_TO_LIVE,
+		});
+
+		const runTurn = (input: {
+			prompt: string;
+			model?: string;
+			reasoningEffort?: string;
+			sessionId?: string;
+			cwd: string;
+			onEvent?: (event: SessionUpdate) => void;
+			onExtensionEvent?: (method: string, params: unknown) => void;
+			configOptions?: ReadonlyArray<AcpConfigOption>;
+		}) =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* RcRef.get(connectionRef);
+					return yield* runAcpTurn(env, input);
+				}),
+			);
+
+		// Model listing does NOT go through the shared, ref-counted
+		// connection: it spins up its own throwaway connection (scoped to
+		// this call only, killed right after) so that listing models
+		// never spawns/holds the persistent backend harness.
+		const listModels = (): Effect.Effect<
+			ReadonlyArray<{ id: string }>,
+			AcpSessionError,
+			never
+		> =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* createAcpConnection(config);
+					const res = yield* Effect.tryPromise({
+						try: () =>
+							env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+						catch: (cause) => new AcpSessionError({ cause }),
+					});
+
+					const availableModels =
+						res.models !== undefined && res.models !== null
+							? res.models.availableModels
+							: [];
+					if (availableModels.length > 0) {
+						return availableModels.map((m) => ({ id: m.modelId }));
+					}
+
+					const modelOption = res.configOptions?.find(
+						(opt) => opt.id === 'model',
+					);
+					if (modelOption === undefined || modelOption.type !== 'select') {
+						return [];
+					}
+
+					return extractModelIds(modelOption.options);
+				}),
+			).pipe(
+				Effect.timeout(MODEL_LIST_TIMEOUT_MS),
+				Effect.mapError((cause) =>
+					cause instanceof AcpSessionError
+						? cause
+						: new AcpSessionError({ cause }),
+				),
+			);
+
+		return { runTurn, listModels };
+	});
+}
+
 export class AcpAgent extends Context.Service<AcpAgent>()('oagent/AcpAgent', {
-	make: (config: AcpAgentConfig) =>
-		Effect.gen(function* () {
-			// Non-spawning: RcRef only records how to acquire the connection.
-			// The subprocess is spawned on the first `RcRef.get`, and killed
-			// once the ref count drops to zero and stays there for
-			// `IDLE_TIME_TO_LIVE`.
-			const connectionRef = yield* RcRef.make({
-				acquire: createAcpConnection(config),
-				idleTimeToLive: IDLE_TIME_TO_LIVE,
-			});
-
-			const runTurn = (input: {
-				prompt: string;
-				model?: string;
-				reasoningEffort?: string;
-				sessionId?: string;
-				cwd: string;
-				onEvent?: (event: SessionUpdate) => void;
-				onExtensionEvent?: (method: string, params: unknown) => void;
-				configOptions?: ReadonlyArray<AcpConfigOption>;
-			}) =>
-				Effect.scoped(
-					Effect.gen(function* () {
-						const env = yield* RcRef.get(connectionRef);
-						return yield* runAcpTurn(env, input);
-					}),
-				);
-
-			// Model listing does NOT go through the shared, ref-counted
-			// connection: it spins up its own throwaway connection (scoped to
-			// this call only, killed right after) so that listing models
-			// never spawns/holds the persistent backend harness.
-			const listModels = (): Effect.Effect<
-				ReadonlyArray<{ id: string }>,
-				AcpSessionError,
-				never
-			> =>
-				Effect.scoped(
-					Effect.gen(function* () {
-						const env = yield* createAcpConnection(config);
-						const res = yield* Effect.tryPromise({
-							try: () =>
-								env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
-							catch: (cause) => new AcpSessionError({ cause }),
-						});
-
-						const availableModels =
-							res.models !== undefined && res.models !== null
-								? res.models.availableModels
-								: [];
-						if (availableModels.length > 0) {
-							return availableModels.map((m) => ({ id: m.modelId }));
-						}
-
-						const modelOption = res.configOptions?.find(
-							(opt) => opt.id === 'model',
-						);
-						if (modelOption === undefined || modelOption.type !== 'select') {
-							return [];
-						}
-
-						return extractModelIds(modelOption.options);
-					}),
-				);
-
-			return { runTurn, listModels };
-		}),
+	make: makeAcpAgent,
 }) {
 	static readonly layer = (config: AcpAgentConfig) =>
-		Layer.effect(AcpAgent, AcpAgent.make(config));
+		Layer.effect(AcpAgent, makeAcpAgent(config));
 }

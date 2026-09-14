@@ -7,6 +7,7 @@ export type {
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
+export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
@@ -30,3 +31,4 @@ export {
 export { createEngineHandler } from './rpc/handler.ts';
 export type { EngineRouter } from './rpc/router.ts';
 export { Engine } from './server.ts';
+export { Settings } from './settings.ts';

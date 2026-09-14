@@ -4,7 +4,7 @@ import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
 import { OpenCode } from './opencode.ts';
 
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
+export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
 export type ModelEntry = { id: string; label?: string };
 
@@ -73,7 +73,14 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 					return models;
 				});
 
-			return { list };
+			const invalidate = (backend: Backend) =>
+				Ref.update(cache, (current) => {
+					const next = new Map(current);
+					next.delete(backend);
+					return next;
+				});
+
+			return { list, invalidate };
 		}),
 	},
 ) {

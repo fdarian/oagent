@@ -1,25 +1,51 @@
 import { Context, Effect, Layer } from 'effect';
-import { AcpAgent, type AcpConfigOption } from './acp-agent.ts';
+import {
+	type AcpAgent,
+	type AcpAgentConfig,
+	type AcpConfigOption,
+	makeAcpAgent,
+} from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const CODEX_ACP_BINARY = 'codex-acp';
+const CODEX_CLI_BINARY = 'codex';
 
-const CODEX_ACP_CONFIG = (() => {
-	const configuredBinary = process.env.OAGENT_CODEX_BIN;
-	const binary = configuredBinary ?? CODEX_ACP_BINARY;
-	const codexPath =
-		configuredBinary === undefined
-			? (process.env.CODEX_PATH ?? Bun.which('codex'))
-			: undefined;
+export function getCodexBinary(): string {
+	return process.env.OAGENT_CODEX_BIN ?? CODEX_ACP_BINARY;
+}
+
+export function resolveCodexBinary(): string | undefined {
+	return Bun.which(getCodexBinary()) ?? undefined;
+}
+
+export function getCodexCliBinary(): string {
+	return process.env.CODEX_PATH ?? CODEX_CLI_BINARY;
+}
+
+export function resolveCodexCliBinary(): string | undefined {
+	return Bun.which(getCodexCliBinary()) ?? undefined;
+}
+
+export function createCodexAcpConfig(
+	getCodexHome: () => string | undefined,
+): AcpAgentConfig {
 	return {
-		binary,
+		binary: resolveCodexBinary() ?? getCodexBinary(),
 		args: [] as const,
 		clientInfoName: 'oagent',
-		env:
-			codexPath === null || codexPath === undefined
-				? undefined
-				: { CODEX_PATH: codexPath },
+		env: () => {
+			const configuredBinary = process.env.OAGENT_CODEX_BIN;
+			const env: Record<string, string | undefined> = {};
+			if (configuredBinary === undefined) {
+				const codexPath = resolveCodexCliBinary();
+				if (codexPath !== undefined) env.CODEX_PATH = codexPath;
+			}
+			const codexHome = getCodexHome();
+			if (codexHome !== undefined) env.CODEX_HOME = codexHome;
+			return env;
+		},
 	};
-})();
+}
 
 function getCodexConfigOptions(
 	model: string | undefined,
@@ -64,7 +90,10 @@ function getCodexModelId(model: string): string {
 
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
-		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
+		const acpAgent = yield* makeAcpAgent(
+			createCodexAcpConfig(settings.getCodexHome),
+		);
 		return {
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const configOptions = getCodexConfigOptions(
@@ -95,6 +124,6 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(
-		Layer.provide(AcpAgent.layer(CODEX_ACP_CONFIG)),
+		Layer.provide(Settings.layer),
 	);
 }

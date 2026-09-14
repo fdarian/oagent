@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
-import { AcpAgent } from './acp-agent.ts';
+import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	auto: 'default[]',
@@ -18,27 +18,36 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 	Object.entries(CURSOR_MODEL_ALIASES).map(([label, id]) => [id, label]),
 );
 
-const CURSOR_ACP_CONFIG = {
-	binary:
-		process.env.OAGENT_CURSOR_BIN !== undefined
-			? process.env.OAGENT_CURSOR_BIN
-			: 'cursor-agent',
-	args: ['acp'] as const,
-	clientInfoName: 'oagent',
-	extensionHandlers: {
-		'cursor/ask_question': async () => ({
-			outcome: {
-				outcome: 'skipped',
-				reason: 'auto-skipped by oagent',
-			},
-		}),
-		'cursor/create_plan': async () => ({
-			outcome: {
-				outcome: 'accepted',
-			},
-		}),
-	},
-};
+const CURSOR_BINARY = 'cursor-agent';
+
+export function getCursorBinary(): string {
+	return process.env.OAGENT_CURSOR_BIN ?? CURSOR_BINARY;
+}
+
+export function resolveCursorBinary(): string | undefined {
+	return Bun.which(getCursorBinary()) ?? undefined;
+}
+
+export function createCursorAcpConfig(): AcpAgentConfig {
+	return {
+		binary: resolveCursorBinary() ?? getCursorBinary(),
+		args: ['acp'] as const,
+		clientInfoName: 'oagent',
+		extensionHandlers: {
+			'cursor/ask_question': async () => ({
+				outcome: {
+					outcome: 'skipped',
+					reason: 'auto-skipped by oagent',
+				},
+			}),
+			'cursor/create_plan': async () => ({
+				outcome: {
+					outcome: 'accepted',
+				},
+			}),
+		},
+	};
+}
 
 export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
@@ -64,6 +73,6 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(
-		Layer.provide(AcpAgent.layer(CURSOR_ACP_CONFIG)),
+		Layer.provide(AcpAgent.layer(createCursorAcpConfig())),
 	);
 }

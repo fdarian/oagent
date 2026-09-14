@@ -200,3 +200,11 @@ export const settings = sqliteTable(
 	},
 	(table) => [uniqueIndex('settings_key_uq').on(table.key)],
 );
+
+export const harnesses = sqliteTable('harnesses', {
+	backend: text().primaryKey(),
+	binary_path: text().notNull(),
+	detected_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
