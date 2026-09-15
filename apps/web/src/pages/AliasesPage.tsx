@@ -39,7 +39,7 @@ import { cn } from '@/lib/utils';
 
 type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
-type ReasoningEffort =
+type CodexReasoningEffort =
 	| 'minimal'
 	| 'low'
 	| 'medium'
@@ -47,12 +47,13 @@ type ReasoningEffort =
 	| 'xhigh'
 	| 'max'
 	| 'ultra';
-type ReasoningEffortSelection = ReasoningEffort | 'default';
 
-const REASONING_EFFORT_OPTIONS: ReadonlyArray<{
-	value: ReasoningEffortSelection;
+type ReasoningEffortOption = {
+	value: string;
 	label: string;
-}> = [
+};
+
+const CODEX_REASONING_EFFORT_OPTIONS: ReadonlyArray<ReasoningEffortOption> = [
 	{ value: 'default', label: 'Default' },
 	{ value: 'minimal', label: 'Minimal' },
 	{ value: 'low', label: 'Low' },
@@ -72,7 +73,7 @@ function isBackend(value: string): value is Backend {
 	);
 }
 
-function isReasoningEffort(value: string): value is ReasoningEffort {
+function isCodexReasoningEffort(value: string): value is CodexReasoningEffort {
 	return (
 		value === 'minimal' ||
 		value === 'low' ||
@@ -88,7 +89,7 @@ type Alias = {
 	name: string;
 	backend: Backend;
 	model_id: string;
-	reasoning_effort?: ReasoningEffort;
+	reasoning_effort?: string;
 	description?: string;
 };
 
@@ -238,7 +239,7 @@ function AliasForm(props: AliasFormProps) {
 			name: string;
 			backend: Backend;
 			model_id: string;
-			reasoning_effort?: ReasoningEffort;
+			reasoning_effort?: string;
 			description?: string;
 		}) => orpc.aliases.save(input),
 		onSuccess: () => {
@@ -255,17 +256,19 @@ function AliasForm(props: AliasFormProps) {
 			name: props.editingAlias?.name ?? '',
 			backend: props.editingAlias?.backend ?? 'opencode',
 			model_id: props.editingAlias?.model_id ?? '',
-			reasoning_effort:
-				props.editingAlias?.reasoning_effort ?? ('default' as const),
+			reasoning_effort: props.editingAlias?.reasoning_effort ?? 'default',
 			description: props.editingAlias?.description ?? '',
 		},
 		onSubmit: (submission) => {
 			const value = submission.value;
 			setServerModelError(undefined);
 			const reasoningEffort =
-				value.backend === 'codex' && isReasoningEffort(value.reasoning_effort)
+				value.backend === 'codex' &&
+				isCodexReasoningEffort(value.reasoning_effort)
 					? value.reasoning_effort
-					: undefined;
+					: value.backend === 'opencode' && value.reasoning_effort !== 'default'
+						? value.reasoning_effort
+						: undefined;
 			saveMutation.mutate({
 				name: value.name.trim(),
 				backend: value.backend,
@@ -282,6 +285,18 @@ function AliasForm(props: AliasFormProps) {
 	const canSubmit = useStore(form.store, (state) => state.canSubmit);
 	const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
 	const modelId = useStore(form.store, (state) => state.values.model_id);
+	const effortsQuery = useQuery({
+		queryKey: ['model-efforts', backend, modelId],
+		queryFn: () => orpc.models.efforts({ backend, model_id: modelId.trim() }),
+		enabled: backend === 'opencode' && modelId.trim() !== '',
+		staleTime: 5 * 60 * 1000,
+	});
+	const effortOptions =
+		backend === 'codex'
+			? CODEX_REASONING_EFFORT_OPTIONS
+			: effortsQuery.data === undefined
+				? []
+				: effortsQuery.data;
 
 	return (
 		<form
@@ -340,6 +355,7 @@ function AliasForm(props: AliasFormProps) {
 								field.handleChange(value as Backend);
 								// Changing backend invalidates the model selection.
 								form.setFieldValue('model_id', '');
+								form.setFieldValue('reasoning_effort', 'default');
 								setServerModelError(undefined);
 							}}
 						>
@@ -386,6 +402,7 @@ function AliasForm(props: AliasFormProps) {
 								invalid={isInvalid}
 								onChange={(modelId) => {
 									field.handleChange(modelId);
+									form.setFieldValue('reasoning_effort', 'default');
 									setServerModelError(undefined);
 								}}
 							/>
@@ -395,22 +412,20 @@ function AliasForm(props: AliasFormProps) {
 				}}
 			</form.Field>
 
-			{backend === 'codex' && (
+			{effortOptions.length > 0 && (
 				<form.Field name="reasoning_effort">
 					{(field) => (
 						<Field>
 							<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
 							<Select
 								value={field.state.value}
-								onValueChange={(value) =>
-									field.handleChange(value as ReasoningEffortSelection)
-								}
+								onValueChange={(value) => field.handleChange(value)}
 							>
 								<SelectTrigger id={field.name}>
 									<SelectValue placeholder="Select reasoning effort" />
 								</SelectTrigger>
 								<SelectContent>
-									{REASONING_EFFORT_OPTIONS.map((option) => (
+									{effortOptions.map((option) => (
 										<SelectItem key={option.value} value={option.value}>
 											{option.label}
 										</SelectItem>
@@ -509,11 +524,8 @@ export function AliasesPage() {
 		deleteMutation.mutate(deleteTarget.name);
 	}
 
-	const aliases = (listQuery.data ?? []).filter(
-		(alias): alias is Alias =>
-			isBackend(alias.backend) &&
-			(alias.reasoning_effort === undefined ||
-				isReasoningEffort(alias.reasoning_effort)),
+	const aliases = (listQuery.data ?? []).filter((alias): alias is Alias =>
+		isBackend(alias.backend),
 	);
 
 	return (
