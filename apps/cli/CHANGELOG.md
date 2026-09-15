@@ -1,5 +1,12 @@
 # oagent
 
+## 0.3.1
+
+### Patch Changes
+
+- c3e5199: Add separate reasoning-effort configuration for Codex aliases.
+- ee3b13b: Replace `OAGENT_CONFIG_PATH` and `OAGENT_DB_PATH` with `OAGENT_HOME_DIR`, from which oagent derives its config, database, logs, and service state paths.
+
 ## 0.3.0
 
 ### Minor Changes
