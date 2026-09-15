@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
-import { OpenCode } from './opencode.ts';
+import { OpenCode, type OpenCodeEffortOption } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
@@ -54,6 +54,26 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				);
 			};
 
+			const listEfforts = (
+				backend: Backend,
+				model: string,
+			): Effect.Effect<
+				ReadonlyArray<OpenCodeEffortOption>,
+				ModelCatalogError
+			> => {
+				if (backend !== 'opencode') return Effect.succeed([]);
+				return opencode.listModelEfforts(model).pipe(
+					Effect.catch((cause) =>
+						Effect.fail(
+							new ModelCatalogError({
+								backend,
+								message: `Failed to list reasoning efforts for ${backend}: ${String(cause)}`,
+							}),
+						),
+					),
+				);
+			};
+
 			const list = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
@@ -80,7 +100,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 					return next;
 				});
 
-			return { list, invalidate };
+			return { list, listEfforts, invalidate };
 		}),
 	},
 ) {
