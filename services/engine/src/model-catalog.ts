@@ -13,6 +13,11 @@ type CacheEntry = {
 	fetchedAt: number;
 };
 
+type EffortCacheEntry = {
+	efforts: ReadonlyArray<OpenCodeEffortOption>;
+	fetchedAt: number;
+};
+
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
 export class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()(
@@ -32,6 +37,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 			const grok = yield* Grok;
 			const codex = yield* Codex;
 			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
+			const effortCache = yield* Ref.make(new Map<string, EffortCacheEntry>());
 
 			const fetch = (
 				backend: Backend,
@@ -54,7 +60,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				);
 			};
 
-			const listEfforts = (
+			const fetchEfforts = (
 				backend: Backend,
 				model: string,
 			): Effect.Effect<
@@ -72,6 +78,31 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 						),
 					),
 				);
+			};
+
+			const listEfforts = (
+				backend: Backend,
+				model: string,
+			): Effect.Effect<
+				ReadonlyArray<OpenCodeEffortOption>,
+				ModelCatalogError
+			> => {
+				if (backend !== 'opencode') return Effect.succeed([]);
+				return Effect.gen(function* () {
+					const now = Date.now();
+					const current = yield* Ref.get(effortCache);
+					const entry = current.get(model);
+					if (entry !== undefined && now - entry.fetchedAt < TTL_MS) {
+						return entry.efforts;
+					}
+					const efforts = yield* fetchEfforts(backend, model);
+					yield* Ref.update(effortCache, (m) => {
+						const next = new Map(m);
+						next.set(model, { efforts, fetchedAt: now });
+						return next;
+					});
+					return efforts;
+				});
 			};
 
 			const list = (
@@ -94,10 +125,15 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				});
 
 			const invalidate = (backend: Backend) =>
-				Ref.update(cache, (current) => {
-					const next = new Map(current);
-					next.delete(backend);
-					return next;
+				Effect.gen(function* () {
+					yield* Ref.update(cache, (current) => {
+						const next = new Map(current);
+						next.delete(backend);
+						return next;
+					});
+					if (backend === 'opencode') {
+						yield* Ref.set(effortCache, new Map<string, EffortCacheEntry>());
+					}
 				});
 
 			return { list, listEfforts, invalidate };
