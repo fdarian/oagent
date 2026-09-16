@@ -19,7 +19,12 @@ import {
 	DialogHeader,
 	DialogTitle,
 } from '@/components/ui/dialog';
-import { Field, FieldError, FieldLabel } from '@/components/ui/field';
+import {
+	Field,
+	FieldDescription,
+	FieldError,
+	FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
 	Popover,
@@ -412,7 +417,7 @@ function AliasForm(props: AliasFormProps) {
 				}}
 			</form.Field>
 
-			{effortOptions.length > 0 && (
+			{backend === 'codex' && (
 				<form.Field name="reasoning_effort">
 					{(field) => (
 						<Field>
@@ -425,7 +430,7 @@ function AliasForm(props: AliasFormProps) {
 									<SelectValue placeholder="Select reasoning effort" />
 								</SelectTrigger>
 								<SelectContent>
-									{effortOptions.map((option) => (
+									{CODEX_REASONING_EFFORT_OPTIONS.map((option) => (
 										<SelectItem key={option.value} value={option.value}>
 											{option.label}
 										</SelectItem>
@@ -434,6 +439,69 @@ function AliasForm(props: AliasFormProps) {
 							</Select>
 						</Field>
 					)}
+				</form.Field>
+			)}
+
+			{backend === 'opencode' && modelId.trim() !== '' && (
+				<form.Field name="reasoning_effort">
+					{(field) => {
+						if (effortsQuery.isPending) {
+							return (
+								<Field>
+									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
+									<Select value="" disabled>
+										<SelectTrigger id={field.name} disabled>
+											<SelectValue placeholder="Loading…" />
+										</SelectTrigger>
+									</Select>
+								</Field>
+							);
+						}
+
+						if (effortsQuery.isError) {
+							return (
+								<Field>
+									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
+									<FieldError>
+										Failed to load reasoning efforts:{' '}
+										{effortsQuery.error.message}
+									</FieldError>
+								</Field>
+							);
+						}
+
+						if (effortOptions.length === 0) {
+							return (
+								<Field>
+									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
+									<FieldDescription>
+										No effort variants for this model
+									</FieldDescription>
+								</Field>
+							);
+						}
+
+						return (
+							<Field>
+								<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
+								<Select
+									value={field.state.value}
+									onValueChange={(value) => field.handleChange(value)}
+								>
+									<SelectTrigger id={field.name}>
+										<SelectValue placeholder="Select reasoning effort" />
+									</SelectTrigger>
+									<SelectContent>
+										{effortOptions.map((option) => (
+											<SelectItem key={option.value} value={option.value}>
+												{option.label}
+											</SelectItem>
+										))}
+									</SelectContent>
+								</Select>
+							</Field>
+						);
+					}}
 				</form.Field>
 			)}
 
