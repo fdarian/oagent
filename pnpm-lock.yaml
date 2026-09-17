@@ -147,10 +147,10 @@ importers:
         version: link:../../services/engine
       '@orpc/client':
         specifier: 2.0.0-beta.21
-        version: 2.0.0-beta.21
+        version: 2.0.0-beta.21(@opentelemetry/api@1.9.1)
       '@orpc/server':
         specifier: 2.0.0-beta.21
-        version: 2.0.0-beta.21
+        version: 2.0.0-beta.21(@opentelemetry/api@1.9.1)
       '@toon-format/toon':
         specifier: ^2.3.0
         version: 2.3.1
@@ -168,7 +168,7 @@ importers:
     dependencies:
       '@orpc/client':
         specifier: 2.0.0-beta.21
-        version: 2.0.0-beta.21
+        version: 2.0.0-beta.21(@opentelemetry/api@1.9.1)
       '@pierre/diffs':
         specifier: ^1.2.9
         version: 1.4.1(@shikijs/themes@4.4.3)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -280,7 +280,7 @@ importers:
         version: link:../../services/engine
       '@orpc/server':
         specifier: 2.0.0-beta.21
-        version: 2.0.0-beta.21
+        version: 2.0.0-beta.21(@opentelemetry/api@1.9.1)
       '@storybook/addon-a11y':
         specifier: ^10.4.1
         version: 10.6.0(storybook@10.6.0(@types/react@19.2.18)(prettier@2.8.8)(react@19.2.8))
