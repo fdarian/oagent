@@ -34,6 +34,7 @@ export type ServiceStatus =
 			loaded: false;
 			pid: number | undefined;
 			binaryPath: undefined;
+			runningBinaryPath: string | undefined;
 			runAtLoad: false;
 			port: undefined;
 			paths: ServicePaths;
@@ -43,6 +44,7 @@ export type ServiceStatus =
 			loaded: boolean;
 			pid: number | undefined;
 			binaryPath: string;
+			runningBinaryPath: string | undefined;
 			runAtLoad: boolean;
 			port: number;
 			paths: ServicePaths;
@@ -73,6 +75,7 @@ export function loadServiceStatus(): Effect.Effect<
 				loaded: false,
 				pid: managedServer.pid,
 				binaryPath: undefined,
+				runningBinaryPath: managedServer.binaryPath,
 				runAtLoad: false,
 				port: undefined,
 				paths,
@@ -92,6 +95,7 @@ export function loadServiceStatus(): Effect.Effect<
 				loaded: false,
 				pid: managedServer.pid,
 				binaryPath: configuration.binaryPath,
+				runningBinaryPath: managedServer.binaryPath,
 				runAtLoad: configuration.runAtLoad,
 				port: configuration.port,
 				paths,
@@ -111,6 +115,7 @@ export function loadServiceStatus(): Effect.Effect<
 			loaded: true,
 			pid: managedServer.pid,
 			binaryPath: configuration.binaryPath,
+			runningBinaryPath: managedServer.binaryPath,
 			runAtLoad: configuration.runAtLoad,
 			port: configuration.port,
 			paths,

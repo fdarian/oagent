@@ -6,6 +6,7 @@ import { ServiceError } from '#/lib/service/errors.ts';
 export type ManagedServerStatus = {
 	pid: number | undefined;
 	running: boolean;
+	binaryPath: string | undefined;
 };
 
 export type StartManagedServerResult = {
@@ -50,6 +51,18 @@ function isOagentServeCommand(command: string): boolean {
 	}
 
 	return false;
+}
+
+function getProcessBinaryPath(command: string): string | undefined {
+	const trimmedCommand = command.trim();
+	if (trimmedCommand.length === 0) {
+		return undefined;
+	}
+
+	const whitespaceIndex = trimmedCommand.search(/\s/);
+	return whitespaceIndex === -1
+		? trimmedCommand
+		: trimmedCommand.slice(0, whitespaceIndex);
 }
 
 function readPidFile(
@@ -172,16 +185,16 @@ export function loadManagedServerStatus(
 	return Effect.gen(function* () {
 		const pid = yield* readPidFile(pidPath);
 		if (pid === undefined) {
-			return { pid: undefined, running: false };
+			return { pid: undefined, running: false, binaryPath: undefined };
 		}
 
 		const command = yield* readProcessCommand(pid);
 		if (command === undefined || !isOagentServeCommand(command)) {
 			yield* removePidFile(pidPath);
-			return { pid: undefined, running: false };
+			return { pid: undefined, running: false, binaryPath: undefined };
 		}
 
-		return { pid, running: true };
+		return { pid, running: true, binaryPath: getProcessBinaryPath(command) };
 	});
 }
 

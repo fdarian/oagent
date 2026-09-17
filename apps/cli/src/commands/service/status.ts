@@ -4,6 +4,12 @@ import { SERVICE_LABEL } from '#/lib/service/launchctl.ts';
 import { loadServiceStatus } from '#/lib/service/lifecycle.ts';
 import { writeLines } from './shared.ts';
 
+function runningBinaryLine(binaryPath: string | undefined): string {
+	return binaryPath === undefined
+		? 'running binary: not running'
+		: `running binary: ${binaryPath}`;
+}
+
 function runStatus() {
 	return Effect.gen(function* () {
 		const status = yield* loadServiceStatus();
@@ -20,6 +26,7 @@ function runStatus() {
 				'loaded: no',
 				runningLine,
 				'binary: not installed',
+				runningBinaryLine(status.runningBinaryPath),
 				`plist: ${status.paths.plistPath}`,
 			]);
 			return;
@@ -37,6 +44,7 @@ function runStatus() {
 			`loaded: ${status.loaded ? 'yes' : 'no'}`,
 			runningLine,
 			`binary: ${status.binaryPath}`,
+			runningBinaryLine(status.runningBinaryPath),
 			`port: ${status.port}`,
 			`plist: ${status.paths.plistPath}`,
 		]);
