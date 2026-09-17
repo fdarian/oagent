@@ -59,15 +59,6 @@ type JobsChange = {
 	status?: string;
 };
 
-type ReasoningEffort =
-	| 'minimal'
-	| 'low'
-	| 'medium'
-	| 'high'
-	| 'xhigh'
-	| 'max'
-	| 'ultra';
-
 const TIMEOUT_DEFAULT_MS = 50_000;
 
 export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
@@ -413,6 +404,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						return opencode.runTurn({
 							prompt: input.prompt,
 							model: rest,
+							reasoningEffort,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
 							onEvent,
@@ -738,7 +730,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			name: string;
 			backend: string;
 			model_id: string;
-			reasoning_effort?: ReasoningEffort | null;
+			reasoning_effort?: string | null;
 			description?: string | null;
 		}) => {
 			const now = new Date();

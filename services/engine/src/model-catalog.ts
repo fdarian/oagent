@@ -2,7 +2,7 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
-import { OpenCode } from './opencode.ts';
+import { OpenCode, type OpenCodeEffortOption } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
@@ -10,6 +10,11 @@ export type ModelEntry = { id: string; label?: string };
 
 type CacheEntry = {
 	models: ReadonlyArray<ModelEntry>;
+	fetchedAt: number;
+};
+
+type EffortCacheEntry = {
+	efforts: ReadonlyArray<OpenCodeEffortOption>;
 	fetchedAt: number;
 };
 
@@ -32,6 +37,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 			const grok = yield* Grok;
 			const codex = yield* Codex;
 			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
+			const effortCache = yield* Ref.make(new Map<string, EffortCacheEntry>());
 
 			const fetch = (
 				backend: Backend,
@@ -54,6 +60,51 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				);
 			};
 
+			const fetchEfforts = (
+				backend: Backend,
+				model: string,
+			): Effect.Effect<
+				ReadonlyArray<OpenCodeEffortOption>,
+				ModelCatalogError
+			> => {
+				if (backend !== 'opencode') return Effect.succeed([]);
+				return opencode.listModelEfforts(model).pipe(
+					Effect.catch((cause) =>
+						Effect.fail(
+							new ModelCatalogError({
+								backend,
+								message: `Failed to list reasoning efforts for ${backend}: ${String(cause)}`,
+							}),
+						),
+					),
+				);
+			};
+
+			const listEfforts = (
+				backend: Backend,
+				model: string,
+			): Effect.Effect<
+				ReadonlyArray<OpenCodeEffortOption>,
+				ModelCatalogError
+			> => {
+				if (backend !== 'opencode') return Effect.succeed([]);
+				return Effect.gen(function* () {
+					const now = Date.now();
+					const current = yield* Ref.get(effortCache);
+					const entry = current.get(model);
+					if (entry !== undefined && now - entry.fetchedAt < TTL_MS) {
+						return entry.efforts;
+					}
+					const efforts = yield* fetchEfforts(backend, model);
+					yield* Ref.update(effortCache, (m) => {
+						const next = new Map(m);
+						next.set(model, { efforts, fetchedAt: now });
+						return next;
+					});
+					return efforts;
+				});
+			};
+
 			const list = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
@@ -74,13 +125,18 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				});
 
 			const invalidate = (backend: Backend) =>
-				Ref.update(cache, (current) => {
-					const next = new Map(current);
-					next.delete(backend);
-					return next;
+				Effect.gen(function* () {
+					yield* Ref.update(cache, (current) => {
+						const next = new Map(current);
+						next.delete(backend);
+						return next;
+					});
+					if (backend === 'opencode') {
+						yield* Ref.set(effortCache, new Map<string, EffortCacheEntry>());
+					}
 				});
 
-			return { list, invalidate };
+			return { list, listEfforts, invalidate };
 		}),
 	},
 ) {

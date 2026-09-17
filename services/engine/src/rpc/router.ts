@@ -7,33 +7,13 @@ import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
 
-type ReasoningEffort =
-	| 'minimal'
-	| 'low'
-	| 'medium'
-	| 'high'
-	| 'xhigh'
-	| 'max'
-	| 'ultra';
-
-function normalizeReasoningEffort(
-	value: string | null,
-): ReasoningEffort | undefined {
-	if (
-		value === 'minimal' ||
-		value === 'low' ||
-		value === 'medium' ||
-		value === 'high' ||
-		value === 'xhigh' ||
-		value === 'max' ||
-		value === 'ultra'
-	) {
-		return value;
-	}
-	return undefined;
+function normalizeReasoningEffort(value: string | null): string | undefined {
+	if (value === null || value.length === 0) return undefined;
+	return value;
 }
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
 const harnessesOutput = v.array(
 	v.object({
 		backend: backendSchema,
@@ -190,17 +170,7 @@ const program = Effect.gen(function* () {
 							name: v.string(),
 							backend: v.string(),
 							model_id: v.string(),
-							reasoning_effort: v.optional(
-								v.picklist([
-									'minimal',
-									'low',
-									'medium',
-									'high',
-									'xhigh',
-									'max',
-									'ultra',
-								]),
-							),
+							reasoning_effort: reasoningEffortSchema,
 							description: v.optional(v.string()),
 						}),
 					),
@@ -224,17 +194,7 @@ const program = Effect.gen(function* () {
 							name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
 							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
 							model_id: v.pipe(v.string(), v.nonEmpty()),
-							reasoning_effort: v.optional(
-								v.picklist([
-									'minimal',
-									'low',
-									'medium',
-									'high',
-									'xhigh',
-									'max',
-									'ultra',
-								]),
-							),
+							reasoning_effort: reasoningEffortSchema,
 							description: v.optional(v.string()),
 						}),
 					)
@@ -243,17 +203,7 @@ const program = Effect.gen(function* () {
 							name: v.string(),
 							backend: v.string(),
 							model_id: v.string(),
-							reasoning_effort: v.optional(
-								v.picklist([
-									'minimal',
-									'low',
-									'medium',
-									'high',
-									'xhigh',
-									'max',
-									'ultra',
-								]),
-							),
+							reasoning_effort: reasoningEffortSchema,
 							description: v.optional(v.string()),
 						}),
 					),
@@ -402,6 +352,23 @@ const program = Effect.gen(function* () {
 				Effect.fn(function* (opt) {
 					const models = yield* modelCatalog.list(opt.input.backend);
 					return models.map((entry) => ({ id: entry.id, label: entry.label }));
+				}),
+			),
+			efforts: yield* createHandler(
+				os
+					.input(
+						v.object({
+							backend: backendSchema,
+							model_id: v.pipe(v.string(), v.nonEmpty()),
+						}),
+					)
+					.output(v.array(v.object({ value: v.string(), label: v.string() }))),
+				Effect.fn(function* (opt) {
+					const efforts = yield* modelCatalog.listEfforts(
+						opt.input.backend,
+						opt.input.model_id,
+					);
+					return [...efforts];
 				}),
 			),
 		},
