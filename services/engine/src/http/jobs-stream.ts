@@ -39,7 +39,7 @@ export function handleJobsStream(
 			}, 25_000);
 
 			const listener = (change: {
-				type: 'created' | 'status';
+				type: 'created' | 'status' | 'updated';
 				jobId: string;
 				status?: string;
 			}) => {

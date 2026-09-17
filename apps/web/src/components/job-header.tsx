@@ -1,6 +1,13 @@
-import { CopyIcon, MaximizeIcon, XCircleIcon } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { CheckIcon, CopyIcon, MaximizeIcon, XCircleIcon } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { Badge } from '@/components/ui/badge';
+import {
+	Popover,
+	PopoverContent,
+	PopoverTrigger,
+} from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
+import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { cn } from '@/lib/utils';
 
 export type JobHeaderProps = {
@@ -8,60 +15,195 @@ export type JobHeaderProps = {
 	status: string;
 	prompt: string;
 	cwd: string;
+	backend: Backend;
 	model?: string;
+	sessionId?: string;
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
 	onExpandPrompt?: () => void;
 };
 
-export function JobHeader({
-	id,
-	status,
-	prompt,
-	cwd,
-	model,
-	createdAt,
-	terminatedAt,
-	onCancel,
-	onExpandPrompt,
-}: JobHeaderProps) {
+type HarnessSessionPopoverProps = {
+	backend: Backend;
+	sessionId?: string;
+};
+
+function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
+	const [open, setOpen] = useState(false);
+	const [copied, setCopied] = useState(false);
+	const closeTimeout = useRef<number | undefined>(undefined);
+	const copyTimeout = useRef<number | undefined>(undefined);
+
+	useEffect(
+		() => () => {
+			if (closeTimeout.current !== undefined) {
+				window.clearTimeout(closeTimeout.current);
+			}
+			if (copyTimeout.current !== undefined) {
+				window.clearTimeout(copyTimeout.current);
+			}
+		},
+		[],
+	);
+
+	const clearCloseTimeout = () => {
+		if (closeTimeout.current === undefined) return;
+		window.clearTimeout(closeTimeout.current);
+		closeTimeout.current = undefined;
+	};
+
+	const handleOpen = () => {
+		clearCloseTimeout();
+		setOpen(true);
+	};
+
+	const handleClose = () => {
+		clearCloseTimeout();
+		closeTimeout.current = window.setTimeout(() => {
+			closeTimeout.current = undefined;
+			setOpen(false);
+		}, 120);
+	};
+
+	const handleOpenChange = (nextOpen: boolean) => {
+		if (nextOpen) clearCloseTimeout();
+		setOpen(nextOpen);
+	};
+
+	const handleCopySessionId = () => {
+		if (props.sessionId === undefined) return;
+		if (typeof navigator.clipboard === 'undefined') {
+			console.error('Clipboard API unavailable');
+			return;
+		}
+
+		void navigator.clipboard.writeText(props.sessionId).then(
+			() => {
+				setCopied(true);
+				if (copyTimeout.current !== undefined) {
+					window.clearTimeout(copyTimeout.current);
+				}
+				copyTimeout.current = window.setTimeout(() => {
+					copyTimeout.current = undefined;
+					setCopied(false);
+				}, 1500);
+			},
+			(error: unknown) => {
+				console.error('Failed to copy session ID', error);
+			},
+		);
+	};
+
+	return (
+		<Popover open={open} onOpenChange={handleOpenChange}>
+			<PopoverTrigger asChild>
+				<Badge
+					asChild
+					variant="outline"
+					className="cursor-help rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground hover:bg-secondary hover:text-foreground"
+				>
+					<button
+						type="button"
+						aria-label={`${HARNESS_NAMES[props.backend]} harness; show session ID`}
+						onPointerEnter={handleOpen}
+						onPointerLeave={handleClose}
+						onFocus={handleOpen}
+						onBlur={handleClose}
+					>
+						{HARNESS_NAMES[props.backend]}
+					</button>
+				</Badge>
+			</PopoverTrigger>
+			<PopoverContent
+				align="start"
+				sideOffset={8}
+				aria-label="Harness session details"
+				className="w-[min(24rem,calc(100vw-2rem))] rounded-none p-15"
+				onPointerEnter={handleOpen}
+				onPointerLeave={handleClose}
+				onFocus={handleOpen}
+				onBlur={handleClose}
+			>
+				<div className="flex flex-col gap-10">
+					<div className="flex items-center justify-between gap-15">
+						<span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
+							Harness session
+						</span>
+						<span className="text-caption text-muted-foreground">
+							{HARNESS_NAMES[props.backend]}
+						</span>
+					</div>
+					{props.sessionId === undefined ? (
+						<span className="text-caption text-muted-foreground">
+							Session ID not available yet
+						</span>
+					) : (
+						<div className="flex min-w-0 items-center gap-10 border border-border px-10 py-1">
+							<code
+								className="min-w-0 flex-1 truncate font-mono text-caption text-foreground"
+								title={props.sessionId}
+							>
+								{props.sessionId}
+							</code>
+							<button
+								type="button"
+								aria-label="Copy session ID"
+								title="Copy session ID"
+								onClick={handleCopySessionId}
+								className="flex size-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+							>
+								{copied ? (
+									<CheckIcon className="size-3 text-verdant-accent" />
+								) : (
+									<CopyIcon className="size-3" />
+								)}
+							</button>
+						</div>
+					)}
+				</div>
+			</PopoverContent>
+		</Popover>
+	);
+}
+
+export function JobHeader(props: JobHeaderProps) {
 	const [copied, setCopied] = useState(false);
 
-	const handleCopyId = useCallback(() => {
-		navigator.clipboard.writeText(id).then(() => {
+	const handleCopyId = () => {
+		navigator.clipboard.writeText(props.id).then(() => {
 			setCopied(true);
 			setTimeout(() => setCopied(false), 1500);
 		});
-	}, [id]);
+	};
 
-	const promptLines = prompt.split('\n').slice(0, 2).join('\n');
-	const elapsed = formatElapsed(createdAt, terminatedAt);
+	const promptLines = props.prompt.split('\n').slice(0, 2).join('\n');
+	const elapsed = formatElapsed(props.createdAt, props.terminatedAt);
 
 	const statusDot =
-		status === 'running' ? (
+		props.status === 'running' ? (
 			<span className="inline-block h-[6px] w-[6px] bg-verdant-accent" />
-		) : status === 'done' ? (
+		) : props.status === 'done' ? (
 			<span className="inline-block h-[6px] w-[6px] bg-primary" />
 		) : (
 			<span className="inline-block h-[6px] w-[6px] bg-destructive" />
 		);
 
 	const isPromptTruncated =
-		prompt.split('\n').length > 2 || prompt !== promptLines;
+		props.prompt.split('\n').length > 2 || props.prompt !== promptLines;
 
 	return (
 		<div className="flex flex-col gap-15 border-b border-border pb-22">
-			<div className="flex items-start justify-between gap-15">
+			<div className="flex flex-wrap items-start justify-between gap-15">
 				<div className="flex min-w-0 flex-1 flex-col gap-15">
 					<div className="group relative">
 						<pre className="whitespace-pre-wrap text-body font-light text-foreground">
 							{promptLines}
 						</pre>
-						{isPromptTruncated && onExpandPrompt !== undefined && (
+						{isPromptTruncated && props.onExpandPrompt !== undefined && (
 							<button
 								type="button"
-								onClick={onExpandPrompt}
+								onClick={props.onExpandPrompt}
 								className="mt-1 flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
 							>
 								<MaximizeIcon className="h-3 w-3" />
@@ -69,38 +211,42 @@ export function JobHeader({
 							</button>
 						)}
 					</div>
-					<div className="flex items-center gap-15 text-caption text-muted-foreground">
-						<span className="truncate">{cwd}</span>
+					<div className="flex flex-wrap items-center gap-x-15 gap-y-1 text-caption text-muted-foreground">
+						<span className="min-w-0 max-w-full truncate">{props.cwd}</span>
 						<span>·</span>
-						<span>started {formatAge(createdAt)}</span>
+						<span>started {formatAge(props.createdAt)}</span>
 						<span>·</span>
 						<span>{elapsed}</span>
-						{model !== undefined && model !== '' && (
-							<>
-								<span>·</span>
-								<span>{model}</span>
-							</>
-						)}
+						<span>·</span>
+						<span className="flex min-w-0 max-w-full items-center gap-10">
+							{props.model !== undefined && props.model !== '' && (
+								<span className="truncate">{props.model}</span>
+							)}
+							<HarnessSessionPopover
+								backend={props.backend}
+								sessionId={props.sessionId}
+							/>
+						</span>
 					</div>
 				</div>
-				<div className="flex items-center gap-15">
+				<div className="flex flex-wrap items-center justify-end gap-10">
 					<div
 						className={cn(
 							'flex items-center gap-[6px] border px-2 py-1 text-caption',
-							status === 'running'
+							props.status === 'running'
 								? 'border-verdant-accent text-verdant-accent'
-								: status === 'done'
+								: props.status === 'done'
 									? 'border-primary text-primary'
 									: 'border-destructive text-destructive',
 						)}
 					>
 						{statusDot}
-						<span className="uppercase">{status}</span>
+						<span className="uppercase">{props.status}</span>
 					</div>
-					{status === 'running' && onCancel !== undefined && (
+					{props.status === 'running' && props.onCancel !== undefined && (
 						<button
 							type="button"
-							onClick={onCancel}
+							onClick={props.onCancel}
 							className="flex items-center gap-1 border border-destructive px-2 py-1 text-caption text-destructive transition-colors hover:bg-destructive hover:text-canvas"
 						>
 							<XCircleIcon className="h-3 w-3" />

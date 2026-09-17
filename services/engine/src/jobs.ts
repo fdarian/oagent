@@ -11,6 +11,7 @@ import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
+import type { Backend } from './model-catalog.ts';
 import { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 
@@ -45,8 +46,12 @@ type WaitResult =
 			readonly text: string;
 			readonly stopReason: string | undefined;
 	  }
-	| { readonly status: 'error'; readonly message: string }
-	| { readonly status: 'cancelled' };
+	| {
+			readonly status: 'error';
+			readonly message: string;
+			readonly sessionId?: string;
+	  }
+	| { readonly status: 'cancelled'; readonly sessionId?: string };
 
 type EventPage = {
 	events: { event: SessionUpdate; sequence: number }[];
@@ -54,7 +59,7 @@ type EventPage = {
 };
 
 type JobsChange = {
-	type: 'created' | 'status';
+	type: 'created' | 'status' | 'updated';
 	jobId: string;
 	status?: string;
 };
@@ -65,6 +70,18 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
+
+function parseBackend(value: string): Backend {
+	if (
+		value === 'opencode' ||
+		value === 'cursor' ||
+		value === 'grok' ||
+		value === 'codex'
+	) {
+		return value;
+	}
+	throw new Error(`Invalid persisted job backend: ${value}`);
+}
 
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
@@ -374,6 +391,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cwd: input.cwd,
 						model: rest,
 						backend,
+						session_id: input.sessionId,
 						mcp_session_id: input.mcpSessionId,
 					})
 					.returning({ id: schema.jobs.id })
@@ -399,6 +417,14 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					emitter.emit(TERMINAL_EVENT);
 				});
 
+				const onSessionId = (sessionId: string): void => {
+					db.update(schema.jobs)
+						.set({ session_id: sessionId })
+						.where(eq(schema.jobs.id, internalId))
+						.run();
+					jobsEmitter.emit('change', { type: 'updated', jobId: uuid });
+				};
+
 				const runTurnEffect = (() => {
 					if (backend === 'opencode') {
 						return opencode.runTurn({
@@ -407,6 +433,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							reasoningEffort,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
+							onSessionId,
 							onEvent,
 						});
 					}
@@ -416,6 +443,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							model: rest,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
+							onSessionId,
 							onEvent,
 						});
 					}
@@ -426,6 +454,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							reasoningEffort,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
+							onSessionId,
 							onEvent,
 						});
 					}
@@ -434,6 +463,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						model: rest,
 						sessionId: input.sessionId,
 						cwd: input.cwd,
+						onSessionId,
 						onEvent,
 						onExtensionEvent: (method, params) => {
 							onEvent({
@@ -591,7 +621,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			terminatedAt?: number;
 			prompt: string;
 			cwd: string;
+			backend: Backend;
 			model?: string;
+			sessionId?: string;
 			mcpSessionId?: string;
 		};
 
@@ -604,7 +636,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			terminatedAt: row.terminated_at?.getTime(),
 			prompt: row.prompt,
 			cwd: row.cwd,
+			backend: parseBackend(row.backend),
 			model: row.model ?? undefined,
+			sessionId: row.session_id === null ? undefined : row.session_id,
 			mcpSessionId: row.mcp_session_id ?? undefined,
 		});
 
@@ -645,7 +679,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					terminatedAt?: number;
 					prompt: string;
 					cwd: string;
+					backend: Backend;
 					model?: string;
+					sessionId?: string;
 					recentEvents: SessionUpdate[];
 			  }
 			| undefined => {
@@ -674,7 +710,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				terminatedAt: job.terminated_at?.getTime(),
 				prompt: job.prompt,
 				cwd: job.cwd,
+				backend: parseBackend(job.backend),
 				model: job.model ?? undefined,
+				sessionId: job.session_id === null ? undefined : job.session_id,
 				recentEvents: allEvents,
 			};
 		};
@@ -848,7 +886,10 @@ function toWaitResult(job: {
 	error_message: string | null;
 }): WaitResult {
 	if (job.status === 'running') return { status: 'running' };
-	if (job.status === 'cancelled') return { status: 'cancelled' };
+	if (job.status === 'cancelled') {
+		if (job.session_id === null) return { status: 'cancelled' };
+		return { status: 'cancelled', sessionId: job.session_id };
+	}
 	if (job.status === 'done') {
 		if (job.session_id === null || job.text === null) {
 			throw new Error(
@@ -867,7 +908,14 @@ function toWaitResult(job: {
 			`Invariant violated: error job ${job.uuid} missing error_message`,
 		);
 	}
-	return { status: 'error', message: job.error_message };
+	if (job.session_id === null) {
+		return { status: 'error', message: job.error_message };
+	}
+	return {
+		status: 'error',
+		message: job.error_message,
+		sessionId: job.session_id,
+	};
 }
 
 function formatJobError(error: unknown): string {

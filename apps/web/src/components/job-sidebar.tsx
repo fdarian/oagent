@@ -31,7 +31,7 @@ export function JobSidebar({
 	const isEmpty = view === 'jobs' ? grouped.length === 0 : jobs.length === 0;
 
 	return (
-		<div className="flex h-full w-[360px] shrink-0 flex-col border-r border-border bg-background">
+		<div className="flex h-[40vh] w-full shrink-0 flex-col border-b border-border bg-background sm:h-full sm:w-[360px] sm:border-r sm:border-b-0">
 			<div className="flex items-center justify-between px-22 py-15">
 				<span className="text-subheading font-light text-foreground">
 					oagent

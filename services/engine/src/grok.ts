@@ -82,6 +82,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 			model?: string;
 			sessionId?: string;
 			cwd: string;
+			onSessionId?: (sessionId: string) => void;
 			onEvent?: (event: SessionUpdate) => void;
 		}) =>
 			Effect.scoped(

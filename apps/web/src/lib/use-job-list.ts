@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { groupByDay } from './format.ts';
+import type { Backend } from './harnesses.ts';
 import { orpc } from './orpc.ts';
 import { queryKeys } from './query-keys.ts';
 import { useJobListStream } from './use-job-list-stream.ts';
@@ -12,7 +13,9 @@ export type JobListItem = {
 	terminatedAt?: number;
 	prompt: string;
 	cwd: string;
+	backend: Backend;
 	model?: string;
+	sessionId?: string;
 	mcpSessionId?: string;
 };
 

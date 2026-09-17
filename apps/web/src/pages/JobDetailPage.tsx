@@ -81,7 +81,9 @@ export function JobDetailPage() {
 										status={status}
 										prompt={selectedJob.prompt}
 										cwd={selectedJob.cwd}
+										backend={selectedJob.backend}
 										model={selectedJob.model}
+										sessionId={selectedJob.sessionId}
 										createdAt={selectedJob.createdAt}
 										terminatedAt={selectedJob.terminatedAt}
 										onCancel={() => {
