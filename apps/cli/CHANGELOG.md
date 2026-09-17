@@ -1,5 +1,11 @@
 # oagent
 
+## 0.3.2
+
+### Patch Changes
+
+- 37f2cc7: Allow OpenCode aliases to configure model reasoning effort.
+
 ## 0.3.1
 
 ### Patch Changes
