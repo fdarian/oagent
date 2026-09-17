@@ -17,10 +17,10 @@
 		"@agentclientprotocol/sdk": "^0.22.1",
 		"@effect/platform-bun": "catalog:",
 		"@modelcontextprotocol/sdk": "^1.29.0",
-		"@orpc/server": "latest",
+		"@orpc/experimental-effect": "2.0.0-beta.21",
+		"@orpc/server": "2.0.0-beta.21",
 		"drizzle-orm": "^0.45.2",
 		"effect": "catalog:",
-		"ff-effect": "latest",
 		"get-port": "^7.2.0",
 		"valibot": "^1.4.1",
 		"zod": "^4.4.3"

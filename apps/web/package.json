@@ -11,7 +11,7 @@
 		"build-storybook": "storybook build"
 	},
 	"dependencies": {
-		"@orpc/client": "latest",
+		"@orpc/client": "2.0.0-beta.21",
 		"@pierre/diffs": "^1.2.9",
 		"@radix-ui/react-use-controllable-state": "^1.2.2",
 		"@rive-app/react-webgl2": "^4.28.3",
@@ -50,7 +50,7 @@
 		"@effect/platform-bun": "catalog:",
 		"@oagent/config": "workspace:*",
 		"@oagent/engine": "workspace:*",
-		"@orpc/server": "latest",
+		"@orpc/server": "2.0.0-beta.21",
 		"@storybook/addon-a11y": "^10.4.1",
 		"@storybook/addon-docs": "^10.4.1",
 		"@storybook/react-vite": "^10.4.1",
