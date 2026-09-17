@@ -30,6 +30,7 @@ export const EmptySelection: Story = {
 								createdAt: Date.now() - 300_000,
 								prompt: 'List files',
 								cwd: '/Users/dev/project',
+								backend: 'opencode',
 							},
 						],
 					},
@@ -41,6 +42,7 @@ export const EmptySelection: Story = {
 						createdAt: Date.now() - 300_000,
 						prompt: 'List files',
 						cwd: '/Users/dev/project',
+						backend: 'opencode',
 					},
 				]}
 				selectedId={undefined}
@@ -69,6 +71,8 @@ export const RunningSession: Story = {
 								createdAt: Date.now() - 120_000,
 								prompt: 'Refactor auth middleware',
 								cwd: '/Users/dev/project',
+								backend: 'opencode',
+								sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 								model: 'opencode-go/kimi-k2.6',
 							},
 							{
@@ -77,6 +81,7 @@ export const RunningSession: Story = {
 								createdAt: Date.now() - 400_000,
 								prompt: 'List files in src/',
 								cwd: '/Users/dev/project',
+								backend: 'opencode',
 							},
 						],
 					},
@@ -88,6 +93,8 @@ export const RunningSession: Story = {
 						createdAt: Date.now() - 120_000,
 						prompt: 'Refactor auth middleware',
 						cwd: '/Users/dev/project',
+						backend: 'opencode',
+						sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 						model: 'opencode-go/kimi-k2.6',
 					},
 					{
@@ -96,6 +103,7 @@ export const RunningSession: Story = {
 						createdAt: Date.now() - 400_000,
 						prompt: 'List files in src/',
 						cwd: '/Users/dev/project',
+						backend: 'opencode',
 					},
 				]}
 				selectedId="job-run"
@@ -112,7 +120,9 @@ export const RunningSession: Story = {
 							status="running"
 							prompt="Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases"
 							cwd="/Users/dev/project/apps/api"
+							backend="opencode"
 							model="opencode-go/kimi-k2.6"
+							sessionId="ses_01JSESSIONEXAMPLE1234567890"
 							createdAt={Date.now() - 120_000}
 							onCancel={() => {}}
 						/>

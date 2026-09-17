@@ -13,7 +13,9 @@ const base = {
 	prompt:
 		'Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases',
 	cwd: '/Users/dev/project/apps/api',
+	backend: 'opencode' as const,
 	model: 'opencode-go/kimi-k2.6',
+	sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 	createdAt: Date.now() - 120_000,
 };
 

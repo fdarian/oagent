@@ -7,8 +7,10 @@ Launch or continue an agent.
 
 It returns the final result as a discriminated union:
 - Success: \`{ status: "done", text, sessionId, stopReason }\` — the final aggregated assistant text plus the \`sessionId\` you can pass back into a subsequent \`start\` call to continue the same conversation
-- Error: \`{ status: "error", message }\` — the job terminated with an error 
-- Cancelled: \`{ status: "cancelled" }\`
+- Error: \`{ status: "error", message, sessionId? }\` — the job terminated with an error; \
+  \`sessionId\` is included when the harness created a session before the error
+- Cancelled: \`{ status: "cancelled", sessionId? }\` — \`sessionId\` is included when the \
+  harness created a session before cancellation
 - Pending: \`{ status: "running", jobId }\` — the job is still running. Wait by running \`oagent jobs wait <jobId>\` verbatim as a background command (it can block for many minutes). Do NOT pipe, redirect, or wrap it (no \`| tail\`, \`2>&1\`, \`echo $?\`, etc.) — it prints exactly one JSON result line to stdout that you read directly.
 
 If this tool timed-out, you can find the jobId from \`oagent jobs list\``;

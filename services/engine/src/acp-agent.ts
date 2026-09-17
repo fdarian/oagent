@@ -266,6 +266,7 @@ export function runAcpTurn(
 		reasoningEffort?: string;
 		sessionId?: string;
 		cwd: string;
+		onSessionId?: (sessionId: string) => void;
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 		skipModelSet?: boolean;
@@ -312,6 +313,11 @@ export function runAcpTurn(
 				})),
 			);
 		})();
+
+		const onSessionId = input.onSessionId;
+		if (onSessionId !== undefined) {
+			yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
+		}
 
 		let buffer = '';
 
@@ -454,6 +460,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			reasoningEffort?: string;
 			sessionId?: string;
 			cwd: string;
+			onSessionId?: (sessionId: string) => void;
 			onEvent?: (event: SessionUpdate) => void;
 			onExtensionEvent?: (method: string, params: unknown) => void;
 			configOptions?: ReadonlyArray<AcpConfigOption>;

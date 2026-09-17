@@ -11,7 +11,7 @@ export function ConsoleLayout() {
 	const selectedId = jobMatch === undefined ? undefined : jobMatch.params.jobId;
 
 	return (
-		<div className="flex h-screen w-screen overflow-hidden bg-background">
+		<div className="flex h-screen w-screen flex-col overflow-hidden bg-background sm:flex-row">
 			<JobSidebar
 				grouped={jobList.grouped}
 				jobs={jobList.jobs}
@@ -20,7 +20,7 @@ export function ConsoleLayout() {
 				cwdFilter={jobList.cwdFilter}
 				onCwdFilterChange={jobList.setCwdFilter}
 			/>
-			<div className="flex min-w-0 flex-1 flex-col">
+			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 				<Outlet />
 			</div>
 		</div>
