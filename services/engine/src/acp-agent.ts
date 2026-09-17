@@ -40,6 +40,22 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	},
 ) {}
 
+function getRpcMessage(cause: unknown): string | undefined {
+	if (typeof cause !== 'object' || cause === null) return undefined;
+	const error = cause as Record<string, unknown>;
+	if (typeof error.data === 'object' && error.data !== null) {
+		const data = error.data as Record<string, unknown>;
+		if (typeof data.message === 'string') return data.message;
+	}
+	return typeof error.message === 'string' ? error.message : undefined;
+}
+
+function formatSessionLoadError(sessionId: string, cause: unknown): string {
+	const rpcMessage = getRpcMessage(cause);
+	const detail = rpcMessage === undefined ? '' : `: ${rpcMessage}`;
+	return `Could not load OpenCode session "${sessionId}"${detail}. It may no longer exist or belong to a different backend; start without sessionId.`;
+}
+
 function isSelectGroup(
 	opt: SessionConfigSelectOption | SessionConfigSelectGroup,
 ): opt is SessionConfigSelectGroup {
@@ -267,7 +283,12 @@ export function runAcpTurn(
 							cwd: input.cwd,
 							mcpServers: [],
 						}),
-					catch: (cause) => new AcpSessionError({ cause }),
+					catch: (cause) =>
+						new AcpTurnFailed({
+							code: 'SESSION_LOAD_FAILED',
+							message: formatSessionLoadError(sid, cause),
+							cause,
+						}),
 				}).pipe(
 					Effect.map((res) => ({
 						sessionId: sid,
@@ -349,21 +370,7 @@ export function runAcpTurn(
 							value: configOption.value,
 						}),
 					catch: (cause) => {
-						const rpcMessage = (() => {
-							if (typeof cause === 'object' && cause !== null) {
-								const c = cause as Record<string, unknown>;
-								if (typeof c.data === 'object' && c.data !== null) {
-									const d = c.data as Record<string, unknown>;
-									if (typeof d.message === 'string') {
-										return d.message;
-									}
-								}
-								if (typeof c.message === 'string') {
-									return c.message;
-								}
-							}
-							return undefined;
-						})();
+						const rpcMessage = getRpcMessage(cause);
 
 						const modelsHint =
 							sessionResult.availableModels !== undefined &&
