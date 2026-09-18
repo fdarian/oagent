@@ -45,17 +45,62 @@ export class HarnessVersion extends Context.Service<HarnessVersion>()(
 			const set = (
 				backend: string,
 				version: string | undefined,
+				binaryPath?: string,
 			): Effect.Effect<void, HarnessVersionError> =>
-				Effect.try({
-					try: () => {
-						dbService.db
-							.update(schema.harnesses)
-							.set({ version: version === undefined ? null : version })
-							.where(eq(schema.harnesses.backend, backend))
-							.run();
-					},
-					catch: (cause) =>
-						new HarnessVersionError({ operation: 'set', cause }),
+				Effect.gen(function* () {
+					if (binaryPath !== undefined) {
+						yield* Effect.try({
+							try: () =>
+								dbService.db
+									.insert(schema.harnesses)
+									.values({
+										backend,
+										binary_path: binaryPath,
+										version: version === undefined ? null : version,
+										detected_at: new Date(),
+									})
+									.onConflictDoUpdate({
+										target: schema.harnesses.backend,
+										set: {
+											version: version === undefined ? null : version,
+										},
+									})
+									.run(),
+							catch: (cause) =>
+								new HarnessVersionError({ operation: 'set', cause }),
+						});
+						return;
+					}
+
+					const row = yield* Effect.try({
+						try: () =>
+							dbService.db
+								.select({ backend: schema.harnesses.backend })
+								.from(schema.harnesses)
+								.where(eq(schema.harnesses.backend, backend))
+								.limit(1)
+								.get(),
+						catch: (cause) =>
+							new HarnessVersionError({ operation: 'set', cause }),
+					});
+					if (row === undefined) {
+						return yield* new HarnessVersionError({
+							operation: 'set',
+							cause: new Error(
+								`No harness row exists for ${backend}; a binary path is required to create it`,
+							),
+						});
+					}
+					yield* Effect.try({
+						try: () =>
+							dbService.db
+								.update(schema.harnesses)
+								.set({ version: version === undefined ? null : version })
+								.where(eq(schema.harnesses.backend, backend))
+								.run(),
+						catch: (cause) =>
+							new HarnessVersionError({ operation: 'set', cause }),
+					});
 				});
 
 			return { get, set };

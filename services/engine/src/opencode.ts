@@ -1,5 +1,5 @@
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	AcpAgent,
 	type AcpAgentConfig,
@@ -12,6 +12,7 @@ import { HarnessVersion } from './harness-version.ts';
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
 const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
+const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
 	/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
 
@@ -94,40 +95,63 @@ function parseOpenCodeVersion(output: string): string | undefined {
 export function resolveOpenCodeVersion(
 	binary: string,
 ): Effect.Effect<string, AcpSessionError> {
-	return Effect.tryPromise({
-		try: async () => {
-			const proc = Bun.spawn([binary, '--version'], {
-				stdout: 'pipe',
-				stderr: 'pipe',
+	const command = Effect.scoped(
+		Effect.gen(function* () {
+			const proc = yield* Effect.acquireRelease(
+				Effect.try({
+					try: () =>
+						Bun.spawn([binary, '--version'], {
+							stdout: 'pipe',
+							stderr: 'pipe',
+						}),
+					catch: (cause) => new AcpSessionError({ cause }),
+				}),
+				(child) =>
+					Effect.sync(() => {
+						if (child.exitCode === null) child.kill();
+					}),
+			);
+			const output = yield* Effect.tryPromise({
+				try: () =>
+					Promise.all([
+						new Response(proc.stdout).text(),
+						new Response(proc.stderr).text(),
+						proc.exited,
+					]),
+				catch: (cause) => new AcpSessionError({ cause }),
 			});
-			const output = await Promise.all([
-				new Response(proc.stdout).text(),
-				new Response(proc.stderr).text(),
-				proc.exited,
-			]);
 			const stdout = output[0];
 			const stderr = output[1];
 			const exitCode = output[2];
 			const combined = commandOutput(stdout, stderr);
 			if (exitCode !== 0) {
-				throw new Error(
-					combined.length > 0
-						? `opencode --version exited with code ${exitCode}: ${combined}`
-						: `opencode --version exited with code ${exitCode}`,
-				);
+				return yield* new AcpSessionError({
+					cause: new Error(
+						combined.length > 0
+							? `opencode --version exited with code ${exitCode}: ${combined}`
+							: `opencode --version exited with code ${exitCode}`,
+					),
+				});
 			}
 			const version = parseOpenCodeVersion(combined);
 			if (version === undefined) {
-				throw new Error(
-					combined.length > 0
-						? `Could not parse an opencode version from: ${combined}`
-						: 'opencode --version returned no output',
-				);
+				return yield* new AcpSessionError({
+					cause: new Error(
+						combined.length > 0
+							? `Could not parse an opencode version from: ${combined}`
+							: 'opencode --version returned no output',
+					),
+				});
 			}
 			return version;
-		},
-		catch: (cause) => new AcpSessionError({ cause }),
-	});
+		}),
+	);
+	return command.pipe(
+		Effect.timeout(OPENCODE_VERSION_TIMEOUT_MS),
+		Effect.mapError((cause) =>
+			cause instanceof AcpSessionError ? cause : new AcpSessionError({ cause }),
+		),
+	);
 }
 
 function parseOpenCodeMajor(version: string): number | undefined {
@@ -151,6 +175,8 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const acpAgent = yield* AcpAgent;
 		const harnessVersion = yield* HarnessVersion;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
+		const versionRef = yield* Ref.make<string | undefined>(undefined);
+		const versionSemaphore = yield* Semaphore.make(1);
 
 		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
 			acpAgent.runTurn({
@@ -164,17 +190,25 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			});
 
 		const resolveVersion = () =>
-			Effect.gen(function* () {
-				const persisted = yield* harnessVersion
-					.get('opencode')
-					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-				if (persisted !== undefined) return persisted;
-				const detected = yield* resolveOpenCodeVersion(binary);
-				yield* harnessVersion
-					.set('opencode', detected)
-					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-				return detected;
-			});
+			versionSemaphore.withPermit(
+				Effect.gen(function* () {
+					const memoized = yield* Ref.get(versionRef);
+					if (memoized !== undefined) return memoized;
+					const persisted = yield* harnessVersion
+						.get('opencode')
+						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+					if (persisted !== undefined) {
+						yield* Ref.set(versionRef, persisted);
+						return persisted;
+					}
+					const detected = yield* resolveOpenCodeVersion(binary);
+					yield* harnessVersion
+						.set('opencode', detected, binary)
+						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+					yield* Ref.set(versionRef, detected);
+					return detected;
+				}),
+			);
 
 		const listModelsCli = () =>
 			Effect.tryPromise({
@@ -224,13 +258,10 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			Effect.gen(function* () {
 				const version = yield* resolveVersion();
 				const major = parseOpenCodeMajor(version);
-				if (major === undefined) {
-					return yield* new AcpSessionError({
-						cause: new Error(`Unsupported opencode version: ${version}`),
-					});
+				if (major !== undefined) {
+					if (major >= 2) return yield* acpAgent.listModels();
+					if (major === 1) return yield* listModelsCli();
 				}
-				if (major >= 2) return yield* acpAgent.listModels();
-				if (major === 1) return yield* listModelsCli();
 				return yield* new AcpSessionError({
 					cause: new Error(`Unsupported opencode version: ${version}`),
 				});

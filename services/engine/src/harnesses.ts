@@ -359,10 +359,14 @@ export class Harnesses extends Context.Service<Harnesses>()(
 							versions.set(entry.definition.backend, null);
 							continue;
 						}
-						versions.set(
-							entry.definition.backend,
-							yield* resolveVersion(entry.binaryPath),
+						const version = yield* resolveVersion(entry.binaryPath).pipe(
+							Effect.catchTag('HarnessesError', (error) =>
+								Effect.logWarning(
+									`Failed to detect ${entry.definition.backend} version: ${error.message}`,
+								).pipe(Effect.map(() => null)),
+							),
 						);
+						versions.set(entry.definition.backend, version);
 					}
 					const detectedAt = new Date();
 
@@ -446,7 +450,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						Effect.tap((result) =>
 							result.ok
 								? harnessVersion
-										.set(backend, result.agentVersion)
+										.set(backend, result.agentVersion, harness.binaryPath)
 										.pipe(
 											Effect.mapError(
 												(cause) =>
