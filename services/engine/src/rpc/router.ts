@@ -316,10 +316,10 @@ const program = Effect.gen(function* () {
 			),
 			getHarnessEnv: yield* createHandler(
 				os.input(v.object({ backend: backendSchema })).output(harnessEnvOutput),
-				Effect.fn(function* (opt) {
-					const env = yield* settings.getHarnessEnv(opt.input.backend);
-					return toHarnessEnvOutput(env);
-				}),
+				(opt) =>
+					Effect.sync(() =>
+						toHarnessEnvOutput(settings.getHarnessEnv(opt.input.backend)),
+					),
 			),
 			setHarnessEnv: yield* createHandler(
 				os
@@ -330,11 +330,12 @@ const program = Effect.gen(function* () {
 						}),
 					)
 					.output(harnessEnvOutput),
-				Effect.fn(function* (opt) {
-					const env = toHarnessEnvRecord(opt.input.env);
-					yield* settings.setHarnessEnv(opt.input.backend, env);
-					return toHarnessEnvOutput(env);
-				}),
+				(opt) =>
+					Effect.sync(() => {
+						const env = toHarnessEnvRecord(opt.input.env);
+						settings.setHarnessEnv(opt.input.backend, env);
+						return toHarnessEnvOutput(env);
+					}),
 			),
 		},
 		harnesses: {

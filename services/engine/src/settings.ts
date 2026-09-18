@@ -10,6 +10,7 @@ const CODEX_HOME_KEY = 'codex_home';
 const HARNESS_ENV_KEY_PREFIX = 'harness_env:';
 const HarnessEnvSchema = Schema.Record(Schema.String, Schema.String);
 const HarnessEnvJsonSchema = Schema.fromJsonString(HarnessEnvSchema);
+type HarnessEnv = Schema.Schema.Type<typeof HarnessEnvSchema>;
 
 function harnessEnvKey(backend: Backend): string {
 	return `${HARNESS_ENV_KEY_PREFIX}${backend}`;
@@ -73,29 +74,20 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setSetting(CODEX_HOME_KEY, value);
 		};
 
-		const getHarnessEnv = (
-			backend: Backend,
-		): Effect.Effect<
-			Schema.Schema.Type<typeof HarnessEnvSchema>,
-			Schema.SchemaError
-		> => {
+		const getHarnessEnv = (backend: Backend): HarnessEnv => {
 			const value = getSetting(harnessEnvKey(backend));
-			if (value === undefined) return Effect.succeed({});
-			return Schema.decodeEffect(HarnessEnvJsonSchema)(value);
+			if (value === undefined) return {};
+			return Schema.decodeUnknownSync(HarnessEnvJsonSchema)(value);
 		};
 
-		const setHarnessEnv = (
-			backend: Backend,
-			env: Schema.Schema.Type<typeof HarnessEnvSchema>,
-		): Effect.Effect<void, Schema.SchemaError> =>
-			Effect.gen(function* () {
-				if (Object.keys(env).length === 0) {
-					deleteSetting(harnessEnvKey(backend));
-					return;
-				}
-				const value = yield* Schema.encodeEffect(HarnessEnvJsonSchema)(env);
-				setSetting(harnessEnvKey(backend), value);
-			});
+		const setHarnessEnv = (backend: Backend, env: HarnessEnv): void => {
+			if (Object.keys(env).length === 0) {
+				deleteSetting(harnessEnvKey(backend));
+				return;
+			}
+			const value = Schema.encodeSync(HarnessEnvJsonSchema)(env);
+			setSetting(harnessEnvKey(backend), value);
+		};
 
 		return {
 			getSetting,
