@@ -125,7 +125,11 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
 						? CURSOR_MODEL_ALIASES[input.model]
 						: input.model;
-				return acpAgent.runTurn({ ...input, model });
+				return acpAgent.runTurn({
+					...input,
+					model,
+					reasoningEffort: undefined,
+				});
 			},
 			listModels,
 			listModelEfforts,

@@ -67,15 +67,20 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
-function parseBackend(value: string): Backend {
+function isBackend(value: string): value is Backend {
 	if (
 		value === 'opencode' ||
 		value === 'cursor' ||
 		value === 'grok' ||
 		value === 'codex'
 	) {
-		return value;
+		return true;
 	}
+	return false;
+}
+
+function parseBackend(value: string): Backend {
+	if (isBackend(value)) return value;
 	throw new Error(`Invalid persisted job backend: ${value}`);
 }
 
@@ -130,7 +135,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				return {
-					backend: parseBackend(alias.backend),
+					backend: isBackend(alias.backend) ? alias.backend : 'cursor',
 					modelId: alias.model_id,
 					reasoningEffort: alias.reasoning_effort ?? undefined,
 				};

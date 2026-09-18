@@ -142,7 +142,11 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 					// WORKAROUND: grok cannot change the model once a session has been created
 					// (unlike opencode/cursor which switch model per-turn over ACP), so the model
 					// must be fixed at process launch via -m. This requires a fresh subprocess per turn.
-					return yield* runAcpTurn(connEnv, { ...input, skipModelSet: true });
+					return yield* runAcpTurn(connEnv, {
+						...input,
+						reasoningEffort: undefined,
+						skipModelSet: true,
+					});
 				}),
 			);
 
