@@ -54,6 +54,70 @@ export const MidTool: Story = {
 	},
 };
 
+export const ExplorationTools: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		parts: [
+			{
+				kind: 'tool',
+				id: 'tool-glob',
+				toolCallId: 'tc-glob',
+				toolName: 'glob',
+				title: 'Glob',
+				toolKind: 'search',
+				state: 'output-available',
+				content: [],
+				locations: [],
+				rawInput: {
+					glob_pattern: 'src/**/*.{tsx,ts,css}',
+					target_directory: '.',
+				},
+				createdAt: Date.now() - 4000,
+			},
+			{
+				kind: 'tool',
+				id: 'tool-read',
+				toolCallId: 'tc-read',
+				toolName: 'read',
+				title: 'Read',
+				toolKind: 'read',
+				state: 'output-available',
+				content: [
+					{
+						type: 'content',
+						content: { type: 'text', text: 'export function App() {}' },
+					},
+				],
+				locations: [{ path: '/Users/dev/project/src/App.tsx' }],
+				rawInput: { filePath: '/Users/dev/project/src/App.tsx' },
+				createdAt: Date.now() - 3000,
+			},
+			{
+				kind: 'tool',
+				id: 'tool-grep',
+				toolCallId: 'tc-grep',
+				toolName: 'grep',
+				title: 'Grep',
+				toolKind: 'search',
+				state: 'output-available',
+				content: [
+					{
+						type: 'content',
+						content: {
+							type: 'text',
+							text: 'src/App.tsx:1:export function App() {}',
+						},
+					},
+				],
+				locations: [],
+				rawInput: { pattern: 'App', include: 'src' },
+				createdAt: Date.now() - 2000,
+			},
+		] as TimelinePart[],
+		streamingTail: null,
+	},
+};
+
 export const WithReasoning: Story = {
 	args: {
 		parts: [
