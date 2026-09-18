@@ -12,6 +12,7 @@ import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { createEngineHandler } from './rpc/handler.ts';
+import type { EngineServices } from './rpc/router.ts';
 import { Settings } from './settings.ts';
 
 const PORTLESS_ALIAS = 'oagent';
@@ -38,6 +39,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const jobs = yield* Jobs;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
+		const services = yield* Effect.context<EngineServices>();
 		yield* Effect.forkDetach(
 			harnesses
 				.refresh()
@@ -59,7 +61,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
-					const services = yield* Effect.context<never>();
 
 					const resolvedPort =
 						process.env.OPENCODE_MCP_PORT !== undefined
@@ -121,6 +122,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
 							const result = await engineHandler.handle(request, {
 								prefix: '/rpc',
+								context: { 'effect/context': services },
 							});
 							if (result.matched) {
 								return result.response;

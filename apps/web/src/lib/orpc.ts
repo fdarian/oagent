@@ -7,5 +7,10 @@ const baseURL = import.meta.env.DEV
 	? '/rpc'
 	: (new URLSearchParams(location.search).get('engine') ?? '/rpc');
 
-const link = new RPCLink({ url: () => new URL(baseURL, location.origin) });
+const rpcURL = new URL(baseURL, location.origin);
+const rpcPath = `${rpcURL.pathname}${rpcURL.search}` as `/${string}`;
+const link = new RPCLink({
+	origin: rpcURL.origin,
+	url: rpcPath,
+});
 export const orpc: RouterClient<EngineRouter> = createORPCClient(link);

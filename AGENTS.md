@@ -7,7 +7,7 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 - Bun, TypeScript, Effect.ts
 - @modelcontextprotocol/sdk — MCP server implementation
 - @agentclientprotocol/sdk — direct ACP session over opencode subprocess
-- @orpc/server + ff-effect/for/orpc — typed RPC with Effect-native handlers
+- @orpc/server + @orpc/experimental-effect — typed RPC with native Effect handlers
 - React 19 + Vite + Tailwind v4 — web SPA, embedded into the binary at build time
 
 ## Workspace
@@ -48,5 +48,5 @@ For details see:
 - `services/engine/src/opencode.ts` — `OpenCode` Effect service wrapping the opencode ACP subprocess session.
 - `services/engine/src/harnesses.ts` — `Harnesses` Effect service that detects, persists, and probes installed ACP harness binaries and manages Codex device-code authentication subprocesses.
 - `services/engine/src/http/{sse,wait,spa}.ts` — HTTP response builders. SSE reads history from DB then attaches to the live `EventEmitter` (buffer-then-drain to close the read-then-attach race). Sends `__terminal__` sentinel when the job finishes. Wait blocks via `Jobs.wait` and returns the terminal result as JSON. SPA serves files from the embedded filemap with index.html fallback for client routing.
-- `services/engine/src/rpc/router.ts` — oRPC router built via `createHandler` from `ff-effect/for/orpc`. Procedures: `jobs.list`, `jobs.get`, `jobs.start`, `jobs.wait`. Output schemas declared explicitly via Valibot — required workaround: without `.output(...)` the inferred output type collapses to `unknown` (conditional union of generic `runEffect` functions defeats TS inference). Exports `type EngineRouter = Effect.Effect.Success<typeof program>` for client-side inference.
+- `services/engine/src/rpc/router.ts` — oRPC router using `@orpc/experimental-effect`'s builder extensions and native `.effect(...)` handlers. Each handler resolves its Effect services from the request's supplied context, and `EngineRouter` is inferred directly from the router value without explicit output-schema workarounds.
 - `apps/web/src/lib/orpc.ts` — typed oRPC client over `RPCLink` to `/rpc`. In dev Vite proxies to `ENGINE_URL`; in prod served same-origin from the embedded SPA (or `?engine=` query to override).

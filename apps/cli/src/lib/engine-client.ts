@@ -12,11 +12,8 @@ export const defaultEngineUrl = `http://localhost:${process.env.OPENCODE_MCP_POR
  * requests (held up to CHUNK_MS = 10 min by the engine) aren't guillotined
  * before the server responds.
  */
-function fetchNoTimeout(
-	request: Request,
-	init: { redirect?: Request['redirect'] },
-): Promise<Response> {
-	return fetch(request, {
+function fetchNoTimeout(url: string, init: RequestInit): Promise<Response> {
+	return fetch(url, {
 		...init,
 		timeout: false,
 	});
@@ -24,7 +21,8 @@ function fetchNoTimeout(
 
 export function createEngineClient(engineUrl: string): EngineClient {
 	const link = new RPCLink({
-		url: new URL('/rpc', engineUrl),
+		origin: engineUrl,
+		url: '/rpc',
 		fetch: fetchNoTimeout,
 	});
 	return createORPCClient(link);
