@@ -3,4 +3,5 @@ export const queryKeys = {
 	harnesses: () => ['harnesses'] as const,
 	harnessAuthStatus: (backend: string) =>
 		['harnesses', 'auth', backend] as const,
+	harnessEnv: (backend: string) => ['settings', 'harnessEnv', backend] as const,
 };

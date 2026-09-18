@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from 'effect';
 import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	auto: 'default[]',
@@ -28,11 +29,16 @@ export function resolveCursorBinary(): string | undefined {
 	return Bun.which(getCursorBinary()) ?? undefined;
 }
 
-export function createCursorAcpConfig(): AcpAgentConfig {
+export function createCursorAcpConfig(
+	getExtraEnv?: () => Record<string, string>,
+): AcpAgentConfig {
 	return {
 		binary: resolveCursorBinary() ?? getCursorBinary(),
 		args: ['acp'] as const,
 		clientInfoName: 'oagent',
+		...(getExtraEnv === undefined
+			? {}
+			: { env: () => ({ ...process.env, ...getExtraEnv() }) }),
 		extensionHandlers: {
 			'cursor/ask_question': async () => ({
 				outcome: {
@@ -49,9 +55,19 @@ export function createCursorAcpConfig(): AcpAgentConfig {
 	};
 }
 
+const cursorAcpLayer = Layer.unwrap(
+	Effect.gen(function* () {
+		const settings = yield* Settings;
+		return AcpAgent.layer(
+			createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
+		);
+	}),
+);
+
 export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
+
 		return {
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const model =
@@ -73,6 +89,7 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(
-		Layer.provide(AcpAgent.layer(createCursorAcpConfig())),
+		Layer.provide(cursorAcpLayer),
+		Layer.provide(Settings.layer),
 	);
 }

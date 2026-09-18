@@ -1,11 +1,18 @@
+import '@orpc/experimental-effect/extensions/effect';
+import '@orpc/experimental-effect/extensions/input-output';
+import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect } from 'effect';
-import { createHandler } from 'ff-effect/for/orpc';
 import * as v from 'valibot';
 import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
+
+export type EngineServices = Jobs | Harnesses | Settings | ModelCatalog;
+export type EngineContext = WithEffectContext<EngineServices>;
+
+const procedure = os.$context<EngineContext>();
 
 function normalizeReasoningEffort(value: string | null): string | undefined {
 	if (value === null || value.length === 0) return undefined;
@@ -14,13 +21,21 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
-const harnessesOutput = v.array(
-	v.object({
-		backend: backendSchema,
-		binaryPath: v.string(),
-		version: v.optional(v.string()),
-		detectedAt: v.number(),
-	}),
+
+const harnessEnvEntrySchema = v.object({
+	key: v.pipe(
+		v.string(),
+		v.check((value) => value.trim().length > 0, 'Environment key is required'),
+	),
+	value: v.string(),
+});
+const harnessEnvEntriesSchema = v.pipe(
+	v.array(harnessEnvEntrySchema),
+	v.check(
+		(entries) =>
+			new Set(entries.map((entry) => entry.key)).size === entries.length,
+		'Environment keys must be unique',
+	),
 );
 
 const toHarnessDto = (harness: Harness) => ({
@@ -30,365 +45,300 @@ const toHarnessDto = (harness: Harness) => ({
 	detectedAt: harness.detectedAt.getTime(),
 });
 
-const harnessAuthStatusOutput = v.union([
-	v.object({
-		backend: backendSchema,
-		status: v.literal('logged_in'),
-		method: v.optional(v.string()),
-		account: v.optional(v.string()),
-	}),
-	v.object({ backend: backendSchema, status: v.literal('logged_out') }),
-	v.object({ backend: backendSchema, status: v.literal('pending') }),
-	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
-]);
-
-const harnessLoginOutput = v.union([
-	v.object({
-		backend: backendSchema,
-		status: v.literal('pending'),
-		verificationUrl: v.string(),
-		userCode: v.string(),
-	}),
-	v.object({ backend: backendSchema, status: v.literal('unsupported') }),
-]);
-
-const program = Effect.gen(function* () {
-	const jobs = yield* Jobs;
-	const harnesses = yield* Harnesses;
-	const settings = yield* Settings;
-	const modelCatalog = yield* ModelCatalog;
-
-	return {
-		jobs: {
-			list: yield* createHandler(
-				os.input(v.void_()).output(
-					v.array(
-						v.object({
-							id: v.string(),
-							status: v.picklist(['running', 'done', 'error', 'cancelled']),
-							createdAt: v.number(),
-							terminatedAt: v.optional(v.number()),
-							prompt: v.string(),
-							cwd: v.string(),
-							backend: backendSchema,
-							model: v.optional(v.string()),
-							sessionId: v.optional(v.string()),
-							mcpSessionId: v.optional(v.string()),
-						}),
-					),
-				),
-				() => Effect.succeed(jobs.list()),
-			),
-			get: yield* createHandler(
-				os.input(v.object({ jobId: v.string() })).output(
-					v.optional(
-						v.object({
-							id: v.string(),
-							status: v.picklist(['running', 'done', 'error', 'cancelled']),
-							createdAt: v.number(),
-							terminatedAt: v.optional(v.number()),
-							prompt: v.string(),
-							cwd: v.string(),
-							backend: backendSchema,
-							model: v.optional(v.string()),
-							sessionId: v.optional(v.string()),
-						}),
-					),
-				),
-				(opt) => {
-					const detail = jobs.getDetail(opt.input.jobId);
-					if (detail === undefined) return Effect.succeed(undefined);
-					return Effect.succeed({
-						id: detail.id,
-						status: detail.status,
-						createdAt: detail.createdAt,
-						terminatedAt: detail.terminatedAt,
-						prompt: detail.prompt,
-						cwd: detail.cwd,
-						backend: detail.backend,
-						model: detail.model,
-						sessionId: detail.sessionId,
-					});
-				},
-			),
-			start: yield* createHandler(
-				os
-					.input(
-						v.object({
-							prompt: v.string(),
-							cwd: v.string(),
-							model: v.optional(v.string()),
-							sessionId: v.optional(v.string()),
-						}),
-					)
-					.output(v.object({ jobId: v.string() })),
-				Effect.fn(function* (opt) {
-					return yield* jobs.start(opt.input);
-				}),
-			),
-			cancel: yield* createHandler(
-				os
-					.input(v.object({ jobId: v.string() }))
-					.output(v.object({ ok: v.boolean() })),
-				Effect.fn(function* (opt) {
-					return yield* jobs.cancel(opt.input).pipe(
-						Effect.map(() => ({ ok: true })),
-						Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
-					);
-				}),
-			),
-			wait: yield* createHandler(
-				os
-					.input(
-						v.object({
-							jobId: v.string(),
-							timeoutMs: v.optional(v.number()),
-						}),
-					)
-					.output(
-						v.union([
-							v.object({ status: v.literal('running') }),
-							v.object({
-								status: v.literal('done'),
-								sessionId: v.string(),
-								text: v.string(),
-								stopReason: v.optional(v.string()),
-							}),
-							v.object({
-								status: v.literal('error'),
-								message: v.string(),
-								sessionId: v.optional(v.string()),
-							}),
-							v.object({
-								status: v.literal('cancelled'),
-								sessionId: v.optional(v.string()),
-							}),
-						]),
-					),
-				Effect.fn(function* (opt) {
-					return yield* jobs.wait(opt.input).pipe(
-						Effect.catchTag('JobNotFound', (err) =>
-							Effect.succeed({
-								status: 'error' as const,
-								message: `Job not found: ${err.jobId}`,
-							}),
-						),
-					);
-				}),
-			),
-		},
-		aliases: {
-			list: yield* createHandler(
-				os.input(v.void_()).output(
-					v.array(
-						v.object({
-							name: v.string(),
-							backend: v.string(),
-							model_id: v.string(),
-							reasoning_effort: reasoningEffortSchema,
-							description: v.optional(v.string()),
-						}),
-					),
-				),
-				() => {
-					return Effect.succeed(
-						jobs.listAliases().map((row) => ({
-							name: row.name,
-							backend: row.backend,
-							model_id: row.model_id,
-							reasoning_effort: normalizeReasoningEffort(row.reasoning_effort),
-							description: row.description ?? undefined,
-						})),
-					);
-				},
-			),
-			save: yield* createHandler(
-				os
-					.input(
-						v.object({
-							name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-							backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
-							model_id: v.pipe(v.string(), v.nonEmpty()),
-							reasoning_effort: reasoningEffortSchema,
-							description: v.optional(v.string()),
-						}),
-					)
-					.output(
-						v.object({
-							name: v.string(),
-							backend: v.string(),
-							model_id: v.string(),
-							reasoning_effort: reasoningEffortSchema,
-							description: v.optional(v.string()),
-						}),
-					),
-				(opt) => {
-					return Effect.succeed(
-						jobs.saveAlias({
-							name: opt.input.name,
-							backend: opt.input.backend,
-							model_id: opt.input.model_id,
-							reasoning_effort: opt.input.reasoning_effort,
-							description: opt.input.description,
-						}),
-					);
-				},
-			),
-			delete: yield* createHandler(
-				os
-					.input(v.object({ name: v.string() }))
-					.output(v.object({ ok: v.boolean() })),
-				(opt) => {
-					return Effect.succeed({ ok: jobs.deleteAlias(opt.input.name) });
-				},
-			),
-		},
-		settings: {
-			getStartTimeout: yield* createHandler(
-				os.input(v.void_()).output(v.object({ minutes: v.number() })),
-				() => {
-					return Effect.succeed({
-						minutes: jobs.getStartTimeoutMs() / 60000,
-					});
-				},
-			),
-			setStartTimeout: yield* createHandler(
-				os
-					.input(
-						v.object({
-							minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
-						}),
-					)
-					.output(v.object({ minutes: v.number() })),
-				(opt) => {
-					settings.setSetting(
-						'start_timeout_ms',
-						String(opt.input.minutes * 60000),
-					);
-					return Effect.succeed({ minutes: opt.input.minutes });
-				},
-			),
-			getCodexHome: yield* createHandler(
-				os.input(v.void_()).output(v.object({ home: v.optional(v.string()) })),
-				() => Effect.succeed({ home: settings.getCodexHome() }),
-			),
-			setCodexHome: yield* createHandler(
-				os
-					.input(v.object({ home: v.optional(v.nullable(v.string())) }))
-					.output(v.object({ home: v.optional(v.string()) })),
-				Effect.fn(function* (opt) {
-					yield* harnesses.cancelLogin('codex');
-					settings.setCodexHome(opt.input.home);
-					yield* modelCatalog.invalidate('codex');
-					return { home: settings.getCodexHome() };
-				}),
-			),
-		},
-		harnesses: {
-			list: yield* createHandler(
-				os.input(v.void_()).output(harnessesOutput),
-				Effect.fn(function* () {
-					return (yield* harnesses.list()).map(toHarnessDto);
-				}),
-			),
-			refresh: yield* createHandler(
-				os.input(v.void_()).output(harnessesOutput),
-				Effect.fn(function* () {
-					return (yield* harnesses.refresh()).map(toHarnessDto);
-				}),
-			),
-			check: yield* createHandler(
-				os.input(v.object({ backend: backendSchema })).output(
-					v.union([
-						v.object({
-							backend: backendSchema,
-							ok: v.literal(true),
-							agentName: v.optional(v.string()),
-							agentVersion: v.optional(v.string()),
-						}),
-						v.object({
-							backend: backendSchema,
-							ok: v.literal(false),
-							message: v.string(),
-						}),
-					]),
-				),
-				Effect.fn(function* (opt) {
-					return yield* harnesses.check(opt.input.backend);
-				}),
-			),
-			authStatus: yield* createHandler(
-				os
-					.input(v.object({ backend: backendSchema }))
-					.output(harnessAuthStatusOutput),
-				Effect.fn(function* (opt) {
-					return yield* harnesses.authStatus(opt.input.backend);
-				}),
-			),
-			login: yield* createHandler(
-				os
-					.input(v.object({ backend: backendSchema }))
-					.output(harnessLoginOutput),
-				Effect.fn(function* (opt) {
-					return yield* harnesses.login(opt.input.backend);
-				}),
-			),
-			cancelLogin: yield* createHandler(
-				os
-					.input(v.object({ backend: backendSchema }))
-					.output(v.object({ backend: backendSchema, cancelled: v.boolean() })),
-				Effect.fn(function* (opt) {
-					return yield* harnesses.cancelLogin(opt.input.backend);
-				}),
-			),
-			logout: yield* createHandler(
-				os
-					.input(v.object({ backend: backendSchema }))
-					.output(harnessAuthStatusOutput),
-				Effect.fn(function* (opt) {
-					const status = yield* harnesses.logout(opt.input.backend);
-					return status;
-				}),
-			),
-		},
-		models: {
-			list: yield* createHandler(
-				os
-					.input(
-						v.object({
-							backend: backendSchema,
-						}),
-					)
-					.output(
-						v.array(
-							v.object({ id: v.string(), label: v.optional(v.string()) }),
-						),
-					),
-				Effect.fn(function* (opt) {
-					const models = yield* modelCatalog.list(opt.input.backend);
-					return models.map((entry) => ({ id: entry.id, label: entry.label }));
-				}),
-			),
-			efforts: yield* createHandler(
-				os
-					.input(
-						v.object({
-							backend: backendSchema,
-							model_id: v.pipe(v.string(), v.nonEmpty()),
-						}),
-					)
-					.output(v.array(v.object({ value: v.string(), label: v.string() }))),
-				Effect.fn(function* (opt) {
-					const efforts = yield* modelCatalog.listEfforts(
-						opt.input.backend,
-						opt.input.model_id,
-					);
-					return [...efforts];
-				}),
-			),
-		},
-	};
+const toHarnessEnvOutput = (env: Readonly<Record<string, string>>) => ({
+	env: Object.entries(env).map((entry) => ({
+		key: entry[0],
+		value: entry[1],
+	})),
 });
 
-export type EngineRouter = Effect.Success<typeof program>;
-export { program };
+function toHarnessEnvRecord(
+	entries: ReadonlyArray<{ key: string; value: string }>,
+): Record<string, string> {
+	const env = Object.create(null) as Record<string, string>;
+	for (const entry of entries) {
+		env[entry.key] = entry.value;
+	}
+	return env;
+}
+
+type HarnessEnvSettings = Pick<
+	Settings['Service'],
+	'getHarnessEnv' | 'setHarnessEnv'
+>;
+
+export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
+	Effect.succeed({
+		getHarnessEnv: os
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				return yield* Effect.sync(() =>
+					toHarnessEnvOutput(settings.getHarnessEnv(options.input.backend)),
+				);
+			}),
+		setHarnessEnv: os
+			.input(
+				v.object({
+					backend: backendSchema,
+					env: harnessEnvEntriesSchema,
+				}),
+			)
+			.effect(function* (options) {
+				return yield* Effect.sync(() => {
+					const env = toHarnessEnvRecord(options.input.env);
+					settings.setHarnessEnv(options.input.backend, env);
+					return toHarnessEnvOutput(env);
+				});
+			}),
+	});
+
+type AliasRow = {
+	name: string;
+	backend: string;
+	model_id: string;
+	reasoning_effort?: string | null;
+	description?: string | null;
+};
+
+const toAliasDto = (alias: AliasRow) => {
+	const reasoningEffort =
+		alias.reasoning_effort === undefined || alias.reasoning_effort === null
+			? undefined
+			: normalizeReasoningEffort(alias.reasoning_effort);
+	const description = alias.description;
+	return {
+		name: alias.name,
+		backend: alias.backend,
+		model_id: alias.model_id,
+		...(reasoningEffort === undefined
+			? {}
+			: { reasoning_effort: reasoningEffort }),
+		...(description === undefined || description === null
+			? {}
+			: { description }),
+	};
+};
+
+const router = procedure.router({
+	jobs: {
+		list: procedure.input(v.void_()).effect(function* () {
+			const jobs = yield* Jobs;
+			return jobs.list();
+		}),
+		get: procedure
+			.input(v.object({ jobId: v.string() }))
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				const detail = jobs.getDetail(options.input.jobId);
+				if (detail === undefined) return undefined;
+				return {
+					id: detail.id,
+					status: detail.status,
+					createdAt: detail.createdAt,
+					terminatedAt: detail.terminatedAt,
+					prompt: detail.prompt,
+					cwd: detail.cwd,
+					backend: detail.backend,
+					model: detail.model,
+					sessionId: detail.sessionId,
+				};
+			}),
+		start: procedure
+			.input(
+				v.object({
+					prompt: v.string(),
+					cwd: v.string(),
+					model: v.optional(v.string()),
+					sessionId: v.optional(v.string()),
+				}),
+			)
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				return yield* jobs.start(options.input);
+			}),
+		cancel: procedure
+			.input(v.object({ jobId: v.string() }))
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				return yield* jobs.cancel(options.input).pipe(
+					Effect.map(() => ({ ok: true })),
+					Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
+				);
+			}),
+		wait: procedure
+			.input(
+				v.object({
+					jobId: v.string(),
+					timeoutMs: v.optional(v.number()),
+				}),
+			)
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				return yield* jobs.wait(options.input).pipe(
+					Effect.catchTag('JobNotFound', (error) =>
+						Effect.succeed({
+							status: 'error' as const,
+							message: `Job not found: ${error.jobId}`,
+						}),
+					),
+				);
+			}),
+	},
+	aliases: {
+		list: procedure.input(v.void_()).effect(function* () {
+			const jobs = yield* Jobs;
+			return jobs.listAliases().map(toAliasDto);
+		}),
+		save: procedure
+			.input(
+				v.object({
+					name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
+					backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+					model_id: v.pipe(v.string(), v.nonEmpty()),
+					reasoning_effort: reasoningEffortSchema,
+					description: v.optional(v.string()),
+				}),
+			)
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				return toAliasDto(
+					jobs.saveAlias({
+						name: options.input.name,
+						backend: options.input.backend,
+						model_id: options.input.model_id,
+						reasoning_effort: options.input.reasoning_effort,
+						description: options.input.description,
+					}),
+				);
+			}),
+		delete: procedure
+			.input(v.object({ name: v.string() }))
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				return { ok: jobs.deleteAlias(options.input.name) };
+			}),
+	},
+	settings: {
+		getStartTimeout: procedure.input(v.void_()).effect(function* () {
+			const jobs = yield* Jobs;
+			return { minutes: jobs.getStartTimeoutMs() / 60000 };
+		}),
+		setStartTimeout: procedure
+			.input(
+				v.object({
+					minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
+				}),
+			)
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				settings.setSetting(
+					'start_timeout_ms',
+					String(options.input.minutes * 60000),
+				);
+				return { minutes: options.input.minutes };
+			}),
+		getCodexHome: procedure.input(v.void_()).effect(function* () {
+			const settings = yield* Settings;
+			return { home: settings.getCodexHome() };
+		}),
+		setCodexHome: procedure
+			.input(v.object({ home: v.optional(v.nullable(v.string())) }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				const settings = yield* Settings;
+				const modelCatalog = yield* ModelCatalog;
+				yield* harnesses.cancelLogin('codex');
+				settings.setCodexHome(options.input.home);
+				yield* modelCatalog.invalidate('codex');
+				return { home: settings.getCodexHome() };
+			}),
+		getHarnessEnv: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				return toHarnessEnvOutput(
+					settings.getHarnessEnv(options.input.backend),
+				);
+			}),
+		setHarnessEnv: procedure
+			.input(
+				v.object({
+					backend: backendSchema,
+					env: harnessEnvEntriesSchema,
+				}),
+			)
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				const env = toHarnessEnvRecord(options.input.env);
+				settings.setHarnessEnv(options.input.backend, env);
+				return toHarnessEnvOutput(env);
+			}),
+	},
+	harnesses: {
+		list: procedure.input(v.void_()).effect(function* () {
+			const harnesses = yield* Harnesses;
+			return (yield* harnesses.list()).map(toHarnessDto);
+		}),
+		refresh: procedure.input(v.void_()).effect(function* () {
+			const harnesses = yield* Harnesses;
+			return (yield* harnesses.refresh()).map(toHarnessDto);
+		}),
+		check: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				return yield* harnesses.check(options.input.backend);
+			}),
+		authStatus: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				return yield* harnesses.authStatus(options.input.backend);
+			}),
+		login: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				return yield* harnesses.login(options.input.backend);
+			}),
+		cancelLogin: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				return yield* harnesses.cancelLogin(options.input.backend);
+			}),
+		logout: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnesses = yield* Harnesses;
+				return yield* harnesses.logout(options.input.backend);
+			}),
+	},
+	models: {
+		list: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const modelCatalog = yield* ModelCatalog;
+				const models = yield* modelCatalog.list(options.input.backend);
+				return models.map((entry) => ({ id: entry.id, label: entry.label }));
+			}),
+		efforts: procedure
+			.input(
+				v.object({
+					backend: backendSchema,
+					model_id: v.pipe(v.string(), v.nonEmpty()),
+				}),
+			)
+			.effect(function* (options) {
+				const modelCatalog = yield* ModelCatalog;
+				const efforts = yield* modelCatalog.listEfforts(
+					options.input.backend,
+					options.input.model_id,
+				);
+				return [...efforts];
+			}),
+	},
+});
+
+export type EngineRouter = typeof router;
+export { router };

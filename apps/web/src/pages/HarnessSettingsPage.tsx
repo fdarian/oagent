@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useParams } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
+import { HarnessEnvSection } from '@/components/harness-env-section';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -261,6 +262,8 @@ export function HarnessSettingsPage() {
 							)}
 						</div>
 					) : null}
+
+					<HarnessEnvSection key={backend} backend={backend} />
 				</div>
 			</main>
 		</div>

@@ -12,5 +12,8 @@ enableGlobalVirtualStore: true
 
 catalog:
   '@effect/platform-bun': 4.0.0-rc.113
+  '@orpc/client': 2.0.0-beta.21
+  '@orpc/experimental-effect': 2.0.0-beta.21
+  '@orpc/server': 2.0.0-beta.21
   effect: 4.0.0-rc.113
   typescript: ^7.0.2
