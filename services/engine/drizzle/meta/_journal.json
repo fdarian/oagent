@@ -57,6 +57,13 @@
       "when": 1789279614872,
       "tag": "0007_long_leo",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1789716718114,
+      "tag": "0008_colorful_stingray",
+      "breakpoints": true
     }
   ]
 }
