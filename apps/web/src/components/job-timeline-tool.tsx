@@ -430,17 +430,24 @@ function EditRow(props: { part: ToolPart; cwd: string }) {
 			part.locations[0]?.path ??
 			readStringProp(part.rawInput, 'filePath') ??
 			readStringProp(part.rawInput, 'path');
+		const patchText = readStringProp(part.rawInput, 'patchText');
 		const descriptor =
 			rawPath !== undefined && rawPath.length > 0
 				? relativePath(rawPath, props.cwd)
 				: 'file';
+		const children =
+			patchText !== undefined && patchText.length > 0 ? (
+				<CodeBlock code={patchText} language="diff" />
+			) : null;
 		return (
 			<ToolRow
 				label="Edit"
 				descriptor={descriptor}
 				running={isRunning}
 				error={isError}
-			/>
+			>
+				{children}
+			</ToolRow>
 		);
 	}
 
