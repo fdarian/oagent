@@ -4,13 +4,16 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 
 ## Stack
 
-- Bun, TypeScript, Effect.ts
+- **pnpm** for package management (`pnpm install`, `pnpm add <pkg>` from inside the target package) — never hand-edit `package.json` dependency fields. Shared versions live in the `catalog:` entry of `pnpm-workspace.yaml`. **Bun** is the runtime (`bun run ...`, `bun build --compile`).
+- TypeScript, Effect.ts
 - @modelcontextprotocol/sdk — MCP server implementation
 - @agentclientprotocol/sdk — direct ACP session over opencode subprocess
 - @orpc/server + @orpc/experimental-effect — typed RPC with native Effect handlers
 - React 19 + Vite + Tailwind v4 — web SPA, embedded into the binary at build time
 
 ## Workspace
+
+Declared in `pnpm-workspace.yaml` (`apps/*`, `packages/*`, `services/*`).
 
 - `apps/cli` (`@oagent/cli`) — thin binary entry point.
 - `apps/web` (`@oagent/web`) — Vite + React SPA; type-imports `EngineRouter` from `@oagent/engine`.
