@@ -1,9 +1,13 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useEffect, useState } from 'react';
 import type { TimelinePart } from '@/lib/event-adapter';
 import { JobTimeline } from './job-timeline';
 
 const meta: Meta<typeof JobTimeline> = {
 	component: JobTimeline,
+	args: {
+		cwd: '/Users/dev/project',
+	},
 };
 
 export default meta;
@@ -18,7 +22,7 @@ export const Minimal: Story = {
 				text: 'Hello! How can I help you today?',
 				createdAt: Date.now(),
 			},
-		] as TimelinePart[],
+		] satisfies TimelinePart[],
 		streamingTail: null,
 	},
 };
@@ -38,7 +42,9 @@ export const MidTool: Story = {
 				kind: 'tool',
 				id: 'tool-1',
 				toolCallId: 'tc-1',
+				toolName: 'read_file',
 				title: 'read_file',
+				toolKind: 'read',
 				state: 'input-available',
 				content: [
 					{
@@ -49,7 +55,71 @@ export const MidTool: Story = {
 				locations: [{ path: 'src/index.ts' }],
 				createdAt: Date.now() - 3000,
 			},
-		] as TimelinePart[],
+		] satisfies TimelinePart[],
+		streamingTail: null,
+	},
+};
+
+export const ExplorationTools: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		parts: [
+			{
+				kind: 'tool',
+				id: 'tool-glob',
+				toolCallId: 'tc-glob',
+				toolName: 'glob',
+				title: 'Glob',
+				toolKind: 'search',
+				state: 'output-available',
+				content: [],
+				locations: [],
+				rawInput: {
+					glob_pattern: 'src/**/*.{tsx,ts,css}',
+					target_directory: '.',
+				},
+				createdAt: Date.now() - 4000,
+			},
+			{
+				kind: 'tool',
+				id: 'tool-read',
+				toolCallId: 'tc-read',
+				toolName: 'read',
+				title: 'Read',
+				toolKind: 'read',
+				state: 'output-available',
+				content: [
+					{
+						type: 'content',
+						content: { type: 'text', text: 'export function App() {}' },
+					},
+				],
+				locations: [{ path: '/Users/dev/project/src/App.tsx' }],
+				rawInput: { filePath: '/Users/dev/project/src/App.tsx' },
+				createdAt: Date.now() - 3000,
+			},
+			{
+				kind: 'tool',
+				id: 'tool-grep',
+				toolCallId: 'tc-grep',
+				toolName: 'grep',
+				title: 'Grep',
+				toolKind: 'search',
+				state: 'output-available',
+				content: [
+					{
+						type: 'content',
+						content: {
+							type: 'text',
+							text: 'src/App.tsx:1:export function App() {}',
+						},
+					},
+				],
+				locations: [],
+				rawInput: { pattern: 'App', include: 'src' },
+				createdAt: Date.now() - 2000,
+			},
+		] satisfies TimelinePart[],
 		streamingTail: null,
 	},
 };
@@ -71,7 +141,7 @@ export const WithReasoning: Story = {
 				text: 'I recommend extracting the validation logic into a separate function.',
 				createdAt: Date.now() - 5000,
 			},
-		] as TimelinePart[],
+		] satisfies TimelinePart[],
 		streamingTail: null,
 	},
 };
@@ -92,48 +162,257 @@ export const WithError: Story = {
 				code: 'ECONNREFUSED',
 				createdAt: Date.now(),
 			},
-		] as TimelinePart[],
+		] satisfies TimelinePart[],
 		streamingTail: null,
 	},
 };
 
-export const FullMixed: Story = {
-	args: {
-		parts: [
-			{
-				kind: 'reasoning',
-				id: 'reasoning-1',
-				text: 'The user wants to list files. I should use the shell tool.',
-				isStreaming: false,
-				createdAt: Date.now() - 15_000,
-				durationMs: 2100,
-			},
-			{
-				kind: 'tool',
-				id: 'tool-1',
-				toolCallId: 'tc-1',
-				title: 'shell',
-				state: 'output-available',
-				content: [
-					{
-						type: 'content',
-						content: {
-							type: 'text',
-							text: 'total 24\ndrwxr-xr-x  5 dev  staff  160 May  1 12:00 .\ndrwxr-xr-x  3 dev  staff   96 May  1 11:50 ..\n-rw-r--r--  1 dev  staff  234 May  1 12:00 index.ts',
-						},
-					},
-				],
-				locations: [],
-				createdAt: Date.now() - 10_000,
-				durationMs: 800,
-			},
-			{
-				kind: 'text',
-				id: 'text-1',
-				text: 'Here are the files in the `src/` directory:\n\n- `index.ts`',
-				createdAt: Date.now() - 5000,
-			},
-		] as TimelinePart[],
-		streamingTail: null,
+const fullMixedParts = [
+	{
+		kind: 'reasoning',
+		id: 'reasoning-1',
+		text: 'I need to inspect the timeline components before updating the story.',
+		isStreaming: false,
+		createdAt: Date.now() - 30_000,
+		durationMs: 1200,
 	},
+	{
+		kind: 'reasoning',
+		id: 'reasoning-2',
+		text: 'Then I can make the change and verify the rendered output.',
+		isStreaming: false,
+		createdAt: Date.now() - 28_000,
+		durationMs: 900,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-skill-ts',
+		toolCallId: 'tc-skill-ts',
+		toolName: 'skill',
+		title: 'Skill',
+		state: 'output-available',
+		content: [],
+		locations: [],
+		rawInput: { id: 'code-ts' },
+		rawOutput: { formatted_output: 'Loaded skill code-ts' },
+		createdAt: Date.now() - 26_000,
+		durationMs: 100,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-skill-effect',
+		toolCallId: 'tc-skill-effect',
+		toolName: 'skill',
+		title: 'Skill',
+		state: 'output-available',
+		content: [],
+		locations: [],
+		rawInput: { id: 'code-ts-effect' },
+		rawOutput: { formatted_output: 'Loaded skill code-ts-effect' },
+		createdAt: Date.now() - 25_000,
+		durationMs: 100,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-read',
+		toolCallId: 'tc-read',
+		toolName: 'read',
+		title: 'Read',
+		toolKind: 'read',
+		state: 'output-available',
+		content: [
+			{
+				type: 'content',
+				content: {
+					type: 'text',
+					text: 'export function JobTimeline() {\n\treturn <Conversation />;\n}',
+				},
+			},
+		],
+		locations: [
+			{
+				path: '/Users/dev/project/apps/web/src/components/job-timeline.tsx',
+			},
+		],
+		rawInput: {
+			filePath: '/Users/dev/project/apps/web/src/components/job-timeline.tsx',
+		},
+		createdAt: Date.now() - 23_000,
+		durationMs: 400,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-edit',
+		toolCallId: 'tc-edit',
+		toolName: 'edit',
+		title: 'StrReplace',
+		toolKind: 'edit',
+		state: 'output-available',
+		content: [
+			{
+				type: 'diff',
+				path: '/Users/dev/project/apps/web/src/components/job-timeline.stories.tsx',
+				oldText: 'export const FullMixed: Story = {\n\targs: {},\n};\n',
+				newText:
+					'export const FullMixed: Story = {\n\targs: {\n\t\tparts: [],\n\t},\n};\n',
+			},
+		],
+		locations: [
+			{
+				path: '/Users/dev/project/apps/web/src/components/job-timeline.stories.tsx',
+			},
+		],
+		rawInput: {
+			filePath:
+				'/Users/dev/project/apps/web/src/components/job-timeline.stories.tsx',
+		},
+		createdAt: Date.now() - 20_000,
+		durationMs: 600,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-glob',
+		toolCallId: 'tc-glob',
+		toolName: 'glob',
+		title: 'Glob',
+		toolKind: 'search',
+		state: 'output-available',
+		content: [],
+		locations: [],
+		rawInput: {
+			glob_pattern: 'apps/web/src/components/job-timeline*.tsx',
+		},
+		createdAt: Date.now() - 17_000,
+		durationMs: 120,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-grep',
+		toolCallId: 'tc-grep',
+		toolName: 'grep',
+		title: 'Grep',
+		toolKind: 'search',
+		state: 'output-available',
+		content: [
+			{
+				type: 'content',
+				content: {
+					type: 'text',
+					text: 'apps/web/src/components/job-timeline.tsx:79:function collapseExplorationParts',
+				},
+			},
+		],
+		locations: [],
+		rawInput: {
+			pattern: 'collapseExplorationParts',
+			include: 'apps/web/src/components/job-timeline.tsx',
+		},
+		createdAt: Date.now() - 16_000,
+		durationMs: 100,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-explored-read',
+		toolCallId: 'tc-explored-read',
+		toolName: 'read',
+		title: 'Read',
+		toolKind: 'read',
+		state: 'output-available',
+		content: [
+			{
+				type: 'content',
+				content: {
+					type: 'text',
+					text: 'function collapseExplorationParts(parts: TimelinePart[]) {\n\t// …\n}',
+				},
+			},
+		],
+		locations: [
+			{
+				path: '/Users/dev/project/apps/web/src/components/job-timeline.tsx',
+			},
+		],
+		rawInput: {
+			filePath: '/Users/dev/project/apps/web/src/components/job-timeline.tsx',
+		},
+		createdAt: Date.now() - 15_000,
+		durationMs: 300,
+	},
+	{
+		kind: 'tool',
+		id: 'tool-shell',
+		toolCallId: 'tc-shell',
+		toolName: 'bash',
+		title: 'Check the timeline story',
+		toolKind: 'execute',
+		state: 'output-available',
+		content: [
+			{
+				type: 'content',
+				content: {
+					type: 'text',
+					text: 'Checked 1 file. No fixes applied.',
+				},
+			},
+		],
+		locations: [],
+		rawInput: {
+			command:
+				'pnpm exec biome check apps/web/src/components/job-timeline.stories.tsx',
+			description: 'Check the timeline story',
+		},
+		createdAt: Date.now() - 13_000,
+		durationMs: 900,
+	},
+	{
+		kind: 'text',
+		id: 'text-1',
+		text: 'Updated the mixed timeline fixture and verified the story.',
+		createdAt: Date.now() - 10_000,
+	},
+] satisfies TimelinePart[];
+
+const fullMixedStepMs = 750;
+
+function streamingPartAt(index: number): TimelinePart | null {
+	const part = fullMixedParts[index];
+	if (part === undefined) return null;
+
+	if (part.kind === 'reasoning') {
+		return { ...part, isStreaming: true };
+	}
+
+	if (part.kind === 'tool') {
+		return { ...part, state: 'input-available' };
+	}
+
+	return part;
+}
+
+function StreamedFullMixed() {
+	const [completedPartCount, setCompletedPartCount] = useState(0);
+
+	useEffect(() => {
+		if (completedPartCount === fullMixedParts.length) return;
+
+		const timeout = window.setTimeout(() => {
+			setCompletedPartCount(
+				(currentCompletedPartCount) => currentCompletedPartCount + 1,
+			);
+		}, fullMixedStepMs);
+
+		return () => window.clearTimeout(timeout);
+	}, [completedPartCount]);
+
+	return (
+		<JobTimeline
+			cwd="/Users/dev/project"
+			parts={fullMixedParts.slice(0, completedPartCount)}
+			streamingTail={streamingPartAt(completedPartCount)}
+		/>
+	);
+}
+
+export const FullMixed: Story = {
+	render: () => <StreamedFullMixed />,
 };

@@ -128,7 +128,7 @@ function ToolRow(props: ToolRowProps) {
 	}
 
 	return (
-		<Collapsible defaultOpen={false} className="group mb-2 w-full">
+		<Collapsible defaultOpen={false} className="group/tool-row mb-2 w-full">
 			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
 				<span className="shrink-0 font-medium text-sm">{props.label}</span>
 				{props.descriptor !== undefined && props.descriptor !== null && (
@@ -137,7 +137,7 @@ function ToolRow(props: ToolRowProps) {
 				{props.running && (
 					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
 				)}
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90 group-data-[state=open]:opacity-100" />
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover/tool-row:opacity-100 group-data-[state=open]/tool-row:rotate-90 group-data-[state=open]/tool-row:opacity-100" />
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-2">{props.children}</CollapsibleContent>
 		</Collapsible>
