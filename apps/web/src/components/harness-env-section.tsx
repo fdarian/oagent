@@ -90,10 +90,11 @@ export function HarnessEnvSection(props: HarnessEnvSectionProps) {
 	const form = useAppForm({
 		defaultValues: { env: [] as Array<HarnessEnvFormEntry> },
 		validators: {
-			onSubmit: ({ value }) => validateEnvironmentEntries(value.env),
+			onSubmit: (submission) =>
+				validateEnvironmentEntries(submission.value.env),
 		},
-		onSubmit: ({ value }) => {
-			saveMutation.mutate(value.env);
+		onSubmit: (submission) => {
+			saveMutation.mutate(submission.value.env);
 		},
 	});
 	const canSubmit = useStore(form.store, (state) => state.canSubmit);
@@ -131,7 +132,8 @@ export function HarnessEnvSection(props: HarnessEnvSectionProps) {
 							name="env"
 							mode="array"
 							validators={{
-								onChange: ({ value }) => validateEnvironmentEntries(value),
+								onChange: (submission) =>
+									validateEnvironmentEntries(submission.value),
 							}}
 						>
 							{(field) => {
