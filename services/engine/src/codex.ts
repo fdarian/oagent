@@ -1,10 +1,8 @@
 import { Context, Effect, Layer } from 'effect';
 import {
-	type AcpAgent,
+	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
-	AcpSessionError,
-	makeAcpAgent,
 } from './acp-agent.ts';
 import { Settings } from './settings.ts';
 
@@ -29,7 +27,7 @@ export function resolveCodexCliBinary(): string | undefined {
 
 export function createCodexAcpConfig(
 	getCodexHome: () => string | undefined,
-	extraEnv: Record<string, string> = {},
+	getExtraEnv?: () => Record<string, string>,
 ): AcpAgentConfig {
 	return {
 		binary: resolveCodexBinary() ?? getCodexBinary(),
@@ -44,10 +42,24 @@ export function createCodexAcpConfig(
 			}
 			const codexHome = getCodexHome();
 			if (codexHome !== undefined) env.CODEX_HOME = codexHome;
-			return { ...env, ...extraEnv };
+			return {
+				...env,
+				...(getExtraEnv === undefined ? {} : getExtraEnv()),
+			};
 		},
 	};
 }
+
+const codexAcpLayer = Layer.unwrap(
+	Effect.gen(function* () {
+		const settings = yield* Settings;
+		return AcpAgent.layer(
+			createCodexAcpConfig(settings.getCodexHome, () =>
+				settings.getHarnessEnv('codex'),
+			),
+		);
+	}),
+);
 
 function getCodexConfigOptions(
 	model: string | undefined,
@@ -92,57 +104,38 @@ function getCodexModelId(model: string): string {
 
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
-		const settings = yield* Settings;
-		const extraEnv: Record<string, string> = {};
-		const acpAgent = yield* makeAcpAgent(
-			createCodexAcpConfig(settings.getCodexHome, extraEnv),
-		);
-
-		const refreshHarnessEnv = () =>
-			Effect.gen(function* () {
-				const configuredEnv = yield* settings
-					.getHarnessEnv('codex')
-					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-				yield* Effect.sync(() => {
-					for (const key of Object.keys(extraEnv)) delete extraEnv[key];
-					Object.assign(extraEnv, configuredEnv);
-				});
-			});
+		const acpAgent = yield* AcpAgent;
 		return {
-			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) =>
-				Effect.gen(function* () {
-					yield* refreshHarnessEnv();
-					const configOptions = getCodexConfigOptions(
-						input.model,
-						input.reasoningEffort,
-					);
-					return yield* acpAgent.runTurn({
-						...input,
-						model: undefined,
-						configOptions,
-					});
-				}),
+			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
+				const configOptions = getCodexConfigOptions(
+					input.model,
+					input.reasoningEffort,
+				);
+				return acpAgent.runTurn({
+					...input,
+					model: undefined,
+					configOptions,
+				});
+			},
 			listModels: () =>
-				Effect.gen(function* () {
-					yield* refreshHarnessEnv();
-					return yield* acpAgent.listModels().pipe(
-						Effect.map((models) => {
-							const seen = new Set<string>();
-							const result: Array<{ id: string }> = [];
-							for (const model of models) {
-								const id = getCodexModelId(model.id);
-								if (seen.has(id)) continue;
-								seen.add(id);
-								result.push({ id });
-							}
-							return result;
-						}),
-					);
-				}),
+				acpAgent.listModels().pipe(
+					Effect.map((models) => {
+						const seen = new Set<string>();
+						const result: Array<{ id: string }> = [];
+						for (const model of models) {
+							const id = getCodexModelId(model.id);
+							if (seen.has(id)) continue;
+							seen.add(id);
+							result.push({ id });
+						}
+						return result;
+					}),
+				),
 		} satisfies AcpAgent['Service'];
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(
+		Layer.provide(codexAcpLayer),
 		Layer.provide(Settings.layer),
 	);
 }

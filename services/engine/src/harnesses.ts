@@ -79,7 +79,7 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 type HarnessDefinition = {
 	backend: Backend;
 	resolveBinary: () => string | undefined;
-	createConfig: (extraEnv: Record<string, string>) => AcpAgentConfig;
+	createConfig: () => AcpAgentConfig;
 };
 
 type CodexCommandResult = {
@@ -276,23 +276,30 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				{
 					backend: 'opencode',
 					resolveBinary: resolveOpenCodeBinary,
-					createConfig: (extraEnv) => createOpenCodeAcpConfig(extraEnv),
+					createConfig: () =>
+						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
 				},
 				{
 					backend: 'cursor',
 					resolveBinary: resolveCursorBinary,
-					createConfig: (extraEnv) => createCursorAcpConfig(extraEnv),
+					createConfig: () =>
+						createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
 				},
 				{
 					backend: 'grok',
 					resolveBinary: resolveGrokBinary,
-					createConfig: (extraEnv) => createGrokAcpConfig(undefined, extraEnv),
+					createConfig: () =>
+						createGrokAcpConfig(undefined, () =>
+							settings.getHarnessEnv('grok'),
+						),
 				},
 				{
 					backend: 'codex',
 					resolveBinary: resolveCodexBinary,
-					createConfig: (extraEnv) =>
-						createCodexAcpConfig(settings.getCodexHome, extraEnv),
+					createConfig: () =>
+						createCodexAcpConfig(settings.getCodexHome, () =>
+							settings.getHarnessEnv('codex'),
+						),
 				},
 			];
 
@@ -391,17 +398,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						};
 					}
 
-					const extraEnv = yield* settings
-						.getHarnessEnv(backend)
-						.pipe(
-							Effect.mapError(
-								(cause) => new HarnessesError({ operation: 'check', cause }),
-							),
-						);
-
-					return yield* probeAcpConnection(
-						definition.createConfig(extraEnv),
-					).pipe(
+					return yield* probeAcpConnection(definition.createConfig()).pipe(
 						Effect.map((info) => ({ backend, ok: true as const, ...info })),
 						Effect.catchTag('AcpSessionError', (error) =>
 							Effect.succeed({
