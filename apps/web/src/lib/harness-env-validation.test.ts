@@ -6,15 +6,16 @@ import {
 
 describe('harness environment validation', () => {
 	test('rejects duplicate names at the array and field level', () => {
+		const duplicateKey = 'OPENCODE_DISABLE_CLAUDE_CODE';
 		const entries = [
-			{ key: 'OPENCODE_DISABLE_CLAUDE_CODE', value: '1' },
-			{ key: 'OPENCODE_DISABLE_CLAUDE_CODE', value: '0' },
+			{ key: duplicateKey, value: '1' },
+			{ key: duplicateKey, value: '0' },
 		];
 
 		expect(validateDuplicateEnvironmentKeys(entries)).toBe(
 			'Environment variable names must be unique',
 		);
-		expect(validateEnvironmentKeyAtIndex(entries[1].key, entries, 1)).toBe(
+		expect(validateEnvironmentKeyAtIndex(duplicateKey, entries, 1)).toBe(
 			'Environment variable names must be unique',
 		);
 	});
