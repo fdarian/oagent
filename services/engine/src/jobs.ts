@@ -5,14 +5,10 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Context, Effect, Fiber, Layer, Schema } from 'effect';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { Grok } from './grok.ts';
-import type { Backend } from './model-catalog.ts';
-import { OpenCode } from './opencode.ts';
+import { type Backend, HarnessRegistry } from './harness.ts';
 import { Settings } from './settings.ts';
 
 class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
@@ -85,10 +81,7 @@ function parseBackend(value: string): Backend {
 
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
-		const opencode = yield* OpenCode;
-		const cursor = yield* Cursor;
-		const grok = yield* Grok;
-		const codex = yield* Codex;
+		const harnessRegistry = yield* HarnessRegistry;
 		const settings = yield* Settings;
 		const { db } = yield* Db;
 
@@ -96,7 +89,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			model: string,
 		): Effect.Effect<
 			{
-				backend: string;
+				backend: Backend;
 				modelId: string;
 				reasoningEffort: string | undefined;
 			},
@@ -137,7 +130,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				return {
-					backend: alias.backend,
+					backend: parseBackend(alias.backend),
 					modelId: alias.model_id,
 					reasoningEffort: alias.reasoning_effort ?? undefined,
 				};
@@ -425,54 +418,22 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					jobsEmitter.emit('change', { type: 'updated', jobId: uuid });
 				};
 
-				const runTurnEffect = (() => {
-					if (backend === 'opencode') {
-						return opencode.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							reasoningEffort,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					if (backend === 'grok') {
-						return grok.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					if (backend === 'codex') {
-						return codex.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							reasoningEffort,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					return cursor.runTurn({
-						prompt: input.prompt,
-						model: rest,
-						sessionId: input.sessionId,
-						cwd: input.cwd,
-						onSessionId,
-						onEvent,
-						onExtensionEvent: (method, params) => {
-							onEvent({
-								sessionUpdate: 'cursor_extension',
-								_meta: { method, params },
-							} as unknown as SessionUpdate);
-						},
-					});
-				})();
+				const runTurnEffect = harnessRegistry.get(backend).runTurn({
+					prompt: input.prompt,
+					model: rest,
+					reasoningEffort,
+					sessionId: input.sessionId,
+					cwd: input.cwd,
+					onSessionId,
+					onEvent,
+					onExtensionEvent: (method, params) => {
+						if (backend !== 'cursor') return;
+						onEvent({
+							sessionUpdate: 'cursor_extension',
+							_meta: { method, params },
+						} as unknown as SessionUpdate);
+					},
+				});
 
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
@@ -868,10 +829,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Jobs, Jobs.make).pipe(
-		Layer.provide(OpenCode.layer),
-		Layer.provide(Cursor.layer),
-		Layer.provide(Grok.layer),
-		Layer.provide(Codex.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Db.layer),
 	);

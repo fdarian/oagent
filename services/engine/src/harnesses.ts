@@ -1,25 +1,21 @@
 import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
-import { type AcpAgentConfig, probeAcpConnection } from './acp-agent.ts';
-import {
-	createCodexAcpConfig,
-	resolveCodexBinary,
-	resolveCodexCliBinary,
-} from './codex.ts';
-import { createCursorAcpConfig, resolveCursorBinary } from './cursor.ts';
+import { probeAcpConnection } from './acp-agent.ts';
+import { resolveCodexCliBinary } from './codex.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { createGrokAcpConfig, resolveGrokBinary } from './grok.ts';
-import { HarnessVersion } from './harness-version.ts';
-import { type Backend, ModelCatalog } from './model-catalog.ts';
 import {
-	createOpenCodeAcpConfig,
-	resolveOpenCodeBinary,
-	resolveOpenCodeVersion,
-} from './opencode.ts';
+	type Backend,
+	type HarnessAuthStatus,
+	type HarnessCancelLoginResult,
+	type HarnessLoginResult,
+	HarnessRegistry,
+} from './harness.ts';
+import { HarnessVersion } from './harness-version.ts';
+import { ModelCatalog } from './model-catalog.ts';
 import { Settings } from './settings.ts';
 
-export type Harness = {
+export type HarnessRecord = {
 	backend: Backend;
 	binaryPath: string;
 	version: string | undefined;
@@ -39,35 +35,6 @@ export type HarnessCheckResult =
 			message: string;
 	  };
 
-export type HarnessAuthStatus =
-	| {
-			backend: Backend;
-			status: 'logged_in';
-			method?: string;
-			account?: string;
-	  }
-	| {
-			backend: Backend;
-			status: 'logged_out' | 'pending' | 'unsupported';
-	  };
-
-export type HarnessLoginResult =
-	| {
-			backend: Backend;
-			status: 'pending';
-			verificationUrl: string;
-			userCode: string;
-	  }
-	| {
-			backend: Backend;
-			status: 'unsupported';
-	  };
-
-export type HarnessCancelLoginResult = {
-	backend: Backend;
-	cancelled: boolean;
-};
-
 export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 	'HarnessesError',
 	{
@@ -81,15 +48,6 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 		return `${this.operation} failed: ${detail}`;
 	}
 }
-
-type HarnessDefinition = {
-	backend: Backend;
-	resolveBinary: () => string | undefined;
-	resolveVersion?: (
-		binaryPath: string,
-	) => Effect.Effect<string, HarnessesError>;
-	createConfig: () => AcpAgentConfig;
-};
 
 type CodexCommandResult = {
 	exitCode: number;
@@ -146,6 +104,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 		make: Effect.gen(function* () {
 			const dbService = yield* Db;
 			const settings = yield* Settings;
+			const harnessRegistry = yield* HarnessRegistry;
 			const modelCatalog = yield* ModelCatalog;
 			const harnessVersion = yield* HarnessVersion;
 			const pendingLogins = new Map<Backend, PendingLogin>();
@@ -282,52 +241,15 @@ export class Harnesses extends Context.Service<Harnesses>()(
 					),
 				);
 
-			const definitions: ReadonlyArray<HarnessDefinition> = [
-				{
-					backend: 'opencode',
-					resolveBinary: resolveOpenCodeBinary,
-					resolveVersion: (binaryPath) =>
-						resolveOpenCodeVersion(binaryPath).pipe(
-							Effect.mapError(
-								(cause) => new HarnessesError({ operation: 'refresh', cause }),
-							),
-						),
-					createConfig: () =>
-						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
-				},
-				{
-					backend: 'cursor',
-					resolveBinary: resolveCursorBinary,
-					createConfig: () =>
-						createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
-				},
-				{
-					backend: 'grok',
-					resolveBinary: resolveGrokBinary,
-					createConfig: () =>
-						createGrokAcpConfig(undefined, () =>
-							settings.getHarnessEnv('grok'),
-						),
-				},
-				{
-					backend: 'codex',
-					resolveBinary: resolveCodexBinary,
-					createConfig: () =>
-						createCodexAcpConfig(settings.getCodexHome, () =>
-							settings.getHarnessEnv('codex'),
-						),
-				},
-			];
-
-			const readList = (): ReadonlyArray<Harness> => {
+			const readList = (): ReadonlyArray<HarnessRecord> => {
 				const rows = dbService.db.select().from(schema.harnesses).all();
 				const rowsByBackend = new Map(rows.map((row) => [row.backend, row]));
-				return definitions.flatMap((definition) => {
-					const row = rowsByBackend.get(definition.backend);
+				return harnessRegistry.all.flatMap((harness) => {
+					const row = rowsByBackend.get(harness.backend);
 					if (row === undefined) return [];
 					return [
 						{
-							backend: definition.backend,
+							backend: harness.backend,
 							binaryPath: row.binary_path,
 							version: row.version ?? undefined,
 							detectedAt: row.detected_at,
@@ -336,45 +258,46 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				});
 			};
 
-			const list = (): Effect.Effect<ReadonlyArray<Harness>, HarnessesError> =>
+			const list = (): Effect.Effect<
+				ReadonlyArray<HarnessRecord>,
+				HarnessesError
+			> =>
 				Effect.try({
 					try: readList,
 					catch: (cause) => new HarnessesError({ operation: 'list', cause }),
 				});
 
 			const refresh = (): Effect.Effect<
-				ReadonlyArray<Harness>,
+				ReadonlyArray<HarnessRecord>,
 				HarnessesError
 			> =>
 				Effect.gen(function* () {
 					const detected = yield* Effect.try({
 						try: () =>
-							definitions.flatMap((definition) => {
-								const binaryPath = definition.resolveBinary();
+							harnessRegistry.all.flatMap((harness) => {
+								const binaryPath = harness.resolveBinary();
 								if (binaryPath === undefined) return [];
-								return [{ definition, binaryPath }];
+								return [{ harness, binaryPath }];
 							}),
 						catch: (cause) =>
 							new HarnessesError({ operation: 'refresh', cause }),
 					});
 					const detectedBackends = new Set(
-						detected.map((entry) => entry.definition.backend),
+						detected.map((entry) => entry.harness.backend),
 					);
-					const versions = new Map<Backend, string | null>();
+					const versions = new Map<Backend, string | undefined>();
 					for (const entry of detected) {
-						const resolveVersion = entry.definition.resolveVersion;
-						if (resolveVersion === undefined) {
-							versions.set(entry.definition.backend, null);
-							continue;
-						}
-						const version = yield* resolveVersion(entry.binaryPath).pipe(
+						const version = yield* entry.harness.version().pipe(
+							Effect.mapError(
+								(cause) => new HarnessesError({ operation: 'refresh', cause }),
+							),
 							Effect.catchTag('HarnessesError', (error) =>
 								Effect.logWarning(
-									`Failed to detect ${entry.definition.backend} version: ${error.message}`,
-								).pipe(Effect.map(() => null)),
+									`Failed to detect ${entry.harness.backend} version: ${error.message}`,
+								).pipe(Effect.map(() => undefined)),
 							),
 						);
-						versions.set(entry.definition.backend, version);
+						versions.set(entry.harness.backend, version);
 					}
 					const detectedAt = new Date();
 
@@ -382,10 +305,10 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						try: () => {
 							dbService.db.transaction((tx) => {
 								for (const entry of detected) {
-									const version = versions.get(entry.definition.backend);
+									const version = versions.get(entry.harness.backend);
 									tx.insert(schema.harnesses)
 										.values({
-											backend: entry.definition.backend,
+											backend: entry.harness.backend,
 											binary_path: entry.binaryPath,
 											version: version === undefined ? null : version,
 											detected_at: detectedAt,
@@ -401,10 +324,10 @@ export class Harnesses extends Context.Service<Harnesses>()(
 										.run();
 								}
 
-								for (const definition of definitions) {
-									if (detectedBackends.has(definition.backend)) continue;
+								for (const harness of harnessRegistry.all) {
+									if (detectedBackends.has(harness.backend)) continue;
 									tx.delete(schema.harnesses)
-										.where(eq(schema.harnesses.backend, definition.backend))
+										.where(eq(schema.harnesses.backend, harness.backend))
 										.run();
 								}
 							});
@@ -435,18 +358,9 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						};
 					}
 
-					const definition = definitions.find(
-						(entry) => entry.backend === harness.backend,
-					);
-					if (definition === undefined) {
-						return {
-							backend,
-							ok: false as const,
-							message: `No connection configuration exists for ${backend}.`,
-						};
-					}
+					const behavior = harnessRegistry.get(backend);
 
-					return yield* probeAcpConnection(definition.createConfig()).pipe(
+					return yield* probeAcpConnection(behavior.createConfig()).pipe(
 						Effect.map((info) => ({ backend, ok: true as const, ...info })),
 						Effect.catchTag('AcpSessionError', (error) =>
 							Effect.succeed({
@@ -619,5 +533,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 		Layer.provide(HarnessVersion.layer),
 		Layer.provide(Settings.layer),
 		Layer.provideMerge(ModelCatalog.layer),
+		Layer.provideMerge(HarnessRegistry.layer),
 	);
 }

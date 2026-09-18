@@ -1,12 +1,11 @@
-import { Context, Effect, Layer, Ref, Schema } from 'effect';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
-import { Grok } from './grok.ts';
-import { OpenCode, type OpenCodeEffortOption } from './opencode.ts';
-
-export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
-
-export type ModelEntry = { id: string; label?: string };
+import { Context, Effect, Layer, Ref } from 'effect';
+import {
+	type Backend,
+	HarnessRegistry,
+	ModelCatalogError,
+	type ModelEffort,
+	type ModelEntry,
+} from './harness.ts';
 
 type CacheEntry = {
 	models: ReadonlyArray<ModelEntry>;
@@ -14,40 +13,24 @@ type CacheEntry = {
 };
 
 type EffortCacheEntry = {
-	efforts: ReadonlyArray<OpenCodeEffortOption>;
+	efforts: ReadonlyArray<ModelEffort>;
 	fetchedAt: number;
 };
 
 const TTL_MS = 5 * 60 * 1000; // 5 minutes
 
-export class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()(
-	'ModelCatalogError',
-	{
-		backend: Schema.String,
-		message: Schema.String,
-	},
-) {}
-
 export class ModelCatalog extends Context.Service<ModelCatalog>()(
 	'oagent/ModelCatalog',
 	{
 		make: Effect.gen(function* () {
-			const opencode = yield* OpenCode;
-			const cursor = yield* Cursor;
-			const grok = yield* Grok;
-			const codex = yield* Codex;
+			const harnessRegistry = yield* HarnessRegistry;
 			const cache = yield* Ref.make(new Map<Backend, CacheEntry>());
 			const effortCache = yield* Ref.make(new Map<string, EffortCacheEntry>());
 
 			const fetch = (
 				backend: Backend,
 			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
-				const inner = (() => {
-					if (backend === 'opencode') return opencode.listModels();
-					if (backend === 'grok') return grok.listModels();
-					if (backend === 'codex') return codex.listModels();
-					return cursor.listModels();
-				})();
+				const inner = harnessRegistry.get(backend).listModels();
 				return inner.pipe(
 					Effect.catch((cause) =>
 						Effect.fail(
@@ -63,31 +46,26 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 			const fetchEfforts = (
 				backend: Backend,
 				model: string,
-			): Effect.Effect<
-				ReadonlyArray<OpenCodeEffortOption>,
-				ModelCatalogError
-			> => {
-				if (backend !== 'opencode') return Effect.succeed([]);
-				return opencode.listModelEfforts(model).pipe(
-					Effect.catch((cause) =>
-						Effect.fail(
-							new ModelCatalogError({
-								backend,
-								message: `Failed to list reasoning efforts for ${backend}: ${String(cause)}`,
-							}),
+			): Effect.Effect<ReadonlyArray<ModelEffort>, ModelCatalogError> => {
+				return harnessRegistry
+					.get(backend)
+					.listModelEfforts(model)
+					.pipe(
+						Effect.catch((cause) =>
+							Effect.fail(
+								new ModelCatalogError({
+									backend,
+									message: `Failed to list reasoning efforts for ${backend}: ${String(cause)}`,
+								}),
+							),
 						),
-					),
-				);
+					);
 			};
 
 			const listEfforts = (
 				backend: Backend,
 				model: string,
-			): Effect.Effect<
-				ReadonlyArray<OpenCodeEffortOption>,
-				ModelCatalogError
-			> => {
-				if (backend !== 'opencode') return Effect.succeed([]);
+			): Effect.Effect<ReadonlyArray<ModelEffort>, ModelCatalogError> => {
 				return Effect.gen(function* () {
 					const now = Date.now();
 					const current = yield* Ref.get(effortCache);
@@ -128,6 +106,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 
 			const invalidate = (backend: Backend) =>
 				Effect.gen(function* () {
+					yield* harnessRegistry.get(backend).invalidate();
 					yield* Ref.update(cache, (current) => {
 						const next = new Map(current);
 						next.delete(backend);
@@ -143,9 +122,6 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 	},
 ) {
 	static readonly layer = Layer.effect(ModelCatalog, ModelCatalog.make).pipe(
-		Layer.provide(OpenCode.layer),
-		Layer.provide(Cursor.layer),
-		Layer.provide(Grok.layer),
-		Layer.provide(Codex.layer),
+		Layer.provide(HarnessRegistry.layer),
 	);
 }

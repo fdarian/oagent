@@ -1,12 +1,12 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer } from 'effect';
 import {
-	type AcpAgent,
 	type AcpAgentConfig,
 	AcpSessionError,
 	createAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
+import type { Harness } from './harness.ts';
 import { Settings } from './settings.ts';
 
 const GROK_BINARY = 'grok';
@@ -110,7 +110,17 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 				}),
 			);
 
-		return { runTurn, listModels } satisfies AcpAgent['Service'];
+		return {
+			backend: 'grok',
+			runTurn,
+			listModels,
+			listModelEfforts: () => Effect.succeed([]),
+			resolveBinary: resolveGrokBinary,
+			version: () => Effect.succeed(undefined),
+			invalidate: () => Effect.succeed(undefined),
+			createConfig: () =>
+				createGrokAcpConfig(undefined, () => settings.getHarnessEnv('grok')),
+		} satisfies Harness;
 	}),
 }) {
 	static readonly layer = Layer.effect(Grok, Grok.make).pipe(

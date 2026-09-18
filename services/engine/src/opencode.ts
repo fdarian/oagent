@@ -7,6 +7,7 @@ import {
 	AcpSessionError,
 	createAcpConnection,
 } from './acp-agent.ts';
+import type { Harness } from './harness.ts';
 import { HarnessVersion } from './harness-version.ts';
 import { Settings } from './settings.ts';
 
@@ -319,10 +320,16 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			);
 
 		return {
+			backend: 'opencode',
 			runTurn,
 			listModels,
 			listModelEfforts,
-		} satisfies OpenCodeService;
+			resolveBinary: resolveOpenCodeBinary,
+			version: resolveVersion,
+			invalidate: () => Effect.succeed(undefined),
+			createConfig: () =>
+				createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
+		} satisfies Harness & OpenCodeService;
 	}),
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(

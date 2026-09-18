@@ -1,8 +1,8 @@
 import { ORPCError, onError } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
+import { ModelCatalogError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
-import { ModelCatalogError } from '../model-catalog.ts';
 import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(

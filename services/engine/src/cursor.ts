@@ -1,5 +1,6 @@
 import { Context, Effect, Layer } from 'effect';
 import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
+import type { Harness } from './harness.ts';
 import { Settings } from './settings.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
@@ -67,8 +68,10 @@ const cursorAcpLayer = Layer.unwrap(
 export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
 
 		return {
+			backend: 'cursor',
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const model =
 					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
@@ -85,7 +88,13 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 						})),
 					),
 				),
-		} satisfies AcpAgent['Service'];
+			listModelEfforts: () => Effect.succeed([]),
+			resolveBinary: resolveCursorBinary,
+			version: () => Effect.succeed(undefined),
+			invalidate: () => Effect.succeed(undefined),
+			createConfig: () =>
+				createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
+		} satisfies Harness;
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(

@@ -4,6 +4,7 @@ import {
 	type AcpAgentConfig,
 	type AcpConfigOption,
 } from './acp-agent.ts';
+import type { Harness } from './harness.ts';
 import { Settings } from './settings.ts';
 
 const CODEX_ACP_BINARY = 'codex-acp';
@@ -105,7 +106,9 @@ function getCodexModelId(model: string): string {
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
 		return {
+			backend: 'codex',
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const configOptions = getCodexConfigOptions(
 					input.model,
@@ -131,7 +134,15 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 						return result;
 					}),
 				),
-		} satisfies AcpAgent['Service'];
+			listModelEfforts: () => Effect.succeed([]),
+			resolveBinary: resolveCodexBinary,
+			version: () => Effect.succeed(undefined),
+			invalidate: () => Effect.succeed(undefined),
+			createConfig: () =>
+				createCodexAcpConfig(settings.getCodexHome, () =>
+					settings.getHarnessEnv('codex'),
+				),
+		} satisfies Harness;
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(
