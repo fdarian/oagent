@@ -276,22 +276,30 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				{
 					backend: 'opencode',
 					resolveBinary: resolveOpenCodeBinary,
-					createConfig: createOpenCodeAcpConfig,
+					createConfig: () =>
+						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
 				},
 				{
 					backend: 'cursor',
 					resolveBinary: resolveCursorBinary,
-					createConfig: createCursorAcpConfig,
+					createConfig: () =>
+						createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
 				},
 				{
 					backend: 'grok',
 					resolveBinary: resolveGrokBinary,
-					createConfig: () => createGrokAcpConfig(),
+					createConfig: () =>
+						createGrokAcpConfig(undefined, () =>
+							settings.getHarnessEnv('grok'),
+						),
 				},
 				{
 					backend: 'codex',
 					resolveBinary: resolveCodexBinary,
-					createConfig: () => createCodexAcpConfig(settings.getCodexHome),
+					createConfig: () =>
+						createCodexAcpConfig(settings.getCodexHome, () =>
+							settings.getHarnessEnv('codex'),
+						),
 				},
 			];
 
