@@ -37,7 +37,7 @@ export function SettingsSidebar() {
 	);
 
 	return (
-		<nav className="flex flex-col border-t border-border">
+		<nav className="flex min-h-0 flex-1 flex-col border-t border-border">
 			{NAV.map((item) => (
 				<Link
 					key={item.to}
