@@ -8,7 +8,6 @@ export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
 export { HarnessRegistry } from './harness.ts';
-export { HarnessVersion } from './harness-version.ts';
 export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';

@@ -11,8 +11,6 @@ import {
 	type HarnessLoginResult,
 	HarnessRegistry,
 } from './harness.ts';
-import { HarnessVersion } from './harness-version.ts';
-import { ModelCatalog } from './model-catalog.ts';
 import { Settings } from './settings.ts';
 
 export type HarnessRecord = {
@@ -105,8 +103,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const dbService = yield* Db;
 			const settings = yield* Settings;
 			const harnessRegistry = yield* HarnessRegistry;
-			const modelCatalog = yield* ModelCatalog;
-			const harnessVersion = yield* HarnessVersion;
 			const pendingLogins = new Map<Backend, PendingLogin>();
 
 			const createCodexEnv = (includeNoBrowser = false) => {
@@ -232,7 +228,9 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						}),
 						Effect.sleep(AUTH_LOGIN_TIMEOUT_MS),
 					);
-					if (exitCode === 0) yield* modelCatalog.invalidate('codex');
+					if (exitCode === 0) {
+						yield* harnessRegistry.get('codex').invalidate();
+					}
 					if (process.exitCode === null) process.kill();
 				}).pipe(
 					Effect.catch(() => Effect.succeed(undefined)),
@@ -287,6 +285,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 					);
 					const versions = new Map<Backend, string | undefined>();
 					for (const entry of detected) {
+						yield* entry.harness.invalidate();
 						const version = yield* entry.harness.version().pipe(
 							Effect.mapError(
 								(cause) => new HarnessesError({ operation: 'refresh', cause }),
@@ -371,14 +370,18 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						),
 						Effect.tap((result) =>
 							result.ok
-								? harnessVersion
-										.set(backend, result.agentVersion, harness.binaryPath)
-										.pipe(
-											Effect.mapError(
-												(cause) =>
-													new HarnessesError({ operation: 'check', cause }),
-											),
-										)
+								? Effect.try({
+										try: () =>
+											dbService.db
+												.update(schema.harnesses)
+												.set({
+													version: result.agentVersion ?? null,
+												})
+												.where(eq(schema.harnesses.backend, backend))
+												.run(),
+										catch: (cause) =>
+											new HarnessesError({ operation: 'check', cause }),
+									})
 								: Effect.void,
 						),
 					);
@@ -512,7 +515,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 							cause: new Error(message),
 						});
 					}
-					yield* modelCatalog.invalidate('codex');
+					yield* harnessRegistry.get('codex').invalidate();
 					return { backend, status: 'logged_out' };
 				});
 
@@ -530,9 +533,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 ) {
 	static readonly layer = Layer.effect(Harnesses, Harnesses.make).pipe(
 		Layer.provide(Db.layer),
-		Layer.provide(HarnessVersion.layer),
 		Layer.provide(Settings.layer),
-		Layer.provideMerge(ModelCatalog.layer),
 		Layer.provideMerge(HarnessRegistry.layer),
 	);
 }

@@ -1,15 +1,22 @@
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	type AcpAgentConfig,
 	AcpSessionError,
 	createAcpConnection,
+	probeAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
 import type { Harness } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
 const GROK_BINARY = 'grok';
+
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
 
 export function getGrokBinary(): string {
 	return process.env.OAGENT_GROK_BIN ?? GROK_BINARY;
@@ -40,8 +47,28 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 	make: Effect.gen(function* () {
 		const settings = yield* Settings;
 		const binary = resolveGrokBinary() ?? getGrokBinary();
+		const createConfig = () =>
+			createGrokAcpConfig(undefined, () => settings.getHarnessEnv('grok'));
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
+		const versionSemaphore = yield* Semaphore.make(1);
+		const version = () =>
+			versionSemaphore.withPermit(
+				Effect.gen(function* () {
+					const memoized = yield* Ref.get(versionRef);
+					if (memoized.loaded) return memoized.value;
+					const info = yield* probeAcpConnection(createConfig());
+					yield* Ref.set(versionRef, {
+						loaded: true,
+						value: info.agentVersion,
+					});
+					return info.agentVersion;
+				}),
+			);
 
-		const listModels = () =>
+		const fetchModels = () =>
 			Effect.tryPromise({
 				try: async () => {
 					const proc = Bun.spawn([binary, 'models'], {
@@ -87,6 +114,15 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 				},
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const effortCache = yield* ModelsCache.make(() => Effect.succeed([]));
+		const listModels = () => modelCache.get('models');
+		const listModelEfforts = (model: string) => effortCache.get(model);
+		const invalidate = () =>
+			Effect.gen(function* () {
+				yield* modelCache.invalidate();
+				yield* effortCache.invalidate();
+			});
 
 		const runTurn = (input: {
 			prompt: string;
@@ -114,12 +150,11 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 			backend: 'grok',
 			runTurn,
 			listModels,
-			listModelEfforts: () => Effect.succeed([]),
+			listModelEfforts,
 			resolveBinary: resolveGrokBinary,
-			version: () => Effect.succeed(undefined),
-			invalidate: () => Effect.succeed(undefined),
-			createConfig: () =>
-				createGrokAcpConfig(undefined, () => settings.getHarnessEnv('grok')),
+			version,
+			invalidate,
+			createConfig,
 		} satisfies Harness;
 	}),
 }) {

@@ -1,6 +1,11 @@
-import { Context, Effect, Layer } from 'effect';
-import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
+import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
+import {
+	AcpAgent,
+	type AcpAgentConfig,
+	probeAcpConnection,
+} from './acp-agent.ts';
 import type { Harness } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
@@ -21,6 +26,11 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 );
 
 const CURSOR_BINARY = 'cursor-agent';
+
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
 
 export function getCursorBinary(): string {
 	return process.env.OAGENT_CURSOR_BIN ?? CURSOR_BINARY;
@@ -69,6 +79,44 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
 		const settings = yield* Settings;
+		const createConfig = () =>
+			createCursorAcpConfig(() => settings.getHarnessEnv('cursor'));
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
+		const versionSemaphore = yield* Semaphore.make(1);
+		const version = () =>
+			versionSemaphore.withPermit(
+				Effect.gen(function* () {
+					const memoized = yield* Ref.get(versionRef);
+					if (memoized.loaded) return memoized.value;
+					const info = yield* probeAcpConnection(createConfig());
+					yield* Ref.set(versionRef, {
+						loaded: true,
+						value: info.agentVersion,
+					});
+					return info.agentVersion;
+				}),
+			);
+		const fetchModels = () =>
+			acpAgent.listModels().pipe(
+				Effect.map((models) =>
+					models.map((entry) => ({
+						id: entry.id,
+						label: CURSOR_ID_TO_LABEL.get(entry.id),
+					})),
+				),
+			);
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const effortCache = yield* ModelsCache.make(() => Effect.succeed([]));
+		const listModels = () => modelCache.get('models');
+		const listModelEfforts = (model: string) => effortCache.get(model);
+		const invalidate = () =>
+			Effect.gen(function* () {
+				yield* modelCache.invalidate();
+				yield* effortCache.invalidate();
+			});
 
 		return {
 			backend: 'cursor',
@@ -79,21 +127,12 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 						: input.model;
 				return acpAgent.runTurn({ ...input, model });
 			},
-			listModels: () =>
-				acpAgent.listModels().pipe(
-					Effect.map((models) =>
-						models.map((entry) => ({
-							id: entry.id,
-							label: CURSOR_ID_TO_LABEL.get(entry.id),
-						})),
-					),
-				),
-			listModelEfforts: () => Effect.succeed([]),
+			listModels,
+			listModelEfforts,
 			resolveBinary: resolveCursorBinary,
-			version: () => Effect.succeed(undefined),
-			invalidate: () => Effect.succeed(undefined),
-			createConfig: () =>
-				createCursorAcpConfig(() => settings.getHarnessEnv('cursor')),
+			version,
+			invalidate,
+			createConfig,
 		} satisfies Harness;
 	}),
 }) {

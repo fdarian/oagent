@@ -7,15 +7,9 @@ import * as v from 'valibot';
 import { HarnessRegistry, ModelCatalogError } from '../harness.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
-import type { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
 
-export type EngineServices =
-	| Jobs
-	| Harnesses
-	| Settings
-	| ModelCatalog
-	| HarnessRegistry;
+export type EngineServices = Jobs | Harnesses | Settings | HarnessRegistry;
 export type EngineContext = WithEffectContext<EngineServices>;
 
 const procedure = os.$context<EngineContext>();
