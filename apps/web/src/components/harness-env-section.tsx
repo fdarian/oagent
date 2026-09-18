@@ -1,7 +1,12 @@
-import { useStore } from '@tanstack/react-form';
+import { useForm, useStore } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
-import { FieldDescription, useAppForm, withForm } from '@/components/ui/form';
+import {
+	Field,
+	FieldDescription,
+	FieldError,
+	FieldLabel,
+} from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
 	type HarnessEnvEntry,
@@ -26,135 +31,123 @@ function toFormEntries(
 	}));
 }
 
-const HarnessEnvFields = withForm({
-	defaultValues: { env: [] as Array<HarnessEnvFormEntry> },
-	render: (renderProps) => {
-		const form = renderProps.form;
-		return (
-			<form.AppField
-				name="env"
-				mode="array"
-				validators={{
-					onChange: (change) => validateDuplicateEnvironmentKeys(change.value),
-					onSubmit: (submission) =>
-						validateDuplicateEnvironmentKeys(submission.value),
-				}}
-			>
-				{(arrayField) => {
-					return (
-						<arrayField.Field>
-							<div className="grid gap-3">
-								{arrayField.state.value.map((entry, index) => {
-									const keyId = `${arrayField.name}-${index}-key`;
-									const valueId = `${arrayField.name}-${index}-value`;
-									return (
-										<div
-											className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-start"
-											key={entry.id}
-										>
-											<form.AppField
-												name={`env[${index}].key`}
-												validators={{
-													onChange: (change) =>
-														validateEnvironmentKeyAtIndex(
-															change.value,
-															arrayField.state.value,
-															index,
-														),
-													onSubmit: (submission) =>
-														validateEnvironmentKeyAtIndex(
-															submission.value,
-															arrayField.state.value,
-															index,
-														),
-												}}
-											>
-												{(keyField) => {
-													const keyIsInvalid =
-														keyField.state.meta.isTouched &&
-														!keyField.state.meta.isValid;
-													return (
-														<keyField.Field data-invalid={keyIsInvalid}>
-															<keyField.FieldLabel htmlFor={keyId}>
-																Name
-															</keyField.FieldLabel>
-															<Input
-																id={keyId}
-																name={keyField.name}
-																value={keyField.state.value}
-																onBlur={keyField.handleBlur}
-																onChange={(event) =>
-																	keyField.handleChange(event.target.value)
-																}
-																aria-invalid={keyIsInvalid}
-																placeholder="API_KEY"
-																autoComplete="off"
-																className="font-mono text-xs"
-															/>
-															{keyIsInvalid ? <keyField.FieldError /> : null}
-														</keyField.Field>
-													);
-												}}
-											</form.AppField>
+function HarnessEnvFields(props: { form: EnvForm }) {
+	return (
+		<props.form.Field
+			name="env"
+			mode="array"
+			validators={{
+				onChange: (change) => validateDuplicateEnvironmentKeys(change.value),
+				onSubmit: (submission) =>
+					validateDuplicateEnvironmentKeys(submission.value),
+			}}
+		>
+			{(arrayField) => (
+				<div className="flex flex-col gap-3">
+					{arrayField.state.value.map((entry, index) => {
+						const keyId = `${arrayField.name}-${index}-key`;
+						const valueId = `${arrayField.name}-${index}-value`;
+						return (
+							<div
+								className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end"
+								key={entry.id}
+							>
+								<props.form.Field
+									name={`env[${index}].key`}
+									validators={{
+										onChange: (change) =>
+											validateEnvironmentKeyAtIndex(
+												change.value,
+												arrayField.state.value,
+												index,
+											),
+										onSubmit: (submission) =>
+											validateEnvironmentKeyAtIndex(
+												submission.value,
+												arrayField.state.value,
+												index,
+											),
+									}}
+								>
+									{(field) => {
+										const keyIsInvalid =
+											field.state.meta.isTouched && !field.state.meta.isValid;
+										return (
+											<Field data-invalid={keyIsInvalid}>
+												<FieldLabel>Name</FieldLabel>
+												<Input
+													id={keyId}
+													name={field.name}
+													value={field.state.value}
+													onBlur={field.handleBlur}
+													onChange={(event) =>
+														field.handleChange(event.target.value)
+													}
+													aria-invalid={keyIsInvalid}
+													placeholder="API_KEY"
+													autoComplete="off"
+													className="font-mono text-xs"
+												/>
+												{keyIsInvalid ? (
+													<FieldError errors={field.state.meta.errors} />
+												) : null}
+											</Field>
+										);
+									}}
+								</props.form.Field>
 
-											<form.AppField name={`env[${index}].value`}>
-												{(valueField) => (
-													<valueField.Field>
-														<valueField.FieldLabel htmlFor={valueId}>
-															Value
-														</valueField.FieldLabel>
-														<Input
-															id={valueId}
-															name={valueField.name}
-															value={valueField.state.value}
-															onBlur={valueField.handleBlur}
-															onChange={(event) =>
-																valueField.handleChange(event.target.value)
-															}
-															placeholder="value"
-															autoComplete="off"
-															className="font-mono text-xs"
-														/>
-													</valueField.Field>
-												)}
-											</form.AppField>
+								<props.form.Field name={`env[${index}].value`}>
+									{(field) => (
+										<Field>
+											<FieldLabel htmlFor={valueId}>Value</FieldLabel>
+											<Input
+												id={valueId}
+												name={field.name}
+												value={field.state.value}
+												onBlur={field.handleBlur}
+												onChange={(event) =>
+													field.handleChange(event.target.value)
+												}
+												placeholder="value"
+												autoComplete="off"
+												className="font-mono text-xs"
+											/>
+										</Field>
+									)}
+								</props.form.Field>
 
-											<Button
-												type="button"
-												variant="outline"
-												className="sm:mt-6"
-												onClick={() => arrayField.removeValue(index)}
-											>
-												Remove
-											</Button>
-										</div>
-									);
-								})}
-
-								{arrayField.state.meta.errors.length > 0 ? (
-									<arrayField.FieldError />
-								) : null}
 								<Button
 									type="button"
 									variant="outline"
-									onClick={() =>
-										arrayField.pushValue({
-											id: crypto.randomUUID(),
-											key: '',
-											value: '',
-										})
-									}
+									onClick={() => arrayField.removeValue(index)}
 								>
-									Add variable
+									Remove
 								</Button>
 							</div>
-						</arrayField.Field>
-					);
-				}}
-			</form.AppField>
-		);
-	},
-});
+						);
+					})}
+
+					{arrayField.state.meta.errors.length > 0 ? (
+						<FieldError errors={arrayField.state.meta.errors} />
+					) : null}
+					<Button
+						type="button"
+						variant="outline"
+						onClick={() =>
+							arrayField.pushValue({
+								id: crypto.randomUUID(),
+								key: '',
+								value: '',
+							})
+						}
+					>
+						Add variable
+					</Button>
+				</div>
+			)}
+		</props.form.Field>
+	);
+}
 
 type HarnessEnvSectionProps = {
 	backend: Backend;
@@ -202,7 +195,10 @@ type HarnessEnvFormProps = {
 	entries: ReadonlyArray<HarnessEnvEntry>;
 };
 
-function HarnessEnvForm(props: HarnessEnvFormProps) {
+function useHarnessEnvForm(props: {
+	backend: Backend;
+	entries: ReadonlyArray<HarnessEnvEntry>;
+}) {
 	const queryClient = useQueryClient();
 	const saveMutation = useMutation({
 		mutationFn: (env: ReadonlyArray<HarnessEnvFormEntry>) =>
@@ -219,34 +215,52 @@ function HarnessEnvForm(props: HarnessEnvFormProps) {
 			});
 		},
 	});
-	const form = useAppForm({
+	const form = useForm({
 		defaultValues: { env: toFormEntries(props.entries) },
 		onSubmit: (submission) => {
 			saveMutation.mutate(submission.value.env);
 		},
 	});
-	const canSubmit = useStore(form.store, (state) => state.canSubmit);
-	const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
+	return { form, saveMutation };
+}
+type EnvForm = ReturnType<typeof useHarnessEnvForm>['form'];
+
+function HarnessEnvForm(props: HarnessEnvFormProps) {
+	const harnessEnvForm = useHarnessEnvForm(props);
+	const canSubmit = useStore(
+		harnessEnvForm.form.store,
+		(state) => state.canSubmit,
+	);
+	const isSubmitting = useStore(
+		harnessEnvForm.form.store,
+		(state) => state.isSubmitting,
+	);
 
 	return (
-		<form.AppForm>
-			<form.Form className="grid gap-4">
-				<HarnessEnvFields form={form} />
+		<form
+			className="grid gap-4"
+			onSubmit={(event) => {
+				event.preventDefault();
+				harnessEnvForm.form.handleSubmit();
+			}}
+		>
+			<HarnessEnvFields form={harnessEnvForm.form} />
 
-				<div className="flex items-center gap-2">
-					<Button
-						type="submit"
-						disabled={!canSubmit || isSubmitting || saveMutation.isPending}
-					>
-						{saveMutation.isPending ? 'Saving…' : 'Save'}
-					</Button>
-					{saveMutation.isError ? (
-						<p className="text-sm text-destructive">
-							{saveMutation.error.message}
-						</p>
-					) : null}
-				</div>
-			</form.Form>
-		</form.AppForm>
+			<div className="flex items-center gap-2">
+				<Button
+					type="submit"
+					disabled={
+						!canSubmit || isSubmitting || harnessEnvForm.saveMutation.isPending
+					}
+				>
+					{harnessEnvForm.saveMutation.isPending ? 'Saving…' : 'Save'}
+				</Button>
+				{harnessEnvForm.saveMutation.isError ? (
+					<p className="text-sm text-destructive">
+						{harnessEnvForm.saveMutation.error.message}
+					</p>
+				) : null}
+			</div>
+		</form>
 	);
 }

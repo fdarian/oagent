@@ -338,13 +338,7 @@ function AliasForm(props: AliasFormProps) {
 								placeholder="e.g. quick"
 								aria-invalid={isInvalid}
 							/>
-							{isInvalid && (
-								<FieldError
-									errors={field.state.meta.errors.map((e) => ({
-										message: typeof e === 'string' ? e : String(e),
-									}))}
-								/>
-							)}
+							{isInvalid && <FieldError errors={field.state.meta.errors} />}
 						</Field>
 					);
 				}}
@@ -391,12 +385,8 @@ function AliasForm(props: AliasFormProps) {
 							field.state.meta.errors.length > 0) ||
 						serverModelError !== undefined;
 					const errors = [
-						...field.state.meta.errors.map((e) => ({
-							message: typeof e === 'string' ? e : String(e),
-						})),
-						...(serverModelError !== undefined
-							? [{ message: serverModelError }]
-							: []),
+						...field.state.meta.errors,
+						...(serverModelError !== undefined ? [serverModelError] : []),
 					];
 					return (
 						<Field data-invalid={isInvalid}>
