@@ -7,6 +7,7 @@ import {
 	AcpSessionError,
 	createAcpConnection,
 } from './acp-agent.ts';
+import { HarnessVersion } from './harness-version.ts';
 
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
@@ -129,6 +130,14 @@ export function resolveOpenCodeVersion(
 	});
 }
 
+function parseOpenCodeMajor(version: string): number | undefined {
+	const match = /^(\d+)\./.exec(version);
+	if (match === null) return undefined;
+	const major = match[1];
+	if (major === undefined) return undefined;
+	return Number.parseInt(major, 10);
+}
+
 export function createOpenCodeAcpConfig(): AcpAgentConfig {
 	return {
 		binary: resolveOpenCodeBinary() ?? getOpenCodeBinary(),
@@ -140,6 +149,7 @@ export function createOpenCodeAcpConfig(): AcpAgentConfig {
 export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
+		const harnessVersion = yield* HarnessVersion;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 
 		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
@@ -153,7 +163,20 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				),
 			});
 
-		const listModels = () =>
+		const resolveVersion = () =>
+			Effect.gen(function* () {
+				const persisted = yield* harnessVersion
+					.get('opencode')
+					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+				if (persisted !== undefined) return persisted;
+				const detected = yield* resolveOpenCodeVersion(binary);
+				yield* harnessVersion
+					.set('opencode', detected)
+					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+				return detected;
+			});
+
+		const listModelsCli = () =>
 			Effect.tryPromise({
 				try: async () => {
 					const proc = Bun.spawn([binary, 'models'], {
@@ -197,6 +220,22 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
 
+		const listModels = () =>
+			Effect.gen(function* () {
+				const version = yield* resolveVersion();
+				const major = parseOpenCodeMajor(version);
+				if (major === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error(`Unsupported opencode version: ${version}`),
+					});
+				}
+				if (major >= 2) return yield* acpAgent.listModels();
+				if (major === 1) return yield* listModelsCli();
+				return yield* new AcpSessionError({
+					cause: new Error(`Unsupported opencode version: ${version}`),
+				});
+			});
+
 		const listModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -238,5 +277,6 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
 		Layer.provide(AcpAgent.layer(createOpenCodeAcpConfig())),
+		Layer.provide(HarnessVersion.layer),
 	);
 }
