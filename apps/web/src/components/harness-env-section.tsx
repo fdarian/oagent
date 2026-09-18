@@ -192,7 +192,9 @@ export function HarnessEnvSection(props: HarnessEnvSectionProps) {
 				</FieldDescription>
 			</div>
 
-			{envQuery.isLoading ? (
+			{envQuery.data !== undefined ? (
+				<HarnessEnvForm backend={props.backend} entries={envQuery.data.env} />
+			) : envQuery.isLoading ? (
 				<p className="text-sm text-muted-foreground">
 					Loading environment variables…
 				</p>
@@ -200,12 +202,10 @@ export function HarnessEnvSection(props: HarnessEnvSectionProps) {
 				<p className="text-sm text-destructive">
 					Failed to load environment variables: {envQuery.error.message}
 				</p>
-			) : envQuery.data === undefined ? (
+			) : (
 				<p className="text-sm text-muted-foreground">
 					Environment variables are unavailable.
 				</p>
-			) : (
-				<HarnessEnvForm backend={props.backend} entries={envQuery.data.env} />
 			)}
 		</div>
 	);
