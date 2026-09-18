@@ -7,6 +7,7 @@ import {
 	AcpSessionError,
 	createAcpConnection,
 } from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
@@ -75,16 +76,31 @@ export function resolveOpenCodeBinary(): string | undefined {
 	return Bun.which(getOpenCodeBinary()) ?? undefined;
 }
 
-export function createOpenCodeAcpConfig(): AcpAgentConfig {
+export function createOpenCodeAcpConfig(
+	getExtraEnv?: () => Record<string, string>,
+): AcpAgentConfig {
 	return {
 		binary: resolveOpenCodeBinary() ?? getOpenCodeBinary(),
 		args: ['acp'] as const,
 		clientInfoName: 'oagent',
+		...(getExtraEnv === undefined
+			? {}
+			: { env: () => ({ ...process.env, ...getExtraEnv() }) }),
 	};
 }
 
+const openCodeAcpLayer = Layer.unwrap(
+	Effect.gen(function* () {
+		const settings = yield* Settings;
+		return AcpAgent.layer(
+			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
+		);
+	}),
+);
+
 export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	make: Effect.gen(function* () {
+		const settings = yield* Settings;
 		const acpAgent = yield* AcpAgent;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 
@@ -104,6 +120,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				try: async () => {
 					const proc = Bun.spawn([binary, 'models'], {
 						stdout: 'pipe',
+						env: { ...process.env, ...settings.getHarnessEnv('opencode') },
 					});
 					const text = await new Response(proc.stdout).text();
 					await proc.exited;
@@ -119,10 +136,12 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const listModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
-					const env = yield* createAcpConnection(createOpenCodeAcpConfig());
+					const connection = yield* createAcpConnection(
+						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
+					);
 					const session = yield* Effect.tryPromise({
 						try: () =>
-							env.conn.newSession({
+							connection.conn.newSession({
 								cwd: process.cwd(),
 								mcpServers: [],
 							}),
@@ -130,7 +149,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 					});
 					const response = yield* Effect.tryPromise({
 						try: () =>
-							env.conn.setSessionConfigOption({
+							connection.conn.setSessionConfigOption({
 								sessionId: session.sessionId,
 								configId: 'model',
 								value: model,
@@ -156,6 +175,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	}),
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
-		Layer.provide(AcpAgent.layer(createOpenCodeAcpConfig())),
+		Layer.provide(openCodeAcpLayer),
+		Layer.provide(Settings.layer),
 	);
 }

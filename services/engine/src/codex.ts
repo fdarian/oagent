@@ -1,9 +1,8 @@
 import { Context, Effect, Layer } from 'effect';
 import {
-	type AcpAgent,
+	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
-	makeAcpAgent,
 } from './acp-agent.ts';
 import { Settings } from './settings.ts';
 
@@ -28,6 +27,7 @@ export function resolveCodexCliBinary(): string | undefined {
 
 export function createCodexAcpConfig(
 	getCodexHome: () => string | undefined,
+	getExtraEnv?: () => Record<string, string>,
 ): AcpAgentConfig {
 	return {
 		binary: resolveCodexBinary() ?? getCodexBinary(),
@@ -42,10 +42,24 @@ export function createCodexAcpConfig(
 			}
 			const codexHome = getCodexHome();
 			if (codexHome !== undefined) env.CODEX_HOME = codexHome;
-			return env;
+			return {
+				...env,
+				...(getExtraEnv === undefined ? {} : getExtraEnv()),
+			};
 		},
 	};
 }
+
+const codexAcpLayer = Layer.unwrap(
+	Effect.gen(function* () {
+		const settings = yield* Settings;
+		return AcpAgent.layer(
+			createCodexAcpConfig(settings.getCodexHome, () =>
+				settings.getHarnessEnv('codex'),
+			),
+		);
+	}),
+);
 
 function getCodexConfigOptions(
 	model: string | undefined,
@@ -90,10 +104,7 @@ function getCodexModelId(model: string): string {
 
 export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	make: Effect.gen(function* () {
-		const settings = yield* Settings;
-		const acpAgent = yield* makeAcpAgent(
-			createCodexAcpConfig(settings.getCodexHome),
-		);
+		const acpAgent = yield* AcpAgent;
 		return {
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const configOptions = getCodexConfigOptions(
@@ -124,6 +135,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(
+		Layer.provide(codexAcpLayer),
 		Layer.provide(Settings.layer),
 	);
 }

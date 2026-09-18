@@ -22,11 +22,74 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
 
+const harnessEnvEntrySchema = v.object({
+	key: v.pipe(
+		v.string(),
+		v.check((value) => value.trim().length > 0, 'Environment key is required'),
+	),
+	value: v.string(),
+});
+const harnessEnvEntriesSchema = v.pipe(
+	v.array(harnessEnvEntrySchema),
+	v.check(
+		(entries) =>
+			new Set(entries.map((entry) => entry.key)).size === entries.length,
+		'Environment keys must be unique',
+	),
+);
+
 const toHarnessDto = (harness: Harness) => ({
 	backend: harness.backend,
 	binaryPath: harness.binaryPath,
 	detectedAt: harness.detectedAt.getTime(),
 });
+
+const toHarnessEnvOutput = (env: Readonly<Record<string, string>>) => ({
+	env: Object.entries(env).map((entry) => ({
+		key: entry[0],
+		value: entry[1],
+	})),
+});
+
+function toHarnessEnvRecord(
+	entries: ReadonlyArray<{ key: string; value: string }>,
+): Record<string, string> {
+	const env = Object.create(null) as Record<string, string>;
+	for (const entry of entries) {
+		env[entry.key] = entry.value;
+	}
+	return env;
+}
+
+type HarnessEnvSettings = Pick<
+	Settings['Service'],
+	'getHarnessEnv' | 'setHarnessEnv'
+>;
+
+export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
+	Effect.succeed({
+		getHarnessEnv: os
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				return yield* Effect.sync(() =>
+					toHarnessEnvOutput(settings.getHarnessEnv(options.input.backend)),
+				);
+			}),
+		setHarnessEnv: os
+			.input(
+				v.object({
+					backend: backendSchema,
+					env: harnessEnvEntriesSchema,
+				}),
+			)
+			.effect(function* (options) {
+				return yield* Effect.sync(() => {
+					const env = toHarnessEnvRecord(options.input.env);
+					settings.setHarnessEnv(options.input.backend, env);
+					return toHarnessEnvOutput(env);
+				});
+			}),
+	});
 
 type AliasRow = {
 	name: string;
@@ -187,6 +250,27 @@ const router = procedure.router({
 				settings.setCodexHome(options.input.home);
 				yield* modelCatalog.invalidate('codex');
 				return { home: settings.getCodexHome() };
+			}),
+		getHarnessEnv: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				return toHarnessEnvOutput(
+					settings.getHarnessEnv(options.input.backend),
+				);
+			}),
+		setHarnessEnv: procedure
+			.input(
+				v.object({
+					backend: backendSchema,
+					env: harnessEnvEntriesSchema,
+				}),
+			)
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				const env = toHarnessEnvRecord(options.input.env);
+				settings.setHarnessEnv(options.input.backend, env);
+				return toHarnessEnvOutput(env);
 			}),
 	},
 	harnesses: {
