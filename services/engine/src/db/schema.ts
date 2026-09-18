@@ -204,6 +204,7 @@ export const settings = sqliteTable(
 export const harnesses = sqliteTable('harnesses', {
 	backend: text().primaryKey(),
 	binary_path: text().notNull(),
+	version: text(),
 	detected_at: integer({ mode: 'timestamp_ms' })
 		.notNull()
 		.$defaultFn(() => new Date()),
