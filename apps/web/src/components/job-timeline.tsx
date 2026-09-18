@@ -139,11 +139,11 @@ function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
 	return (
 		<Collapsible defaultOpen={false} className="group mb-3 w-full">
 			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
 				<span className="shrink-0 font-medium text-sm">Explored</span>
 				<span className="min-w-0 truncate text-sm text-muted-foreground">
 					— {explorationSummary(props.group.parts)}
 				</span>
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90" />
 			</CollapsibleTrigger>
 			<CollapsibleContent className="ml-1 border-border border-l pl-4 pt-1">
 				{props.group.parts.map((part) => (
