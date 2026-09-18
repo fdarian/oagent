@@ -18,6 +18,40 @@ export type JobTimelineProps = {
 	isLoading?: boolean;
 };
 
+type ReasoningPart = Extract<TimelinePart, { kind: 'reasoning' }>;
+
+function collapseReasoningParts(parts: TimelinePart[]): TimelinePart[] {
+	const collapsed: TimelinePart[] = [];
+
+	for (const part of parts) {
+		const previous = collapsed[collapsed.length - 1];
+		if (previous?.kind !== 'reasoning' || part.kind !== 'reasoning') {
+			collapsed.push(part);
+			continue;
+		}
+
+		const durationMs =
+			previous.durationMs !== undefined && part.durationMs !== undefined
+				? previous.durationMs + part.durationMs
+				: previous.durationMs !== undefined
+					? previous.durationMs
+					: part.durationMs;
+		const merged: ReasoningPart = {
+			kind: 'reasoning',
+			id: previous.id,
+			text: `${previous.text}  \n${part.text}`,
+			isStreaming: previous.isStreaming || part.isStreaming,
+			createdAt: previous.createdAt,
+		};
+		if (durationMs !== undefined) {
+			merged.durationMs = durationMs;
+		}
+		collapsed[collapsed.length - 1] = merged;
+	}
+
+	return collapsed;
+}
+
 function renderPart(part: TimelinePart, cwd: string) {
 	switch (part.kind) {
 		case 'text':
@@ -40,7 +74,9 @@ export function JobTimeline({
 	header,
 	isLoading,
 }: JobTimelineProps) {
-	const allParts = streamingTail !== null ? [...parts, streamingTail] : parts;
+	const allParts = collapseReasoningParts(
+		streamingTail !== null ? [...parts, streamingTail] : parts,
+	);
 
 	function partAt(index: number): TimelinePart {
 		const part = allParts[index];
