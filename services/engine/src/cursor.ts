@@ -2,6 +2,7 @@ import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	AcpAgent,
 	type AcpAgentConfig,
+	checkAcpConnection,
 	probeAcpConnection,
 } from './acp-agent.ts';
 import type { Harness } from './harness.ts';
@@ -81,6 +82,7 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 		const settings = yield* Settings;
 		const createConfig = () =>
 			createCursorAcpConfig(() => settings.getHarnessEnv('cursor'));
+		const check = () => checkAcpConnection('cursor', createConfig());
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -109,14 +111,9 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 				),
 			);
 		const modelCache = yield* ModelsCache.make(() => fetchModels());
-		const effortCache = yield* ModelsCache.make(() => Effect.succeed([]));
-		const listModels = () => modelCache.get('models');
-		const listModelEfforts = (model: string) => effortCache.get(model);
-		const invalidate = () =>
-			Effect.gen(function* () {
-				yield* modelCache.invalidate();
-				yield* effortCache.invalidate();
-			});
+		const listModels = () => modelCache.get();
+		const listModelEfforts = () => Effect.succeed([]);
+		const invalidate = () => modelCache.invalidate();
 
 		return {
 			backend: 'cursor',
@@ -136,7 +133,7 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 			resolveBinary: resolveCursorBinary,
 			version,
 			invalidate,
-			createConfig,
+			check,
 		} satisfies Harness;
 	}),
 }) {

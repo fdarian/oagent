@@ -5,6 +5,7 @@ import {
 	type AcpAgentConfig,
 	type AcpConfigOption,
 	AcpSessionError,
+	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
 import type { Harness } from './harness.ts';
@@ -196,6 +197,9 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const settings = yield* Settings;
 		const acpAgent = yield* AcpAgent;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
+		const createConfig = () =>
+			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode'));
+		const check = () => checkAcpConnection('opencode', createConfig());
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -290,9 +294,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const fetchModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
-					const connection = yield* createAcpConnection(
-						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
-					);
+					const connection = yield* createAcpConnection(createConfig());
 					const session = yield* Effect.tryPromise({
 						try: () =>
 							connection.conn.newSession({
@@ -321,10 +323,10 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				),
 			);
 		const modelCache = yield* ModelsCache.make(() => fetchModels());
-		const effortCache = yield* ModelsCache.make((model) =>
+		const effortCache = yield* ModelsCache.makeKeyed((model) =>
 			fetchModelEfforts(model),
 		);
-		const listModels = () => modelCache.get('models');
+		const listModels = () => modelCache.get();
 		const listModelEfforts = (model: string) => effortCache.get(model);
 		const invalidate = () =>
 			Effect.gen(function* () {
@@ -340,8 +342,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			resolveBinary: resolveOpenCodeBinary,
 			version,
 			invalidate,
-			createConfig: () =>
-				createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
+			check,
 		} satisfies Harness & OpenCodeService;
 	}),
 }) {

@@ -3,6 +3,7 @@ import {
 	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
+	checkAcpConnection,
 	probeAcpConnection,
 } from './acp-agent.ts';
 import type {
@@ -42,7 +43,7 @@ const AUTH_COMMAND_TIMEOUT_MS = 15_000;
 const AUTH_PROMPT_TIMEOUT_MS = 15_000;
 const AUTH_LOGIN_TIMEOUT_MS = 15 * 60 * 1_000;
 
-class CodexAuthError extends Schema.TaggedError<CodexAuthError>()(
+export class CodexAuthError extends Schema.TaggedError<CodexAuthError>()(
 	'CodexAuthError',
 	{
 		operation: Schema.String,
@@ -186,6 +187,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 			createCodexAcpConfig(settings.getCodexHome, () =>
 				settings.getHarnessEnv('codex'),
 			);
+		const check = () => checkAcpConnection('codex', createConfig());
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -219,14 +221,9 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 				}),
 			);
 		const modelCache = yield* ModelsCache.make(() => fetchModels());
-		const effortCache = yield* ModelsCache.make(() => Effect.succeed([]));
-		const listModels = () => modelCache.get('models');
-		const listModelEfforts = (model: string) => effortCache.get(model);
-		const invalidate = () =>
-			Effect.gen(function* () {
-				yield* modelCache.invalidate();
-				yield* effortCache.invalidate();
-			});
+		const listModels = () => modelCache.get();
+		const listModelEfforts = () => Effect.succeed([]);
+		const invalidate = () => modelCache.invalidate();
 		const pendingLogin = yield* Ref.make<PendingLogin | undefined>(undefined);
 
 		const createCodexEnv = (includeNoBrowser = false) => {
@@ -508,7 +505,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 			resolveBinary: resolveCodexBinary,
 			version,
 			invalidate,
-			createConfig,
+			check,
 			auth: { authStatus, login, cancelLogin, logout },
 		} satisfies Harness;
 	}),

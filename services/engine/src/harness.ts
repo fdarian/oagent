@@ -1,5 +1,6 @@
 import { Context, Effect, Layer, Schema } from 'effect';
-import type { AcpAgent, AcpAgentConfig } from './acp-agent.ts';
+import type { AcpAgent, AcpSessionError, AcpTurnFailed } from './acp-agent.ts';
+import type { CodexAuthError } from './codex.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
@@ -14,13 +15,28 @@ export type ModelEffort = {
 	label: string;
 };
 
-export class ModelCatalogError extends Schema.TaggedError<ModelCatalogError>()(
-	'ModelCatalogError',
+export class HarnessModelError extends Schema.TaggedError<HarnessModelError>()(
+	'HarnessModelError',
 	{
 		backend: Schema.String,
 		message: Schema.String,
 	},
 ) {}
+
+export type HarnessError = AcpSessionError | AcpTurnFailed | CodexAuthError;
+
+export type HarnessCheckResult =
+	| {
+			backend: Backend;
+			ok: true;
+			agentName?: string;
+			agentVersion?: string;
+	  }
+	| {
+			backend: Backend;
+			ok: false;
+			message: string;
+	  };
 
 export type HarnessAuthStatus =
 	| {
@@ -52,23 +68,31 @@ export type HarnessCancelLoginResult = {
 };
 
 export type HarnessAuth = {
-	authStatus: () => Effect.Effect<HarnessAuthStatus, unknown, never>;
-	login: () => Effect.Effect<HarnessLoginResult, unknown, never>;
-	cancelLogin: () => Effect.Effect<HarnessCancelLoginResult, unknown, never>;
-	logout: () => Effect.Effect<HarnessAuthStatus, unknown, never>;
+	authStatus: () => Effect.Effect<HarnessAuthStatus, HarnessError, never>;
+	login: () => Effect.Effect<HarnessLoginResult, HarnessError, never>;
+	cancelLogin: () => Effect.Effect<
+		HarnessCancelLoginResult,
+		HarnessError,
+		never
+	>;
+	logout: () => Effect.Effect<HarnessAuthStatus, HarnessError, never>;
 };
 
 export type Harness = {
 	backend: Backend;
 	runTurn: AcpAgent['Service']['runTurn'];
-	listModels: () => Effect.Effect<ReadonlyArray<ModelEntry>, unknown, never>;
+	listModels: () => Effect.Effect<
+		ReadonlyArray<ModelEntry>,
+		HarnessError,
+		never
+	>;
 	listModelEfforts: (
 		model: string,
-	) => Effect.Effect<ReadonlyArray<ModelEffort>, unknown, never>;
+	) => Effect.Effect<ReadonlyArray<ModelEffort>, HarnessError, never>;
 	resolveBinary: () => string | undefined;
-	version: () => Effect.Effect<string | undefined, unknown, never>;
+	version: () => Effect.Effect<string | undefined, HarnessError, never>;
 	invalidate: () => Effect.Effect<void, never, never>;
-	createConfig: () => AcpAgentConfig;
+	check: () => Effect.Effect<HarnessCheckResult, never, never>;
 	auth?: HarnessAuth;
 };
 
@@ -80,18 +104,20 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 			const cursor = yield* Cursor;
 			const grok = yield* Grok;
 			const codex = yield* Codex;
-			const all: ReadonlyArray<Harness> = [opencode, cursor, grok, codex];
-			const byBackend: ReadonlyMap<Backend, Harness> = new Map(
-				all.map((harness) => [harness.backend, harness] as const),
-			);
-
-			const get = (backend: Backend): Harness => {
-				const harness = byBackend.get(backend);
-				if (harness === undefined) {
-					throw new Error(`No harness registered for ${backend}`);
-				}
-				return harness;
+			const byBackend: Record<Backend, Harness> = {
+				opencode,
+				cursor,
+				grok,
+				codex,
 			};
+			const all: ReadonlyArray<Harness> = [
+				byBackend.opencode,
+				byBackend.cursor,
+				byBackend.grok,
+				byBackend.codex,
+			];
+
+			const get = (backend: Backend): Harness => byBackend[backend];
 
 			return { all, get };
 		}),

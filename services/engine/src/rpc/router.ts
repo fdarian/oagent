@@ -4,7 +4,7 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import * as v from 'valibot';
-import { HarnessRegistry, ModelCatalogError } from '../harness.ts';
+import { HarnessModelError, HarnessRegistry } from '../harness.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { Settings } from '../settings.ts';
@@ -325,7 +325,7 @@ const router = procedure.router({
 					.pipe(
 						Effect.mapError(
 							(cause) =>
-								new ModelCatalogError({
+								new HarnessModelError({
 									backend: options.input.backend,
 									message: `Failed to list models for ${options.input.backend}: ${String(cause)}`,
 								}),
@@ -348,7 +348,7 @@ const router = procedure.router({
 					.pipe(
 						Effect.mapError(
 							(cause) =>
-								new ModelCatalogError({
+								new HarnessModelError({
 									backend: options.input.backend,
 									message: `Failed to list reasoning efforts for ${options.input.backend}: ${String(cause)}`,
 								}),

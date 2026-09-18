@@ -3,6 +3,7 @@ import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	type AcpAgentConfig,
 	AcpSessionError,
+	checkAcpConnection,
 	createAcpConnection,
 	probeAcpConnection,
 	runAcpTurn,
@@ -49,6 +50,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 		const binary = resolveGrokBinary() ?? getGrokBinary();
 		const createConfig = () =>
 			createGrokAcpConfig(undefined, () => settings.getHarnessEnv('grok'));
+		const check = () => checkAcpConnection('grok', createConfig());
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -115,14 +117,9 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
 		const modelCache = yield* ModelsCache.make(() => fetchModels());
-		const effortCache = yield* ModelsCache.make(() => Effect.succeed([]));
-		const listModels = () => modelCache.get('models');
-		const listModelEfforts = (model: string) => effortCache.get(model);
-		const invalidate = () =>
-			Effect.gen(function* () {
-				yield* modelCache.invalidate();
-				yield* effortCache.invalidate();
-			});
+		const listModels = () => modelCache.get();
+		const listModelEfforts = () => Effect.succeed([]);
+		const invalidate = () => modelCache.invalidate();
 
 		const runTurn = (input: {
 			prompt: string;
@@ -158,7 +155,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 			resolveBinary: resolveGrokBinary,
 			version,
 			invalidate,
-			createConfig,
+			check,
 		} satisfies Harness;
 	}),
 }) {

@@ -1,12 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
-import { probeAcpConnection } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import {
 	type Backend,
 	type HarnessAuthStatus,
 	type HarnessCancelLoginResult,
+	type HarnessCheckResult,
 	type HarnessLoginResult,
 	HarnessRegistry,
 } from './harness.ts';
@@ -18,18 +18,7 @@ export type HarnessRecord = {
 	detectedAt: Date;
 };
 
-export type HarnessCheckResult =
-	| {
-			backend: Backend;
-			ok: true;
-			agentName?: string;
-			agentVersion?: string;
-	  }
-	| {
-			backend: Backend;
-			ok: false;
-			message: string;
-	  };
+export type { HarnessCheckResult } from './harness.ts';
 
 export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 	'HarnessesError',
@@ -172,15 +161,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 
 					const behavior = harnessRegistry.get(backend);
 
-					return yield* probeAcpConnection(behavior.createConfig()).pipe(
-						Effect.map((info) => ({ backend, ok: true as const, ...info })),
-						Effect.catchTag('AcpSessionError', (error) =>
-							Effect.succeed({
-								backend,
-								ok: false as const,
-								message: error.message,
-							}),
-						),
+					return yield* behavior.check().pipe(
 						Effect.tap((result) =>
 							result.ok
 								? Effect.try({
