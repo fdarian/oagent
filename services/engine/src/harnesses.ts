@@ -79,7 +79,7 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 type HarnessDefinition = {
 	backend: Backend;
 	resolveBinary: () => string | undefined;
-	createConfig: () => AcpAgentConfig;
+	createConfig: (extraEnv: Record<string, string>) => AcpAgentConfig;
 };
 
 type CodexCommandResult = {
@@ -276,22 +276,23 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				{
 					backend: 'opencode',
 					resolveBinary: resolveOpenCodeBinary,
-					createConfig: createOpenCodeAcpConfig,
+					createConfig: (extraEnv) => createOpenCodeAcpConfig(extraEnv),
 				},
 				{
 					backend: 'cursor',
 					resolveBinary: resolveCursorBinary,
-					createConfig: createCursorAcpConfig,
+					createConfig: (extraEnv) => createCursorAcpConfig(extraEnv),
 				},
 				{
 					backend: 'grok',
 					resolveBinary: resolveGrokBinary,
-					createConfig: () => createGrokAcpConfig(),
+					createConfig: (extraEnv) => createGrokAcpConfig(undefined, extraEnv),
 				},
 				{
 					backend: 'codex',
 					resolveBinary: resolveCodexBinary,
-					createConfig: () => createCodexAcpConfig(settings.getCodexHome),
+					createConfig: (extraEnv) =>
+						createCodexAcpConfig(settings.getCodexHome, extraEnv),
 				},
 			];
 
@@ -390,7 +391,17 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						};
 					}
 
-					return yield* probeAcpConnection(definition.createConfig()).pipe(
+					const extraEnv = yield* settings
+						.getHarnessEnv(backend)
+						.pipe(
+							Effect.mapError(
+								(cause) => new HarnessesError({ operation: 'check', cause }),
+							),
+						);
+
+					return yield* probeAcpConnection(
+						definition.createConfig(extraEnv),
+					).pipe(
 						Effect.map((info) => ({ backend, ok: true as const, ...info })),
 						Effect.catchTag('AcpSessionError', (error) =>
 							Effect.succeed({

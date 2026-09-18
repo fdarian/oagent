@@ -1,5 +1,11 @@
 import { Context, Effect, Layer } from 'effect';
-import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
+import {
+	type AcpAgent,
+	type AcpAgentConfig,
+	AcpSessionError,
+	makeAcpAgent,
+} from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
 	auto: 'default[]',
@@ -28,11 +34,16 @@ export function resolveCursorBinary(): string | undefined {
 	return Bun.which(getCursorBinary()) ?? undefined;
 }
 
-export function createCursorAcpConfig(): AcpAgentConfig {
+export function createCursorAcpConfig(
+	extraEnv: Record<string, string> = {},
+): AcpAgentConfig {
 	return {
 		binary: resolveCursorBinary() ?? getCursorBinary(),
 		args: ['acp'] as const,
 		clientInfoName: 'oagent',
+		...(Object.keys(extraEnv).length > 0
+			? { env: () => ({ ...process.env, ...extraEnv }) }
+			: {}),
 		extensionHandlers: {
 			'cursor/ask_question': async () => ({
 				outcome: {
@@ -51,28 +62,47 @@ export function createCursorAcpConfig(): AcpAgentConfig {
 
 export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
-		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
+		const extraEnv: Record<string, string> = {};
+		const acpAgent = yield* makeAcpAgent(createCursorAcpConfig(extraEnv));
+
+		const refreshHarnessEnv = () =>
+			Effect.gen(function* () {
+				const configuredEnv = yield* settings
+					.getHarnessEnv('cursor')
+					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+				yield* Effect.sync(() => {
+					for (const key of Object.keys(extraEnv)) delete extraEnv[key];
+					Object.assign(extraEnv, configuredEnv);
+				});
+			});
+
 		return {
-			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
-				const model =
-					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
-						? CURSOR_MODEL_ALIASES[input.model]
-						: input.model;
-				return acpAgent.runTurn({ ...input, model });
-			},
+			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) =>
+				Effect.gen(function* () {
+					yield* refreshHarnessEnv();
+					const model =
+						input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
+							? CURSOR_MODEL_ALIASES[input.model]
+							: input.model;
+					return yield* acpAgent.runTurn({ ...input, model });
+				}),
 			listModels: () =>
-				acpAgent.listModels().pipe(
-					Effect.map((models) =>
-						models.map((entry) => ({
-							id: entry.id,
-							label: CURSOR_ID_TO_LABEL.get(entry.id),
-						})),
-					),
-				),
+				Effect.gen(function* () {
+					yield* refreshHarnessEnv();
+					return yield* acpAgent.listModels().pipe(
+						Effect.map((models) =>
+							models.map((entry) => ({
+								id: entry.id,
+								label: CURSOR_ID_TO_LABEL.get(entry.id),
+							})),
+						),
+					);
+				}),
 		} satisfies AcpAgent['Service'];
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(
-		Layer.provide(AcpAgent.layer(createCursorAcpConfig())),
+		Layer.provide(Settings.layer),
 	);
 }

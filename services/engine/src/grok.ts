@@ -7,6 +7,7 @@ import {
 	createAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const GROK_BINARY = 'grok';
 
@@ -18,7 +19,10 @@ export function resolveGrokBinary(): string | undefined {
 	return Bun.which(getGrokBinary()) ?? undefined;
 }
 
-export function createGrokAcpConfig(model?: string): AcpAgentConfig {
+export function createGrokAcpConfig(
+	model?: string,
+	extraEnv: Record<string, string> = {},
+): AcpAgentConfig {
 	return {
 		binary: resolveGrokBinary() ?? getGrokBinary(),
 		args:
@@ -26,11 +30,15 @@ export function createGrokAcpConfig(model?: string): AcpAgentConfig {
 				? ['agent', 'stdio']
 				: ['agent', '-m', model, 'stdio'],
 		clientInfoName: 'oagent',
+		...(Object.keys(extraEnv).length > 0
+			? { env: () => ({ ...process.env, ...extraEnv }) }
+			: {}),
 	};
 }
 
 export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 	make: Effect.gen(function* () {
+		const settings = yield* Settings;
 		const binary = resolveGrokBinary() ?? getGrokBinary();
 
 		const listModels = () =>
@@ -87,8 +95,11 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 		}) =>
 			Effect.scoped(
 				Effect.gen(function* () {
+					const extraEnv = yield* settings
+						.getHarnessEnv('grok')
+						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
 					const connEnv = yield* createAcpConnection(
-						createGrokAcpConfig(input.model),
+						createGrokAcpConfig(input.model, extraEnv),
 					);
 					// WORKAROUND: grok cannot change the model once a session has been created
 					// (unlike opencode/cursor which switch model per-turn over ACP), so the model
@@ -100,5 +111,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 		return { runTurn, listModels } satisfies AcpAgent['Service'];
 	}),
 }) {
-	static readonly layer = Layer.effect(Grok, Grok.make);
+	static readonly layer = Layer.effect(Grok, Grok.make).pipe(
+		Layer.provide(Settings.layer),
+	);
 }

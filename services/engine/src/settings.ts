@@ -1,11 +1,19 @@
 import os from 'node:os';
 import path from 'node:path';
 import { eq } from 'drizzle-orm';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import type { Backend } from './model-catalog.ts';
 
 const CODEX_HOME_KEY = 'codex_home';
+const HARNESS_ENV_KEY_PREFIX = 'harness_env:';
+const HarnessEnvSchema = Schema.Record(Schema.String, Schema.String);
+const HarnessEnvJsonSchema = Schema.fromJsonString(HarnessEnvSchema);
+
+function harnessEnvKey(backend: Backend): string {
+	return `${HARNESS_ENV_KEY_PREFIX}${backend}`;
+}
 
 function expandHome(value: string): string {
 	if (value === '~') return os.homedir();
@@ -65,11 +73,37 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setSetting(CODEX_HOME_KEY, value);
 		};
 
+		const getHarnessEnv = (
+			backend: Backend,
+		): Effect.Effect<
+			Schema.Schema.Type<typeof HarnessEnvSchema>,
+			Schema.SchemaError
+		> => {
+			const value = getSetting(harnessEnvKey(backend));
+			if (value === undefined) return Effect.succeed({});
+			return Schema.decodeEffect(HarnessEnvJsonSchema)(value);
+		};
+
+		const setHarnessEnv = (
+			backend: Backend,
+			env: Schema.Schema.Type<typeof HarnessEnvSchema>,
+		): Effect.Effect<void, Schema.SchemaError> =>
+			Effect.gen(function* () {
+				if (Object.keys(env).length === 0) {
+					deleteSetting(harnessEnvKey(backend));
+					return;
+				}
+				const value = yield* Schema.encodeEffect(HarnessEnvJsonSchema)(env);
+				setSetting(harnessEnvKey(backend), value);
+			});
+
 		return {
 			getSetting,
 			setSetting,
 			getCodexHome,
 			setCodexHome,
+			getHarnessEnv,
+			setHarnessEnv,
 		};
 	}),
 }) {

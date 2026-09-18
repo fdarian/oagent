@@ -14,6 +14,24 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
+const harnessEnvEntrySchema = v.object({
+	key: v.pipe(
+		v.string(),
+		v.check((value) => value.trim().length > 0, 'Environment key is required'),
+	),
+	value: v.string(),
+});
+const harnessEnvEntriesSchema = v.pipe(
+	v.array(harnessEnvEntrySchema),
+	v.check(
+		(entries) =>
+			new Set(entries.map((entry) => entry.key)).size === entries.length,
+		'Environment keys must be unique',
+	),
+);
+const harnessEnvOutput = v.object({
+	env: v.array(harnessEnvEntrySchema),
+});
 const harnessesOutput = v.array(
 	v.object({
 		backend: backendSchema,
@@ -27,6 +45,21 @@ const toHarnessDto = (harness: Harness) => ({
 	binaryPath: harness.binaryPath,
 	detectedAt: harness.detectedAt.getTime(),
 });
+
+const toHarnessEnvOutput = (env: Readonly<Record<string, string>>) => ({
+	env: Object.entries(env).map((entry) => ({
+		key: entry[0],
+		value: entry[1],
+	})),
+});
+
+function toHarnessEnvRecord(
+	entries: ReadonlyArray<{ key: string; value: string }>,
+): Record<string, string> {
+	const env: Record<string, string> = {};
+	for (const entry of entries) env[entry.key] = entry.value;
+	return env;
+}
 
 const harnessAuthStatusOutput = v.union([
 	v.object({
@@ -279,6 +312,28 @@ const program = Effect.gen(function* () {
 					settings.setCodexHome(opt.input.home);
 					yield* modelCatalog.invalidate('codex');
 					return { home: settings.getCodexHome() };
+				}),
+			),
+			getHarnessEnv: yield* createHandler(
+				os.input(v.object({ backend: backendSchema })).output(harnessEnvOutput),
+				Effect.fn(function* (opt) {
+					const env = yield* settings.getHarnessEnv(opt.input.backend);
+					return toHarnessEnvOutput(env);
+				}),
+			),
+			setHarnessEnv: yield* createHandler(
+				os
+					.input(
+						v.object({
+							backend: backendSchema,
+							env: harnessEnvEntriesSchema,
+						}),
+					)
+					.output(harnessEnvOutput),
+				Effect.fn(function* (opt) {
+					const env = toHarnessEnvRecord(opt.input.env);
+					yield* settings.setHarnessEnv(opt.input.backend, env);
+					return toHarnessEnvOutput(env);
 				}),
 			),
 		},

@@ -1,12 +1,14 @@
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer } from 'effect';
 import {
-	AcpAgent,
+	type AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
 	AcpSessionError,
 	createAcpConnection,
+	makeAcpAgent,
 } from './acp-agent.ts';
+import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
@@ -75,51 +77,80 @@ export function resolveOpenCodeBinary(): string | undefined {
 	return Bun.which(getOpenCodeBinary()) ?? undefined;
 }
 
-export function createOpenCodeAcpConfig(): AcpAgentConfig {
+export function createOpenCodeAcpConfig(
+	extraEnv: Record<string, string> = {},
+): AcpAgentConfig {
 	return {
 		binary: resolveOpenCodeBinary() ?? getOpenCodeBinary(),
 		args: ['acp'] as const,
 		clientInfoName: 'oagent',
+		...(Object.keys(extraEnv).length > 0
+			? { env: () => ({ ...process.env, ...extraEnv }) }
+			: {}),
 	};
 }
 
 export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	make: Effect.gen(function* () {
-		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
+		const extraEnv: Record<string, string> = {};
+		const acpAgent = yield* makeAcpAgent(createOpenCodeAcpConfig(extraEnv));
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 
+		const refreshHarnessEnv = () =>
+			Effect.gen(function* () {
+				const configuredEnv = yield* settings
+					.getHarnessEnv('opencode')
+					.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+				yield* Effect.sync(() => {
+					for (const key of Object.keys(extraEnv)) delete extraEnv[key];
+					Object.assign(extraEnv, configuredEnv);
+				});
+			});
+
 		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
-			acpAgent.runTurn({
-				...input,
-				model: undefined,
-				reasoningEffort: undefined,
-				configOptions: getOpenCodeConfigOptions(
-					input.model,
-					input.reasoningEffort,
-				),
+			Effect.gen(function* () {
+				yield* refreshHarnessEnv();
+				return yield* acpAgent.runTurn({
+					...input,
+					model: undefined,
+					reasoningEffort: undefined,
+					configOptions: getOpenCodeConfigOptions(
+						input.model,
+						input.reasoningEffort,
+					),
+				});
 			});
 
 		const listModels = () =>
-			Effect.tryPromise({
-				try: async () => {
-					const proc = Bun.spawn([binary, 'models'], {
-						stdout: 'pipe',
-					});
-					const text = await new Response(proc.stdout).text();
-					await proc.exited;
-					return text
-						.trim()
-						.split('\n')
-						.filter((line) => line.length > 0)
-						.map((id) => ({ id }));
-				},
-				catch: (cause) => new AcpSessionError({ cause }),
+			Effect.gen(function* () {
+				yield* refreshHarnessEnv();
+				return yield* Effect.tryPromise({
+					try: async () => {
+						const proc = Bun.spawn([binary, 'models'], {
+							stdout: 'pipe',
+						});
+						const text = await new Response(proc.stdout).text();
+						await proc.exited;
+						return text
+							.trim()
+							.split('\n')
+							.filter((line) => line.length > 0)
+							.map((id) => ({ id }));
+					},
+					catch: (cause) => new AcpSessionError({ cause }),
+				});
 			});
 
 		const listModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
-					const env = yield* createAcpConnection(createOpenCodeAcpConfig());
+					const configuredEnv = yield* settings
+						.getHarnessEnv('opencode')
+						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+					const env = yield* createAcpConnection(
+						createOpenCodeAcpConfig(configuredEnv),
+					);
 					const session = yield* Effect.tryPromise({
 						try: () =>
 							env.conn.newSession({
@@ -156,6 +187,6 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	}),
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
-		Layer.provide(AcpAgent.layer(createOpenCodeAcpConfig())),
+		Layer.provide(Settings.layer),
 	);
 }
