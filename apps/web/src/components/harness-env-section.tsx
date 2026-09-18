@@ -3,39 +3,18 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { FieldDescription, useAppForm, withForm } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
+import {
+	type HarnessEnvEntry,
+	validateDuplicateEnvironmentKeys,
+	validateEnvironmentKeyAtIndex,
+} from '@/lib/harness-env-validation';
 import type { Backend } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
 
-type HarnessEnvEntry = {
-	key: string;
-	value: string;
-};
-
 type HarnessEnvFormEntry = HarnessEnvEntry & {
 	id: string;
 };
-
-const environmentKeyPattern = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
-function validateEnvironmentKey(value: string): string | undefined {
-	if (value.trim() === '') return 'Environment variable name is required';
-	if (!environmentKeyPattern.test(value)) {
-		return 'Use letters, numbers, and underscores; the first character cannot be a number';
-	}
-	return undefined;
-}
-
-function validateDuplicateEnvironmentKeys(
-	entries: ReadonlyArray<HarnessEnvEntry>,
-): string | undefined {
-	const keys = new Set<string>();
-	for (const entry of entries) {
-		if (keys.has(entry.key)) return 'Environment variable names must be unique';
-		keys.add(entry.key);
-	}
-	return undefined;
-}
 
 function toFormEntries(
 	entries: ReadonlyArray<HarnessEnvEntry>,
@@ -62,9 +41,6 @@ const HarnessEnvFields = withForm({
 				}}
 			>
 				{(arrayField) => {
-					const isInvalid =
-						arrayField.state.meta.isTouched &&
-						arrayField.state.meta.errors.length > 0;
 					return (
 						<arrayField.Field>
 							<div className="grid gap-3">
@@ -80,9 +56,17 @@ const HarnessEnvFields = withForm({
 												name={`env[${index}].key`}
 												validators={{
 													onChange: (change) =>
-														validateEnvironmentKey(change.value),
+														validateEnvironmentKeyAtIndex(
+															change.value,
+															arrayField.state.value,
+															index,
+														),
 													onSubmit: (submission) =>
-														validateEnvironmentKey(submission.value),
+														validateEnvironmentKeyAtIndex(
+															submission.value,
+															arrayField.state.value,
+															index,
+														),
 												}}
 											>
 												{(keyField) => {
@@ -147,7 +131,9 @@ const HarnessEnvFields = withForm({
 									);
 								})}
 
-								{isInvalid ? <arrayField.FieldError /> : null}
+								{arrayField.state.meta.errors.length > 0 ? (
+									<arrayField.FieldError />
+								) : null}
 								<Button
 									type="button"
 									variant="outline"
