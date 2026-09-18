@@ -213,6 +213,13 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 		return <SearchRow part={part} running={isRunning} error={isError} />;
 	}
 
+	if (
+		part.toolName.toLowerCase() === 'skill' ||
+		part.title.toLowerCase() === 'skill'
+	) {
+		return <SkillRow part={part} running={isRunning} error={isError} />;
+	}
+
 	if (readStringProp(part.rawInput, 'variant') === 'ListDir') {
 		return <ListRow part={part} running={isRunning} error={isError} />;
 	}
@@ -560,6 +567,34 @@ function SearchRow(props: {
 	return (
 		<ToolRow
 			label={label}
+			descriptor={descriptor}
+			running={props.running}
+			error={props.error}
+		>
+			{children}
+		</ToolRow>
+	);
+}
+
+function SkillRow(props: { part: ToolPart; running: boolean; error: boolean }) {
+	const part = props.part;
+	const skillName =
+		readStringProp(part.rawInput, 'id') ??
+		readStringProp(part.rawInput, 'name');
+	const descriptor = skillName === undefined ? undefined : `${skillName}`;
+	const output = extractEffectiveOutput(part);
+	const children =
+		part.content.length > 0 ? (
+			part.content.map((c, i) => (
+				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+			))
+		) : output.length > 0 ? (
+			<GenericOutput output={output} />
+		) : null;
+
+	return (
+		<ToolRow
+			label="Skill"
 			descriptor={descriptor}
 			running={props.running}
 			error={props.error}
