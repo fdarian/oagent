@@ -96,3 +96,22 @@ export const OutputError: Story = {
 		},
 	},
 };
+
+export const Skill: Story = {
+	args: {
+		part: {
+			kind: 'tool',
+			id: 'tool-skill',
+			toolCallId: 'tc-skill',
+			toolName: 'skill',
+			title: 'Skill',
+			state: 'output-available',
+			content: [],
+			locations: [],
+			rawInput: { id: 'code-ts' },
+			rawOutput: { formatted_output: 'Loaded skill code-ts' },
+			createdAt: Date.now() - 500,
+			durationMs: 100,
+		},
+	},
+};
