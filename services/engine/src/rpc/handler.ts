@@ -3,7 +3,7 @@ import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
 import { HarnessesError } from '../harnesses.ts';
 import { ModelCatalogError } from '../model-catalog.ts';
-import { router, type EngineServices } from './router.ts';
+import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(
 	error: unknown,

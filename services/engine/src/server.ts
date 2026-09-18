@@ -12,8 +12,8 @@ import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { createEngineHandler } from './rpc/handler.ts';
-import { Settings } from './settings.ts';
 import type { EngineServices } from './rpc/router.ts';
+import { Settings } from './settings.ts';
 
 const PORTLESS_ALIAS = 'oagent';
 const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
