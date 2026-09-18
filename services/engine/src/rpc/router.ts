@@ -18,6 +18,7 @@ const harnessesOutput = v.array(
 	v.object({
 		backend: backendSchema,
 		binaryPath: v.string(),
+		version: v.optional(v.string()),
 		detectedAt: v.number(),
 	}),
 );
@@ -25,6 +26,7 @@ const harnessesOutput = v.array(
 const toHarnessDto = (harness: Harness) => ({
 	backend: harness.backend,
 	binaryPath: harness.binaryPath,
+	version: harness.version,
 	detectedAt: harness.detectedAt.getTime(),
 });
 
