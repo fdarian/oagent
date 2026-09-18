@@ -41,6 +41,7 @@ const harnessEnvEntriesSchema = v.pipe(
 const toHarnessDto = (harness: Harness) => ({
 	backend: harness.backend,
 	binaryPath: harness.binaryPath,
+	version: harness.version,
 	detectedAt: harness.detectedAt.getTime(),
 });
 

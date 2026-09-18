@@ -133,6 +133,23 @@ export function HarnessSettingsPage() {
 								Detected executable used for ACP sessions.
 							</FieldDescription>
 						</Field>
+						<Field>
+							<FieldLabel htmlFor="harness-version">Version</FieldLabel>
+							{harness.version !== undefined ? (
+								<Input
+									id="harness-version"
+									readOnly
+									value={harness.version}
+									className="font-mono text-xs"
+									onFocus={(event) => event.currentTarget.select()}
+								/>
+							) : (
+								<p className="text-sm text-muted-foreground">Not detected</p>
+							)}
+							<FieldDescription>
+								Version captured from the detected harness binary.
+							</FieldDescription>
+						</Field>
 
 						<div className="flex flex-col items-start gap-3">
 							<Button

@@ -1,0 +1,1 @@
+ALTER TABLE `harnesses` ADD `version` text;

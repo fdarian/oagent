@@ -116,11 +116,13 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 						return entry.models;
 					}
 					const models = yield* fetch(backend);
-					yield* Ref.update(cache, (m) => {
-						const next = new Map(m);
-						next.set(backend, { models, fetchedAt: now });
-						return next;
-					});
+					if (models.length > 0) {
+						yield* Ref.update(cache, (m) => {
+							const next = new Map(m);
+							next.set(backend, { models, fetchedAt: now });
+							return next;
+						});
+					}
 					return models;
 				});
 
