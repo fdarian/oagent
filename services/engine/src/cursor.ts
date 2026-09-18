@@ -64,7 +64,10 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
 		const settings = yield* Settings;
 		const extraEnv: Record<string, string> = {};
-		const acpAgent = yield* makeAcpAgent(createCursorAcpConfig(extraEnv));
+		const acpAgent = yield* makeAcpAgent({
+			...createCursorAcpConfig(extraEnv),
+			env: () => ({ ...process.env, ...extraEnv }),
+		});
 
 		const refreshHarnessEnv = () =>
 			Effect.gen(function* () {
