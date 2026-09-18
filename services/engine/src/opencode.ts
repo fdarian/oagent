@@ -11,6 +11,8 @@ import {
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
 const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
+const OPENCODE_VERSION_PATTERN =
+	/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
 
 export type OpenCodeEffortOption = {
 	value: string;
@@ -75,6 +77,58 @@ export function resolveOpenCodeBinary(): string | undefined {
 	return Bun.which(getOpenCodeBinary()) ?? undefined;
 }
 
+function commandOutput(stdout: string, stderr: string): string {
+	const parts = [stdout.trim(), stderr.trim()].filter(
+		(part) => part.length > 0,
+	);
+	return parts.join('\n');
+}
+
+function parseOpenCodeVersion(output: string): string | undefined {
+	const match = OPENCODE_VERSION_PATTERN.exec(output);
+	if (match === null) return undefined;
+	return match[1];
+}
+
+export function resolveOpenCodeVersion(
+	binary: string,
+): Effect.Effect<string, AcpSessionError> {
+	return Effect.tryPromise({
+		try: async () => {
+			const proc = Bun.spawn([binary, '--version'], {
+				stdout: 'pipe',
+				stderr: 'pipe',
+			});
+			const output = await Promise.all([
+				new Response(proc.stdout).text(),
+				new Response(proc.stderr).text(),
+				proc.exited,
+			]);
+			const stdout = output[0];
+			const stderr = output[1];
+			const exitCode = output[2];
+			const combined = commandOutput(stdout, stderr);
+			if (exitCode !== 0) {
+				throw new Error(
+					combined.length > 0
+						? `opencode --version exited with code ${exitCode}: ${combined}`
+						: `opencode --version exited with code ${exitCode}`,
+				);
+			}
+			const version = parseOpenCodeVersion(combined);
+			if (version === undefined) {
+				throw new Error(
+					combined.length > 0
+						? `Could not parse an opencode version from: ${combined}`
+						: 'opencode --version returned no output',
+				);
+			}
+			return version;
+		},
+		catch: (cause) => new AcpSessionError({ cause }),
+	});
+}
+
 export function createOpenCodeAcpConfig(): AcpAgentConfig {
 	return {
 		binary: resolveOpenCodeBinary() ?? getOpenCodeBinary(),
@@ -104,14 +158,41 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				try: async () => {
 					const proc = Bun.spawn([binary, 'models'], {
 						stdout: 'pipe',
+						stderr: 'pipe',
 					});
-					const text = await new Response(proc.stdout).text();
-					await proc.exited;
-					return text
+					const output = await Promise.all([
+						new Response(proc.stdout).text(),
+						new Response(proc.stderr).text(),
+						proc.exited,
+					]);
+					const stdout = output[0];
+					const stderr = output[1];
+					const exitCode = output[2];
+					const detail = commandOutput(stdout, stderr);
+					if (exitCode !== 0) {
+						throw new Error(
+							detail.length > 0
+								? `opencode models exited with code ${exitCode}: ${detail}`
+								: `opencode models exited with code ${exitCode}`,
+						);
+					}
+					const ids = stdout
 						.trim()
 						.split('\n')
-						.filter((line) => line.length > 0)
-						.map((id) => ({ id }));
+						.map((line) => line.trim())
+						.filter((line) => line.length > 0);
+					if (ids.length === 0) {
+						throw new Error(
+							detail.length > 0
+								? `opencode models returned no models: ${detail}`
+								: 'opencode models returned no models',
+						);
+					}
+					const unexpected = ids.find((id) => !/^[^/\s]+\/\S+$/.test(id));
+					if (unexpected !== undefined) {
+						throw new Error(`Unexpected opencode model output: ${unexpected}`);
+					}
+					return ids.map((id) => ({ id }));
 				},
 				catch: (cause) => new AcpSessionError({ cause }),
 			});

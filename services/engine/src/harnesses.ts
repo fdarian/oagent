@@ -10,13 +10,19 @@ import { createCursorAcpConfig, resolveCursorBinary } from './cursor.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { createGrokAcpConfig, resolveGrokBinary } from './grok.ts';
+import { HarnessVersion } from './harness-version.ts';
 import { type Backend, ModelCatalog } from './model-catalog.ts';
-import { createOpenCodeAcpConfig, resolveOpenCodeBinary } from './opencode.ts';
+import {
+	createOpenCodeAcpConfig,
+	resolveOpenCodeBinary,
+	resolveOpenCodeVersion,
+} from './opencode.ts';
 import { Settings } from './settings.ts';
 
 export type Harness = {
 	backend: Backend;
 	binaryPath: string;
+	version: string | undefined;
 	detectedAt: Date;
 };
 
@@ -79,6 +85,9 @@ export class HarnessesError extends Schema.TaggedError<HarnessesError>()(
 type HarnessDefinition = {
 	backend: Backend;
 	resolveBinary: () => string | undefined;
+	resolveVersion?: (
+		binaryPath: string,
+	) => Effect.Effect<string, HarnessesError>;
 	createConfig: () => AcpAgentConfig;
 };
 
@@ -138,6 +147,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const dbService = yield* Db;
 			const settings = yield* Settings;
 			const modelCatalog = yield* ModelCatalog;
+			const harnessVersion = yield* HarnessVersion;
 			const pendingLogins = new Map<Backend, PendingLogin>();
 
 			const createCodexEnv = (includeNoBrowser = false) => {
@@ -276,6 +286,12 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				{
 					backend: 'opencode',
 					resolveBinary: resolveOpenCodeBinary,
+					resolveVersion: (binaryPath) =>
+						resolveOpenCodeVersion(binaryPath).pipe(
+							Effect.mapError(
+								(cause) => new HarnessesError({ operation: 'refresh', cause }),
+							),
+						),
 					createConfig: createOpenCodeAcpConfig,
 				},
 				{
@@ -305,6 +321,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 						{
 							backend: definition.backend,
 							binaryPath: row.binary_path,
+							version: row.version ?? undefined,
 							detectedAt: row.detected_at,
 						},
 					];
@@ -321,47 +338,74 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				ReadonlyArray<Harness>,
 				HarnessesError
 			> =>
-				Effect.try({
-					try: () => {
-						const detected = definitions.flatMap((definition) => {
-							const binaryPath = definition.resolveBinary();
-							if (binaryPath === undefined) return [];
-							return [{ definition, binaryPath }];
-						});
-						const detectedBackends = new Set(
-							detected.map((entry) => entry.definition.backend),
+				Effect.gen(function* () {
+					const detected = yield* Effect.try({
+						try: () =>
+							definitions.flatMap((definition) => {
+								const binaryPath = definition.resolveBinary();
+								if (binaryPath === undefined) return [];
+								return [{ definition, binaryPath }];
+							}),
+						catch: (cause) =>
+							new HarnessesError({ operation: 'refresh', cause }),
+					});
+					const detectedBackends = new Set(
+						detected.map((entry) => entry.definition.backend),
+					);
+					const versions = new Map<Backend, string | null>();
+					for (const entry of detected) {
+						const resolveVersion = entry.definition.resolveVersion;
+						if (resolveVersion === undefined) {
+							versions.set(entry.definition.backend, null);
+							continue;
+						}
+						versions.set(
+							entry.definition.backend,
+							yield* resolveVersion(entry.binaryPath),
 						);
-						const detectedAt = new Date();
+					}
+					const detectedAt = new Date();
 
-						dbService.db.transaction((tx) => {
-							for (const entry of detected) {
-								tx.insert(schema.harnesses)
-									.values({
-										backend: entry.definition.backend,
-										binary_path: entry.binaryPath,
-										detected_at: detectedAt,
-									})
-									.onConflictDoUpdate({
-										target: schema.harnesses.backend,
-										set: {
+					yield* Effect.try({
+						try: () => {
+							dbService.db.transaction((tx) => {
+								for (const entry of detected) {
+									const version = versions.get(entry.definition.backend);
+									tx.insert(schema.harnesses)
+										.values({
+											backend: entry.definition.backend,
 											binary_path: entry.binaryPath,
+											version: version === undefined ? null : version,
 											detected_at: detectedAt,
-										},
-									})
-									.run();
-							}
+										})
+										.onConflictDoUpdate({
+											target: schema.harnesses.backend,
+											set: {
+												binary_path: entry.binaryPath,
+												version: version === undefined ? null : version,
+												detected_at: detectedAt,
+											},
+										})
+										.run();
+								}
 
-							for (const definition of definitions) {
-								if (detectedBackends.has(definition.backend)) continue;
-								tx.delete(schema.harnesses)
-									.where(eq(schema.harnesses.backend, definition.backend))
-									.run();
-							}
-						});
+								for (const definition of definitions) {
+									if (detectedBackends.has(definition.backend)) continue;
+									tx.delete(schema.harnesses)
+										.where(eq(schema.harnesses.backend, definition.backend))
+										.run();
+								}
+							});
+						},
+						catch: (cause) =>
+							new HarnessesError({ operation: 'refresh', cause }),
+					});
 
-						return readList();
-					},
-					catch: (cause) => new HarnessesError({ operation: 'refresh', cause }),
+					return yield* Effect.try({
+						try: readList,
+						catch: (cause) =>
+							new HarnessesError({ operation: 'refresh', cause }),
+					});
 				});
 
 			const check = (
@@ -398,6 +442,18 @@ export class Harnesses extends Context.Service<Harnesses>()(
 								ok: false as const,
 								message: error.message,
 							}),
+						),
+						Effect.tap((result) =>
+							result.ok
+								? harnessVersion
+										.set(backend, result.agentVersion)
+										.pipe(
+											Effect.mapError(
+												(cause) =>
+													new HarnessesError({ operation: 'check', cause }),
+											),
+										)
+								: Effect.void,
 						),
 					);
 				});
@@ -548,6 +604,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 ) {
 	static readonly layer = Layer.effect(Harnesses, Harnesses.make).pipe(
 		Layer.provide(Db.layer),
+		Layer.provide(HarnessVersion.layer),
 		Layer.provide(Settings.layer),
 		Layer.provideMerge(ModelCatalog.layer),
 	);
