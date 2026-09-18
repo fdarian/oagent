@@ -5,7 +5,7 @@ import { cjk } from '@streamdown/cjk';
 import { code } from '@streamdown/code';
 import { math } from '@streamdown/math';
 import { mermaid } from '@streamdown/mermaid';
-import { BrainIcon, ChevronDownIcon } from 'lucide-react';
+import { BrainIcon, ChevronRightIcon } from 'lucide-react';
 import type { ComponentProps, ReactNode } from 'react';
 import {
 	createContext,
@@ -81,6 +81,7 @@ export const Reasoning = memo(
 		});
 
 		const hasEverStreamedRef = useRef(isStreaming);
+		const wasStreamingRef = useRef(isStreaming);
 		const [hasAutoClosed, setHasAutoClosed] = useState(false);
 		const startTimeRef = useRef<number | null>(null);
 
@@ -97,12 +98,14 @@ export const Reasoning = memo(
 			}
 		}, [isStreaming, setDuration]);
 
-		// Auto-open when streaming starts (unless explicitly closed)
 		useEffect(() => {
-			if (isStreaming && !isOpen && !isExplicitlyClosed) {
+			const startedStreaming = isStreaming && !wasStreamingRef.current;
+			wasStreamingRef.current = isStreaming;
+
+			if (startedStreaming && !isExplicitlyClosed) {
 				setIsOpen(true);
 			}
-		}, [isStreaming, isOpen, setIsOpen, isExplicitlyClosed]);
+		}, [isStreaming, setIsOpen, isExplicitlyClosed]);
 
 		// Auto-close when streaming ends (once only, and only if it ever streamed)
 		useEffect(() => {
@@ -136,7 +139,7 @@ export const Reasoning = memo(
 		return (
 			<ReasoningContext.Provider value={contextValue}>
 				<Collapsible
-					className={cn('not-prose mb-4', className)}
+					className={cn('group/reasoning not-prose mb-4', className)}
 					onOpenChange={handleOpenChange}
 					open={isOpen}
 					{...props}
@@ -185,10 +188,10 @@ export const ReasoningTrigger = memo(
 					<>
 						<BrainIcon className="size-4" />
 						{getThinkingMessage(isStreaming, duration)}
-						<ChevronDownIcon
+						<ChevronRightIcon
 							className={cn(
-								'size-4 transition-transform',
-								isOpen ? 'rotate-180' : 'rotate-0',
+								'size-4 shrink-0 opacity-0 transition-all group-hover/reasoning:opacity-100',
+								isOpen ? 'rotate-90' : 'rotate-0',
 							)}
 						/>
 					</>
