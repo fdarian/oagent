@@ -11,14 +11,21 @@ import {
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { detectLanguage } from '@/lib/detect-language';
-import type { TimelinePart } from '@/lib/event-adapter';
+import {
+	type ChildTimeline,
+	isSubagentToolPart,
+	type TimelineToolPart,
+} from '@/lib/event-adapter';
 import { cn } from '@/lib/utils';
+import { JobTimelineSubagent } from './job-timeline-subagent';
 
-type ToolPart = Extract<TimelinePart, { kind: 'tool' }>;
+type ToolPart = TimelineToolPart;
 
 export type JobTimelineToolProps = {
 	part: ToolPart;
 	cwd: string;
+	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	onChildSelect?: (sessionId: string) => void;
 };
 
 function contentKey(content: ToolCallContent, fallbackIndex: number): string {
@@ -151,6 +158,19 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 	const isRunning =
 		part.state === 'input-available' || part.state === 'input-streaming';
 	const isError = part.state === 'output-error';
+	if (isSubagentToolPart(part)) {
+		const child =
+			part.childSessionId === undefined || props.childSessions === undefined
+				? undefined
+				: props.childSessions.get(part.childSessionId);
+		return (
+			<JobTimelineSubagent
+				part={part}
+				child={child}
+				onSelect={props.onChildSelect}
+			/>
+		);
+	}
 
 	if (part.toolKind === 'execute') {
 		const descriptor = shellDescriptor(part);

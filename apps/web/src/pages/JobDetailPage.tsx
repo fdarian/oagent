@@ -5,6 +5,8 @@ import { JobHeader } from '@/components/job-header';
 import { JobPromptView } from '@/components/job-prompt-view';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
+import { SubagentDock } from '@/components/subagent-dock';
+import { SubagentHeader } from '@/components/subagent-header';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
 import { useJobEvents } from '@/lib/use-job-events';
@@ -14,6 +16,11 @@ export function JobDetailPage() {
 	const params = useParams({ from: '/console/jobs/$jobId' });
 	const jobId = params.jobId;
 	const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+	const activeChildState = useState<
+		{ jobId: string; sessionId: string } | undefined
+	>(undefined);
+	const childSelection = activeChildState[0];
+	const setChildSelection = activeChildState[1];
 	const jobList = useJobList();
 	const events = useJobEvents(jobId);
 	const queryClient = useQueryClient();
@@ -31,6 +38,24 @@ export function JobDetailPage() {
 	const selectedJob = jobList.grouped
 		.flatMap((g) => g.items)
 		.find((j) => j.id === jobId);
+	const activeChildSessionId =
+		childSelection === undefined || childSelection.jobId !== jobId
+			? undefined
+			: childSelection.sessionId;
+	const activeChild =
+		activeChildSessionId === undefined
+			? undefined
+			: events.children.get(activeChildSessionId);
+
+	const selectChild = (sessionId: string) => {
+		setChildSelection({ jobId, sessionId });
+	};
+
+	const navigateChild = (sessionId: string | undefined) => {
+		setChildSelection(
+			sessionId === undefined ? undefined : { jobId, sessionId },
+		);
+	};
 
 	if (selectedJob === undefined) {
 		return (
@@ -65,35 +90,62 @@ export function JobDetailPage() {
 			) : (
 				<div className="flex min-h-0 flex-1 flex-col">
 					<JobTimeline
-						parts={events.parts}
-						streamingTail={events.streamingTail}
+						key={
+							activeChildSessionId === undefined
+								? 'parent'
+								: activeChildSessionId
+						}
+						parts={activeChild === undefined ? events.parts : activeChild.parts}
+						streamingTail={
+							activeChild === undefined
+								? events.streamingTail
+								: activeChild.streamingTail
+						}
 						cwd={selectedJob.cwd}
+						childSessions={events.children}
+						onChildSelect={selectChild}
+						isChildTimeline={activeChild !== undefined}
 						isLoading={
 							events.isLoading &&
-							events.parts.length === 0 &&
-							events.streamingTail === null
+							(activeChild === undefined
+								? events.parts.length === 0 && events.streamingTail === null
+								: activeChild.parts.length === 0 &&
+									activeChild.streamingTail === null)
 						}
 						header={
-							<div className="px-33 py-22">
-								<div className="mx-auto max-w-[900px]">
-									<JobHeader
-										id={selectedJob.id}
-										status={status}
-										prompt={selectedJob.prompt}
-										cwd={selectedJob.cwd}
-										backend={selectedJob.backend}
-										model={selectedJob.model}
-										sessionId={selectedJob.sessionId}
-										createdAt={selectedJob.createdAt}
-										terminatedAt={selectedJob.terminatedAt}
-										onCancel={() => {
-											cancelJob.mutate(selectedJob.id);
-										}}
-										onExpandPrompt={() => setIsPromptExpanded(true)}
-									/>
+							activeChild === undefined ? (
+								<div className="px-33 py-22">
+									<div className="mx-auto max-w-[900px]">
+										<JobHeader
+											id={selectedJob.id}
+											status={status}
+											prompt={selectedJob.prompt}
+											cwd={selectedJob.cwd}
+											backend={selectedJob.backend}
+											model={selectedJob.model}
+											sessionId={selectedJob.sessionId}
+											createdAt={selectedJob.createdAt}
+											terminatedAt={selectedJob.terminatedAt}
+											onCancel={() => {
+												cancelJob.mutate(selectedJob.id);
+											}}
+											onExpandPrompt={() => setIsPromptExpanded(true)}
+										/>
+									</div>
 								</div>
-							</div>
+							) : (
+								<SubagentHeader
+									child={activeChild}
+									sessions={events.children}
+									onNavigate={navigateChild}
+								/>
+							)
 						}
+					/>
+					<SubagentDock
+						sessions={events.children}
+						activeChildSessionId={activeChildSessionId}
+						onSelect={selectChild}
 					/>
 				</div>
 			)}

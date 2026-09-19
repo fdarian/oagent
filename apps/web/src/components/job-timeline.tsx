@@ -10,7 +10,8 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import type { TimelinePart } from '@/lib/event-adapter';
+import type { ChildTimeline, TimelinePart } from '@/lib/event-adapter';
+import { cn } from '@/lib/utils';
 import { JobTimelineError } from './job-timeline-error';
 import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
@@ -22,6 +23,9 @@ export type JobTimelineProps = {
 	cwd: string;
 	header?: ReactNode;
 	isLoading?: boolean;
+	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	onChildSelect?: (sessionId: string) => void;
+	isChildTimeline?: boolean;
 };
 
 type ReasoningPart = Extract<TimelinePart, { kind: 'reasoning' }>;
@@ -154,7 +158,12 @@ function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
 	);
 }
 
-function renderPart(part: TimelineItem, cwd: string) {
+function renderPart(
+	part: TimelineItem,
+	cwd: string,
+	childSessions: ReadonlyMap<string, ChildTimeline> | undefined,
+	onChildSelect: ((sessionId: string) => void) | undefined,
+) {
 	if (part.kind === 'exploration') {
 		return <ExplorationGroup group={part} cwd={cwd} />;
 	}
@@ -165,7 +174,14 @@ function renderPart(part: TimelineItem, cwd: string) {
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
 		case 'tool':
-			return <JobTimelineTool part={part} cwd={cwd} />;
+			return (
+				<JobTimelineTool
+					part={part}
+					cwd={cwd}
+					childSessions={childSessions}
+					onChildSelect={onChildSelect}
+				/>
+			);
 		case 'error':
 			return <JobTimelineError part={part} />;
 		default:
@@ -173,16 +189,12 @@ function renderPart(part: TimelineItem, cwd: string) {
 	}
 }
 
-export function JobTimeline({
-	parts,
-	streamingTail,
-	cwd,
-	header,
-	isLoading,
-}: JobTimelineProps) {
+export function JobTimeline(props: JobTimelineProps) {
 	const allParts = collapseExplorationParts(
 		collapseReasoningParts(
-			streamingTail !== null ? [...parts, streamingTail] : parts,
+			props.streamingTail !== null
+				? [...props.parts, props.streamingTail]
+				: props.parts,
 		),
 	);
 
@@ -205,14 +217,24 @@ export function JobTimeline({
 		>
 			{allParts.length === 0 ? (
 				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
-					{isLoading ? 'Loading events…' : 'Waiting for events…'}
+					{props.isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
-				<ConversationContent header={header}>
+				<ConversationContent
+					header={props.header}
+					className={cn(
+						props.isChildTimeline && 'mx-33 w-auto border-primary border-l-2',
+					)}
+				>
 					{(virtualItem) => (
-						<div className="px-33">
+						<div className={cn(props.isChildTimeline ? 'pl-22' : 'px-33')}>
 							<div className="mx-auto max-w-[900px]">
-								{renderPart(partAt(virtualItem.index), cwd)}
+								{renderPart(
+									partAt(virtualItem.index),
+									props.cwd,
+									props.childSessions,
+									props.onChildSelect,
+								)}
 							</div>
 						</div>
 					)}
