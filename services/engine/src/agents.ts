@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Backend } from './model-catalog.ts';
+import { type Backend, parseBackend } from './model-catalog.ts';
 
 export type AgentHarnessTarget = {
 	readonly backend: Backend;
@@ -40,18 +40,6 @@ export class AgentNotMappedForBackend extends Schema.TaggedError<AgentNotMappedF
 	override get message() {
 		return `Agent type "${this.agentType}" is not mapped for backend "${this.backend}".`;
 	}
-}
-
-function parseBackend(value: string): Backend {
-	if (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	) {
-		return value;
-	}
-	throw new Error(`Invalid persisted agent target backend: ${value}`);
 }
 
 export class Agents extends Context.Service<Agents>()('oagent/Agents', {

@@ -16,7 +16,7 @@ import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
-import type { Backend } from './model-catalog.ts';
+import { type Backend, isBackend, parseBackend } from './model-catalog.ts';
 import { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 
@@ -75,20 +75,6 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
-
-function isBackend(value: string): value is Backend {
-	return (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	);
-}
-
-function parseBackend(value: string): Backend {
-	if (isBackend(value)) return value;
-	throw new Error(`Invalid persisted job backend: ${value}`);
-}
 
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {

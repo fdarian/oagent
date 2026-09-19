@@ -6,6 +6,20 @@ import { OpenCode, type OpenCodeEffortOption } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
+export function isBackend(value: string): value is Backend {
+	return (
+		value === 'opencode' ||
+		value === 'cursor' ||
+		value === 'grok' ||
+		value === 'codex'
+	);
+}
+
+export function parseBackend(value: string): Backend {
+	if (isBackend(value)) return value;
+	throw new Error(`Invalid backend: ${value}`);
+}
+
 export type ModelEntry = { id: string; label?: string };
 
 export type AgentTargetEntry = {

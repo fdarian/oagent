@@ -90,6 +90,17 @@ export type AcpSessionCatalog = {
 	readonly modes: ReadonlyArray<AcpModeOption>;
 };
 
+export type AcpConfigOption = {
+	configId: string;
+	value: string;
+};
+
+type AcpTurnSessionResult = {
+	readonly sessionId: string;
+	readonly availableModels: ReadonlyArray<string> | undefined;
+	readonly availableModes: ReadonlyArray<AcpModeOption>;
+};
+
 function extractModeOptions(
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
 ): ReadonlyArray<AcpModeOption> {
@@ -111,6 +122,31 @@ function extractModeOptions(
 		}
 	}
 	return modes;
+}
+
+function getConfigOptionHint(
+	configOption: AcpConfigOption,
+	sessionResult: AcpTurnSessionResult,
+): string | undefined {
+	if (configOption.configId === 'mode') {
+		if (sessionResult.availableModes.length === 0) return undefined;
+		return ` — available modes: ${sessionResult.availableModes
+			.slice(0, 10)
+			.map((mode) => mode.id)
+			.join(', ')}`;
+	}
+
+	if (configOption.configId === 'model') {
+		if (
+			sessionResult.availableModels === undefined ||
+			sessionResult.availableModels.length === 0
+		) {
+			return undefined;
+		}
+		return ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`;
+	}
+
+	return undefined;
 }
 
 export function createAcpConnection(config: {
@@ -310,7 +346,7 @@ export function runAcpTurn(
 	},
 ) {
 	return Effect.gen(function* () {
-		const sessionResult = yield* (() => {
+		const sessionResult: AcpTurnSessionResult = yield* (() => {
 			if (input.sessionId !== undefined) {
 				const sid = input.sessionId;
 				return Effect.tryPromise({
@@ -419,18 +455,7 @@ export function runAcpTurn(
 					catch: (cause) => {
 						const rpcMessage = getRpcMessage(cause);
 
-						const optionHint =
-							configOption.configId === 'mode' &&
-							sessionResult.availableModes.length > 0
-								? ` — available modes: ${sessionResult.availableModes
-										.slice(0, 10)
-										.map((mode) => mode.id)
-										.join(', ')}`
-								: sessionResult.availableModels !== undefined &&
-										configOption.configId === 'model' &&
-										sessionResult.availableModels.length > 0
-									? ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`
-									: undefined;
+						const optionHint = getConfigOptionHint(configOption, sessionResult);
 
 						const detail =
 							rpcMessage !== undefined ? rpcMessage : 'setConfigOption failed';
@@ -485,11 +510,6 @@ export function runAcpTurn(
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 const SESSION_CATALOG_TIMEOUT_MS = 15_000;
-
-export type AcpConfigOption = {
-	configId: string;
-	value: string;
-};
 
 export function makeAcpAgent(config: AcpAgentConfig) {
 	return Effect.gen(function* () {
