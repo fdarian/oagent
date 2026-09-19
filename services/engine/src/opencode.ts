@@ -5,6 +5,7 @@ import {
 	type AcpAgentConfig,
 	type AcpConfigOption,
 	type AcpSessionCatalog,
+	type AcpForkNotSupportedError,
 	AcpSessionError,
 	AcpTurnFailed,
 	createAcpConnection,
@@ -82,6 +83,14 @@ type OpenCodeService = AcpAgent['Service'] & {
 		| OpenCodeSteerNotSupportedError
 		| OpenCodeServiceDiscoveryError
 		| OpenCodeSteerRequestError,
+		never
+	>;
+	forkSession: (input: {
+		sessionId: string;
+		cwd: string;
+	}) => Effect.Effect<
+		{ sessionId: string },
+		AcpForkNotSupportedError | AcpSessionError,
 		never
 	>;
 };
@@ -423,6 +432,9 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 					}),
 			});
 
+		const forkSession = (input: { sessionId: string; cwd: string }) =>
+			acpAgent.forkSession(input);
+
 		const resolveVersion = () =>
 			versionSemaphore.withPermit(
 				Effect.gen(function* () {
@@ -578,6 +590,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 
 		return {
 			runTurn,
+			forkSession,
 			listModels,
 			listSessionCatalog,
 			listModelEfforts,

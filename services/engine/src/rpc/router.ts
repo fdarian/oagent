@@ -9,9 +9,11 @@ import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
+import { SideChats } from '../side-chats.ts';
 
 export type EngineServices =
 	| Jobs
+	| SideChats
 	| Harnesses
 	| Settings
 	| ModelCatalog
@@ -140,19 +142,19 @@ const router = procedure.router({
 			.input(v.object({ jobId: v.string() }))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
-				const detail = jobs.getDetail(options.input.jobId);
-				if (detail === undefined) return undefined;
+				const job = jobs.getRootJobMetadata(options.input.jobId);
+				if (job === undefined) return undefined;
 				return {
-					id: detail.id,
-					status: detail.status,
-					createdAt: detail.createdAt,
-					terminatedAt: detail.terminatedAt,
-					prompt: detail.prompt,
-					cwd: detail.cwd,
-					backend: detail.backend,
-					model: detail.model,
-					agentType: detail.agentType,
-					sessionId: detail.sessionId,
+					id: job.id,
+					status: job.status,
+					createdAt: job.createdAt,
+					terminatedAt: job.terminatedAt,
+					prompt: job.prompt,
+					cwd: job.cwd,
+					backend: job.backend,
+					model: job.model,
+					agentType: job.agentType,
+					sessionId: job.sessionId,
 				};
 			}),
 		start: procedure
@@ -208,6 +210,31 @@ const router = procedure.router({
 						}),
 					),
 				);
+			}),
+	},
+	sideChats: {
+		list: procedure
+			.input(v.object({ sourceJobId: v.string() }))
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.list(options.input.sourceJobId);
+			}),
+		create: procedure
+			.input(v.object({ sourceJobId: v.string() }))
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.create(options.input.sourceJobId);
+			}),
+		send: procedure
+			.input(
+				v.object({
+					sideChatId: v.string(),
+					prompt: v.pipe(v.string(), v.nonEmpty()),
+				}),
+			)
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.send(options.input);
 			}),
 	},
 	aliases: {

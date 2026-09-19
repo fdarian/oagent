@@ -15,6 +15,7 @@ import { registerTools } from './mcp/register-tools.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
 import { Settings } from './settings.ts';
+import { SideChats } from './side-chats.ts';
 
 const PORTLESS_ALIAS = 'oagent';
 const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
@@ -272,6 +273,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),

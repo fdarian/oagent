@@ -41,6 +41,15 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	},
 ) {}
 
+export class AcpForkNotSupportedError extends Schema.TaggedError<AcpForkNotSupportedError>()(
+	'AcpForkNotSupportedError',
+	{},
+) {
+	override get message() {
+		return 'The ACP agent does not advertise session/fork support.';
+	}
+}
+
 function getRpcMessage(cause: unknown): string | undefined {
 	if (typeof cause !== 'object' || cause === null) return undefined;
 	const error = cause as Record<string, unknown>;
@@ -286,7 +295,13 @@ export function createAcpConnection(config: {
 				? undefined
 				: initializeResponse.agentInfo;
 
-		return { conn, registerListener, extNotificationHandlers, agentInfo };
+		return {
+			conn,
+			registerListener,
+			extNotificationHandlers,
+			agentInfo,
+			agentCapabilities: initializeResponse.agentCapabilities,
+		};
 	});
 }
 
@@ -345,6 +360,7 @@ export function runAcpTurn(
 		onSessionId?: (sessionId: string) => void;
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
+		onPromptDispatch?: () => void;
 		skipModelSet?: boolean;
 		configOptions?: ReadonlyArray<AcpConfigOption>;
 	},
@@ -494,9 +510,8 @@ export function runAcpTurn(
 					yield* setConfigOption({ configId: 'mode', value: requestedMode });
 				}
 			}
-
 			return yield* Effect.tryPromise({
-				try: (signal) => {
+				try: async (signal) => {
 					const onAbort = () => {
 						void env.conn.cancel({
 							sessionId: sessionResult.sessionId,
@@ -505,14 +520,19 @@ export function runAcpTurn(
 					signal.addEventListener('abort', onAbort, {
 						once: true,
 					});
-					return env.conn
-						.prompt({
+					try {
+						const prompt = env.conn.prompt({
 							sessionId: sessionResult.sessionId,
 							prompt: [{ type: 'text', text: input.prompt }],
-						})
-						.finally(() => {
-							signal.removeEventListener('abort', onAbort);
 						});
+						const onPromptDispatch = input.onPromptDispatch;
+						if (onPromptDispatch !== undefined) {
+							onPromptDispatch();
+						}
+						return await prompt;
+					} finally {
+						signal.removeEventListener('abort', onAbort);
+					}
 				},
 				catch: (cause) =>
 					new AcpTurnFailed({
@@ -528,6 +548,41 @@ export function runAcpTurn(
 			text: buffer,
 			stopReason: response.stopReason,
 		};
+	});
+}
+
+export function forkAcpSession(
+	env: {
+		conn: ClientSideConnection;
+		agentCapabilities:
+			| Awaited<
+					ReturnType<ClientSideConnection['initialize']>
+			  >['agentCapabilities']
+			| undefined;
+	},
+	input: { sessionId: string; cwd: string },
+): Effect.Effect<
+	{ sessionId: string },
+	AcpForkNotSupportedError | AcpSessionError,
+	never
+> {
+	return Effect.gen(function* () {
+		const sessionCapabilities = env.agentCapabilities?.sessionCapabilities;
+		const forkCapability = sessionCapabilities?.fork;
+		if (forkCapability === undefined || forkCapability === null) {
+			return yield* new AcpForkNotSupportedError({});
+		}
+		return yield* Effect.tryPromise({
+			try: () =>
+				env.conn
+					.unstable_forkSession({
+						sessionId: input.sessionId,
+						cwd: input.cwd,
+						mcpServers: [],
+					})
+					.then((response) => ({ sessionId: response.sessionId })),
+			catch: (cause) => new AcpSessionError({ cause }),
+		});
 	});
 }
 
@@ -560,12 +615,21 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			onSessionId?: (sessionId: string) => void;
 			onEvent?: (event: SessionUpdate) => void;
 			onExtensionEvent?: (method: string, params: unknown) => void;
+			onPromptDispatch?: () => void;
 			configOptions?: ReadonlyArray<AcpConfigOption>;
 		}) =>
 			Effect.scoped(
 				Effect.gen(function* () {
 					const env = yield* RcRef.get(connectionRef);
 					return yield* runAcpTurn(env, input);
+				}),
+			);
+
+		const forkSession = (input: { sessionId: string; cwd: string }) =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* RcRef.get(connectionRef);
+					return yield* forkAcpSession(env, input);
 				}),
 			);
 
@@ -621,7 +685,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 		const listModels = () =>
 			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
 
-		return { runTurn, listModels, listSessionCatalog };
+		return { runTurn, forkSession, listModels, listSessionCatalog };
 	});
 }
 
