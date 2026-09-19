@@ -4,6 +4,13 @@ export type {
 	ToolCallLocation,
 	ToolKind,
 } from '@agentclientprotocol/sdk';
+export {
+	type AgentDefinition,
+	type AgentHarnessTarget,
+	AgentNotMappedForBackend,
+	Agents,
+	AgentTypeNotFound,
+} from './agents.ts';
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
