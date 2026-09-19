@@ -106,6 +106,7 @@ export const inputSchema = {
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'start' | 'wait'>;
 
 function errorResponse(code: string, message: string) {
 	return {
@@ -123,7 +124,7 @@ export const startTool = {
 	handle(
 		args: Args,
 		ctx: {
-			jobs: Jobs['Service'];
+			jobs: StartJobs;
 			waitUrlBase: string | undefined;
 			mcpSessionId: string | undefined;
 		},
