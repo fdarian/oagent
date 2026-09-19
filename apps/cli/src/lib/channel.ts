@@ -6,6 +6,7 @@ import {
 	formatPresets,
 	resultTool,
 	startInputSchema,
+	steerTool,
 } from '@oagent/engine';
 import { Effect } from 'effect';
 import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
@@ -275,6 +276,15 @@ function registerChannelTools(
 				return jsonContent({ ok: false });
 			}
 		},
+	);
+
+	server.registerTool(
+		'steer',
+		{
+			description: steerTool.description,
+			inputSchema: steerTool.inputSchema,
+		},
+		async (args) => jsonContent(await client.jobs.steer(args)),
 	);
 
 	return startTool;
