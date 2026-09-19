@@ -11,13 +11,36 @@ import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
+import { Harnesses } from './harnesses.ts';
 import type { Backend } from './model-catalog.ts';
-import { OpenCode } from './opencode.ts';
+import { OpenCode, OpenCodeSteerNotSupportedError } from './opencode.ts';
 import { Settings } from './settings.ts';
 
-class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
-	jobId: Schema.String,
-}) {}
+export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
+	'JobNotFound',
+	{
+		jobId: Schema.String,
+	},
+) {
+	override get message() {
+		return `Job not found: ${this.jobId}`;
+	}
+}
+
+export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
+	'JobSteerError',
+	{
+		code: Schema.Literals([
+			'NOT_RUNNING',
+			'UNSUPPORTED_BACKEND',
+			'UNSUPPORTED_VERSION',
+			'VERSION_CHECK_FAILED',
+			'SESSION_NOT_READY',
+			'DELIVERY_FAILED',
+		]),
+		message: Schema.String,
+	},
+) {}
 
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
@@ -89,6 +112,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const cursor = yield* Cursor;
 		const grok = yield* Grok;
 		const codex = yield* Codex;
+		const harnesses = yield* Harnesses;
 		const settings = yield* Settings;
 		const { db } = yield* Db;
 
@@ -555,6 +579,73 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 			});
 
+		const steer = (
+			jobId: string,
+			text: string,
+		): Effect.Effect<void, JobNotFound | JobSteerError, never> =>
+			Effect.gen(function* () {
+				const job = db
+					.select()
+					.from(schema.jobs)
+					.where(eq(schema.jobs.uuid, jobId))
+					.limit(1)
+					.get();
+
+				if (job === undefined) {
+					return yield* new JobNotFound({ jobId });
+				}
+
+				if (job.status !== 'running') {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} cannot be steered because it is ${job.status}; only running jobs can be steered.`,
+					});
+				}
+
+				const backend = parseBackend(job.backend);
+				if (backend !== 'opencode') {
+					return yield* new JobSteerError({
+						code: 'UNSUPPORTED_BACKEND',
+						message: `Steering is not supported for backend "${backend}"; only opencode v2 or newer supports steering.`,
+					});
+				}
+
+				yield* opencode.requireSteerSupport().pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code:
+									error instanceof OpenCodeSteerNotSupportedError
+										? 'UNSUPPORTED_VERSION'
+										: 'VERSION_CHECK_FAILED',
+								message: error.message,
+							}),
+					),
+				);
+
+				if (job.session_id === null) {
+					return yield* new JobSteerError({
+						code: 'SESSION_NOT_READY',
+						message: `Job ${jobId} cannot be steered yet because its OpenCode session ID has not been recorded. Try again after the session starts.`,
+					});
+				}
+
+				yield* opencode
+					.steer(harnesses, { sessionId: job.session_id, text })
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new JobSteerError({
+									code:
+										error instanceof OpenCodeSteerNotSupportedError
+											? 'UNSUPPORTED_VERSION'
+											: 'DELIVERY_FAILED',
+									message: error.message,
+								}),
+						),
+					);
+			});
+
 		const wait = (input: {
 			jobId: string;
 			timeoutMs?: number;
@@ -844,6 +935,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		return {
 			start,
 			cancel,
+			steer,
 			wait,
 			list,
 			listByMcpSession,
@@ -872,6 +964,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		Layer.provide(Cursor.layer),
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
+		Layer.provide(Harnesses.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Db.layer),
 	);

@@ -1,5 +1,5 @@
 import type { SessionConfigOption } from '@agentclientprotocol/sdk';
-import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
+import { Context, Effect, Layer, Ref, Schema, Semaphore } from 'effect';
 import {
 	AcpAgent,
 	type AcpAgentConfig,
@@ -11,6 +11,8 @@ import { HarnessVersion } from './harness-version.ts';
 import {
 	type OpenCodeHarnessRegistry,
 	OpenCodeServiceClient,
+	type OpenCodeServiceDiscoveryError,
+	type OpenCodeSteerRequestError,
 } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
@@ -26,6 +28,15 @@ export type OpenCodeEffortOption = {
 	label: string;
 };
 
+export class OpenCodeSteerNotSupportedError extends Schema.TaggedError<OpenCodeSteerNotSupportedError>()(
+	'OpenCodeSteerNotSupportedError',
+	{ version: Schema.String },
+) {
+	override get message() {
+		return `Steering is not supported by opencode ${this.version}; opencode v2 or newer is required.`;
+	}
+}
+
 type OpenCodeService = AcpAgent['Service'] & {
 	listModelEfforts: (
 		model: string,
@@ -34,11 +45,22 @@ type OpenCodeService = AcpAgent['Service'] & {
 		AcpSessionError,
 		never
 	>;
-	requireSteerSupport: () => Effect.Effect<string, AcpSessionError, never>;
+	requireSteerSupport: () => Effect.Effect<
+		string,
+		AcpSessionError | OpenCodeSteerNotSupportedError,
+		never
+	>;
 	steer: (
 		harnesses: OpenCodeHarnessRegistry,
 		input: { sessionId: string; text: string },
-	) => Effect.Effect<void, Error, never>;
+	) => Effect.Effect<
+		void,
+		| AcpSessionError
+		| OpenCodeSteerNotSupportedError
+		| OpenCodeServiceDiscoveryError
+		| OpenCodeSteerRequestError,
+		never
+	>;
 };
 
 function getOpenCodeConfigOptions(
@@ -299,11 +321,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				const version = yield* resolveVersion();
 				const major = parseOpenCodeMajor(version);
 				if (major === undefined || major < 2) {
-					return yield* new AcpSessionError({
-						cause: new Error(
-							`Steering is not supported by opencode ${version}; opencode v2 or newer is required.`,
-						),
-					});
+					return yield* new OpenCodeSteerNotSupportedError({ version });
 				}
 				return version;
 			});
