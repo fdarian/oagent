@@ -1,5 +1,7 @@
 export const queryKeys = {
 	jobs: () => ['jobs'] as const,
+	agents: () => ['agents'] as const,
+	agentTargets: (backend: string) => ['agents', 'targets', backend] as const,
 	harnesses: () => ['harnesses'] as const,
 	harnessAuthStatus: (backend: string) =>
 		['harnesses', 'auth', backend] as const,
