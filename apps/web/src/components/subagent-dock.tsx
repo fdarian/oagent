@@ -13,6 +13,20 @@ function descriptionForChild(child: ChildTimeline): string {
 	return child.description === undefined ? child.title : child.description;
 }
 
+function activityForChild(child: ChildTimeline): string {
+	const titlePrefix = `${child.title}: `;
+	if (child.lastActivity.startsWith(titlePrefix)) {
+		return child.lastActivity.slice(titlePrefix.length);
+	}
+
+	const descriptionPrefix = `${descriptionForChild(child)}: `;
+	if (child.lastActivity.startsWith(descriptionPrefix)) {
+		return child.lastActivity.slice(descriptionPrefix.length);
+	}
+
+	return child.lastActivity;
+}
+
 export function SubagentDock(props: SubagentDockProps) {
 	const running = Array.from(props.sessions.values()).filter(
 		(child) => child.status === 'running',
@@ -23,10 +37,10 @@ export function SubagentDock(props: SubagentDockProps) {
 	return (
 		<aside
 			aria-label="Running subagents"
-			className="shrink-0 border-primary border-t-2 bg-primary text-primary-foreground"
+			className="shrink-0 border-primary border-t bg-primary/5 text-foreground"
 		>
-			<div className="overflow-x-auto">
-				<div className="flex min-w-max flex-nowrap">
+			<div className="overflow-x-auto p-2">
+				<div className="flex min-w-max flex-nowrap gap-2">
 					{running.map((child) => {
 						const isActive = props.activeChildSessionId === child.id;
 						return (
@@ -36,10 +50,10 @@ export function SubagentDock(props: SubagentDockProps) {
 								onClick={() => props.onSelect(child.id)}
 								aria-current={isActive ? 'true' : undefined}
 								className={cn(
-									'flex w-[min(360px,80vw)] shrink-0 flex-col gap-1 border-primary-foreground/30 border-r px-15 py-10 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary-foreground/70',
+									'flex w-fit min-w-[220px] max-w-[min(320px,80vw)] shrink-0 flex-col gap-1 border border-primary/30 bg-background/80 px-15 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
 									isActive
-										? 'bg-primary-foreground text-primary'
-										: 'hover:bg-primary-foreground/10',
+										? 'border-primary bg-primary/10'
+										: 'hover:bg-primary/10',
 								)}
 							>
 								<div className="flex w-full items-center justify-between gap-15 text-caption">
@@ -55,8 +69,8 @@ export function SubagentDock(props: SubagentDockProps) {
 								<span className="w-full truncate text-sm">
 									{descriptionForChild(child)}
 								</span>
-								<span className="w-full truncate text-caption opacity-80">
-									{child.lastActivity}
+								<span className="w-full truncate text-caption text-muted-foreground">
+									{activityForChild(child)}
 								</span>
 							</button>
 						);
