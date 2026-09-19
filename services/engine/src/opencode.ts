@@ -15,7 +15,7 @@ const OPENCODE_EFFORT_CONFIG_ID = 'effort';
 const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
-	/\b(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
+	/\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
 
 export type OpenCodeEffortOption = {
 	value: string;
