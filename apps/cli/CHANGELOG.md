@@ -1,5 +1,17 @@
 # oagent
 
+## 0.4.0
+
+### Minor Changes
+
+- 4768edb: `steer` tool to send message mid-turns
+
+### Patch Changes
+
+- d65bcab: Clearer error message and show binary path
+- d4eb034: Persist harness versions and use version-aware OpenCode model discovery.
+- 6a43905: Add per-harness environment variable settings for ACP sessions.
+
 ## 0.3.2
 
 ### Patch Changes
