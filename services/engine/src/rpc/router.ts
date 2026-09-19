@@ -4,12 +4,18 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import * as v from 'valibot';
+import type { Agents } from '../agents.ts';
 import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
 
-export type EngineServices = Jobs | Harnesses | Settings | ModelCatalog;
+export type EngineServices =
+	| Jobs
+	| Harnesses
+	| Settings
+	| ModelCatalog
+	| Agents;
 export type EngineContext = WithEffectContext<EngineServices>;
 
 const procedure = os.$context<EngineContext>();

@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Context, Effect, Layer, Schema } from 'effect';
+import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
@@ -271,5 +272,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(Jobs.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(Settings.layer),
+		Layer.provide(Agents.layer),
 	);
 }
