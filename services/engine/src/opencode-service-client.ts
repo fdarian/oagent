@@ -18,14 +18,6 @@ const SteerResponse = Schema.Struct({
 	}),
 });
 
-export type OpenCodeHarnessRegistry = {
-	list: () => Effect.Effect<
-		ReadonlyArray<{ backend: string; binaryPath: string }>,
-		unknown,
-		never
-	>;
-};
-
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -133,34 +125,15 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 			const httpClient = yield* HttpClient.HttpClient;
 
 			const discover = (
-				harnesses: OpenCodeHarnessRegistry,
+				binaryPath: string,
 			): Effect.Effect<
 				{ url: string; password: string },
 				OpenCodeServiceDiscoveryError
 			> =>
 				Effect.gen(function* () {
-					const detected = yield* harnesses
-						.list()
-						.pipe(
-							Effect.mapError((cause) =>
-								discoveryError('locating the OpenCode binary', cause),
-							),
-						);
-					const harness = detected.find(
-						(candidate) => candidate.backend === 'opencode',
-					);
-					if (harness === undefined) {
-						return yield* discoveryError(
-							'locating the OpenCode binary',
-							new Error(
-								'OpenCode is not detected; refresh harness detection after installing it',
-							),
-						);
-					}
-
 					const statusStep = 'running `opencode service status`';
 					const status = yield* runServiceCommand(
-						harness.binaryPath,
+						binaryPath,
 						['service', 'status'],
 						statusStep,
 					);
@@ -196,7 +169,7 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 
 					const passwordStep = 'running `opencode service get password`';
 					const passwordResult = yield* runServiceCommand(
-						harness.binaryPath,
+						binaryPath,
 						['service', 'get', 'password'],
 						passwordStep,
 					);
@@ -219,14 +192,14 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 				});
 
 			const steer = (
-				harnesses: OpenCodeHarnessRegistry,
+				binaryPath: string,
 				input: { sessionId: string; text: string },
 			): Effect.Effect<
 				void,
 				OpenCodeServiceDiscoveryError | OpenCodeSteerRequestError
 			> =>
 				Effect.gen(function* () {
-					const service = yield* discover(harnesses);
+					const service = yield* discover(binaryPath);
 					const url = new URL(
 						`/api/session/${encodeURIComponent(input.sessionId)}/prompt`,
 						service.url,

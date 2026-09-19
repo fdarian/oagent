@@ -11,7 +11,6 @@ import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
-import { Harnesses } from './harnesses.ts';
 import type { Backend } from './model-catalog.ts';
 import { OpenCode, OpenCodeSteerNotSupportedError } from './opencode.ts';
 import { Settings } from './settings.ts';
@@ -112,7 +111,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const cursor = yield* Cursor;
 		const grok = yield* Grok;
 		const codex = yield* Codex;
-		const harnesses = yield* Harnesses;
 		const settings = yield* Settings;
 		const { db } = yield* Db;
 
@@ -630,20 +628,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				yield* opencode
-					.steer(harnesses, { sessionId: job.session_id, text })
-					.pipe(
-						Effect.mapError(
-							(error) =>
-								new JobSteerError({
-									code:
-										error instanceof OpenCodeSteerNotSupportedError
-											? 'UNSUPPORTED_VERSION'
-											: 'DELIVERY_FAILED',
-									message: error.message,
-								}),
-						),
-					);
+				yield* opencode.steer({ sessionId: job.session_id, text }).pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code:
+									error instanceof OpenCodeSteerNotSupportedError
+										? 'UNSUPPORTED_VERSION'
+										: 'DELIVERY_FAILED',
+								message: error.message,
+							}),
+					),
+				);
 			});
 
 		const wait = (input: {
@@ -964,7 +960,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		Layer.provide(Cursor.layer),
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
-		Layer.provide(Harnesses.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Db.layer),
 	);

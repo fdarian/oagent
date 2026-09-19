@@ -9,7 +9,6 @@ import {
 } from './acp-agent.ts';
 import { HarnessVersion } from './harness-version.ts';
 import {
-	type OpenCodeHarnessRegistry,
 	OpenCodeServiceClient,
 	type OpenCodeServiceDiscoveryError,
 	type OpenCodeSteerRequestError,
@@ -50,10 +49,10 @@ type OpenCodeService = AcpAgent['Service'] & {
 		AcpSessionError | OpenCodeSteerNotSupportedError,
 		never
 	>;
-	steer: (
-		harnesses: OpenCodeHarnessRegistry,
-		input: { sessionId: string; text: string },
-	) => Effect.Effect<
+	steer: (input: {
+		sessionId: string;
+		text: string;
+	}) => Effect.Effect<
 		void,
 		| AcpSessionError
 		| OpenCodeSteerNotSupportedError
@@ -326,13 +325,10 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				return version;
 			});
 
-		const steer = (
-			harnesses: OpenCodeHarnessRegistry,
-			input: { sessionId: string; text: string },
-		) =>
+		const steer = (input: { sessionId: string; text: string }) =>
 			Effect.gen(function* () {
 				yield* requireSteerSupport();
-				yield* serviceClient.steer(harnesses, input);
+				yield* serviceClient.steer(binary, input);
 			});
 
 		const listModelEfforts = (model: string) =>
