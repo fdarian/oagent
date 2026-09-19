@@ -155,6 +155,7 @@ Input:
 - `prompt: string` — the task to send
 - `cwd: string` — **required** absolute path to the directory the agent should operate in; typically the parent agent's project root
 - `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`. If the user hasn't specified a model, ask them which model and backend to use.
+- `agent_type?: string` — configured agent type to use for the selected backend. The tool description lists the currently configured names. Unknown names and names without a mapping for the selected backend return distinct errors.
 - `sessionId?: string` — pass the `sessionId` returned from a prior `done` result to continue that conversation.
 - `background?: boolean` — default `false` (block until finished, up to 30 minutes). If `true`, return immediately with `{ status: "running", jobId }`.
 
