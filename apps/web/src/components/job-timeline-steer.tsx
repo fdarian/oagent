@@ -4,7 +4,7 @@ import type { TimelinePart } from '@/lib/event-adapter';
 import { cn } from '@/lib/utils';
 
 export type JobTimelineSteerProps = {
-	part: Extract<TimelinePart, { kind: 'steer' }>;
+	part: Extract<TimelinePart, { kind: 'steer' | 'user' }>;
 };
 
 export const JobTimelineSteer = memo(function JobTimelineSteer(
@@ -31,7 +31,13 @@ export const JobTimelineSteer = memo(function JobTimelineSteer(
 	}, [isExpanded, message]);
 
 	return (
-		<Message from="user" aria-label="Steer message" className="pb-15">
+		<Message
+			from="user"
+			aria-label={
+				props.part.kind === 'steer' ? 'Steer message' : 'User message'
+			}
+			className="pb-15"
+		>
 			<MessageContent className="items-start text-left group-[.is-user]:bg-muted">
 				<p
 					ref={textRef}

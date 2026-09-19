@@ -164,6 +164,7 @@ function renderPart(part: TimelineItem, cwd: string) {
 		case 'text':
 			return <JobTimelineMessage part={part} />;
 		case 'steer':
+		case 'user':
 			return <JobTimelineSteer part={part} />;
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
