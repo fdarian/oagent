@@ -239,7 +239,7 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 						HttpClientRequest.bodyJson({
 							text: input.text,
 							delivery: 'steer',
-							// true starts a competing runner and corrupts the ACP-owned turn's tool state.
+							// Must stay false: true starts a competing runner and corrupts the ACP-owned turn's tool state.
 							resume: false,
 						}),
 						Effect.mapError(
