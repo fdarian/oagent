@@ -50,6 +50,8 @@ export const Conversation = ({
 }: ConversationProps) => {
 	const scrollRef = useRef<HTMLDivElement>(null);
 	const virtualizer = useVirtualizer({
+		// Item measurement runs from ref commits, where React 19 rejects nested flushSync.
+		useFlushSync: false,
 		count,
 		getScrollElement: () => scrollRef.current,
 		estimateSize,
