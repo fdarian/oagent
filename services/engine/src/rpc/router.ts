@@ -4,7 +4,7 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import * as v from 'valibot';
-import type { Agents } from '../agents.ts';
+import { Agents } from '../agents.ts';
 import { type Harness, Harnesses } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { ModelCatalog } from '../model-catalog.ts';
@@ -27,6 +27,11 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
+const agentNameSchema = v.pipe(v.string(), v.nonEmpty());
+const agentTargetSchema = v.object({
+	backend: backendSchema,
+	target: v.pipe(v.string(), v.nonEmpty()),
+});
 
 const harnessEnvEntrySchema = v.object({
 	key: v.pipe(
@@ -155,12 +160,19 @@ const router = procedure.router({
 					prompt: v.string(),
 					cwd: v.string(),
 					model: v.optional(v.string()),
+					agent_type: v.optional(v.string()),
 					sessionId: v.optional(v.string()),
 				}),
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
-				return yield* jobs.start(options.input);
+				return yield* jobs.start({
+					prompt: options.input.prompt,
+					cwd: options.input.cwd,
+					model: options.input.model,
+					agentType: options.input.agent_type,
+					sessionId: options.input.sessionId,
+				});
 			}),
 		cancel: procedure
 			.input(v.object({ jobId: v.string() }))
@@ -222,6 +234,35 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				return { ok: jobs.deleteAlias(options.input.name) };
+			}),
+	},
+	agents: {
+		list: procedure.input(v.void_()).effect(function* () {
+			const agents = yield* Agents;
+			return agents.list();
+		}),
+		save: procedure
+			.input(
+				v.object({
+					name: agentNameSchema,
+					targets: v.array(agentTargetSchema),
+				}),
+			)
+			.effect(function* (options) {
+				const agents = yield* Agents;
+				return agents.save(options.input);
+			}),
+		delete: procedure
+			.input(v.object({ name: agentNameSchema }))
+			.effect(function* (options) {
+				const agents = yield* Agents;
+				return { ok: agents.delete(options.input.name) };
+			}),
+		targets: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const modelCatalog = yield* ModelCatalog;
+				return yield* modelCatalog.listAgentTargets(options.input.backend);
 			}),
 	},
 	settings: {
