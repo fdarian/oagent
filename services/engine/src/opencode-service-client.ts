@@ -1,0 +1,291 @@
+import { Context, Effect, Layer, Redacted, Schema } from 'effect';
+import {
+	FetchHttpClient,
+	HttpClient,
+	HttpClientRequest,
+	HttpClientResponse,
+} from 'effect/unstable/http';
+
+const SERVICE_COMMAND_TIMEOUT_MS = 15_000;
+
+const SteerResponse = Schema.Struct({
+	data: Schema.Struct({
+		id: Schema.String,
+		sessionID: Schema.String,
+		type: Schema.Literals(['user']),
+		payload: Schema.Struct({ text: Schema.String }),
+		delivery: Schema.Literals(['steer']),
+	}),
+});
+
+export type OpenCodeHarnessRegistry = {
+	list: () => Effect.Effect<
+		ReadonlyArray<{ backend: string; binaryPath: string }>,
+		unknown,
+		never
+	>;
+};
+
+type CommandResult = {
+	exitCode: number;
+	stdout: string;
+	stderr: string;
+};
+
+export class OpenCodeServiceDiscoveryError extends Schema.TaggedError<OpenCodeServiceDiscoveryError>()(
+	'OpenCodeServiceDiscoveryError',
+	{
+		step: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `OpenCode service discovery failed while ${this.step}: ${detail}. Run \`opencode service start\` and try again.`;
+	}
+}
+
+export class OpenCodeSteerRequestError extends Schema.TaggedError<OpenCodeSteerRequestError>()(
+	'OpenCodeSteerRequestError',
+	{
+		sessionId: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `Failed to steer OpenCode session "${this.sessionId}": ${detail}`;
+	}
+}
+
+function discoveryError(step: string, cause: unknown) {
+	return new OpenCodeServiceDiscoveryError({ step, cause });
+}
+
+function runServiceCommand(
+	binaryPath: string,
+	args: ReadonlyArray<string>,
+	step: string,
+): Effect.Effect<CommandResult, OpenCodeServiceDiscoveryError> {
+	const command = Effect.scoped(
+		Effect.gen(function* () {
+			const process = yield* Effect.acquireRelease(
+				Effect.try({
+					try: () =>
+						Bun.spawn([binaryPath, ...args], {
+							stdin: 'ignore',
+							stdout: 'pipe',
+							stderr: 'pipe',
+						}),
+					catch: (cause) => discoveryError(step, cause),
+				}),
+				(child) =>
+					Effect.sync(() => {
+						if (child.exitCode === null) child.kill();
+					}),
+			);
+			const result = yield* Effect.tryPromise({
+				try: () =>
+					Promise.all([
+						new Response(process.stdout).text(),
+						new Response(process.stderr).text(),
+						process.exited,
+					]),
+				catch: (cause) => discoveryError(step, cause),
+			});
+			return {
+				stdout: result[0],
+				stderr: result[1],
+				exitCode: result[2],
+			};
+		}),
+	);
+
+	return command.pipe(
+		Effect.timeout(SERVICE_COMMAND_TIMEOUT_MS),
+		Effect.mapError((cause) =>
+			cause instanceof OpenCodeServiceDiscoveryError
+				? cause
+				: discoveryError(step, cause),
+		),
+	);
+}
+
+function commandExitError(
+	step: string,
+	command: string,
+	result: CommandResult,
+): OpenCodeServiceDiscoveryError {
+	const stderr = result.stderr.trim();
+	const detail =
+		stderr.length === 0
+			? `${command} exited with code ${result.exitCode}`
+			: `${command} exited with code ${result.exitCode}: ${stderr}`;
+	return discoveryError(step, new Error(detail));
+}
+
+export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient>()(
+	'oagent/OpenCodeServiceClient',
+	{
+		make: Effect.gen(function* () {
+			const httpClient = yield* HttpClient.HttpClient;
+
+			const discover = (
+				harnesses: OpenCodeHarnessRegistry,
+			): Effect.Effect<
+				{ url: string; password: string },
+				OpenCodeServiceDiscoveryError
+			> =>
+				Effect.gen(function* () {
+					const detected = yield* harnesses
+						.list()
+						.pipe(
+							Effect.mapError((cause) =>
+								discoveryError('locating the OpenCode binary', cause),
+							),
+						);
+					const harness = detected.find(
+						(candidate) => candidate.backend === 'opencode',
+					);
+					if (harness === undefined) {
+						return yield* discoveryError(
+							'locating the OpenCode binary',
+							new Error(
+								'OpenCode is not detected; refresh harness detection after installing it',
+							),
+						);
+					}
+
+					const statusStep = 'running `opencode service status`';
+					const status = yield* runServiceCommand(
+						harness.binaryPath,
+						['service', 'status'],
+						statusStep,
+					);
+					if (status.exitCode !== 0) {
+						return yield* commandExitError(
+							statusStep,
+							'opencode service status',
+							status,
+						);
+					}
+					const rawUrl = status.stdout.trim();
+					if (rawUrl.length === 0) {
+						return yield* discoveryError(
+							statusStep,
+							new Error('opencode service status returned no service URL'),
+						);
+					}
+					const serviceUrl = yield* Effect.try({
+						try: () => new URL(rawUrl),
+						catch: (cause) => discoveryError(statusStep, cause),
+					});
+					if (
+						serviceUrl.protocol !== 'http:' &&
+						serviceUrl.protocol !== 'https:'
+					) {
+						return yield* discoveryError(
+							statusStep,
+							new Error(
+								'opencode service status did not return an HTTP service URL',
+							),
+						);
+					}
+
+					const passwordStep = 'running `opencode service get password`';
+					const passwordResult = yield* runServiceCommand(
+						harness.binaryPath,
+						['service', 'get', 'password'],
+						passwordStep,
+					);
+					if (passwordResult.exitCode !== 0) {
+						return yield* commandExitError(
+							passwordStep,
+							'opencode service get password',
+							passwordResult,
+						);
+					}
+					const password = passwordResult.stdout.trim();
+					if (password.length === 0) {
+						return yield* discoveryError(
+							passwordStep,
+							new Error('opencode service get password returned no password'),
+						);
+					}
+
+					return { url: serviceUrl.toString(), password };
+				});
+
+			const steer = (
+				harnesses: OpenCodeHarnessRegistry,
+				input: { sessionId: string; text: string },
+			): Effect.Effect<
+				void,
+				OpenCodeServiceDiscoveryError | OpenCodeSteerRequestError
+			> =>
+				Effect.gen(function* () {
+					const service = yield* discover(harnesses);
+					const url = new URL(
+						`/api/session/${encodeURIComponent(input.sessionId)}/prompt`,
+						service.url,
+					);
+					const request = yield* HttpClientRequest.post(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+						HttpClientRequest.bodyJson({
+							text: input.text,
+							delivery: 'steer',
+							// true starts a competing runner and corrupts the ACP-owned turn's tool state.
+							resume: false,
+						}),
+						Effect.mapError(
+							(cause) =>
+								new OpenCodeSteerRequestError({
+									sessionId: input.sessionId,
+									cause,
+								}),
+						),
+					);
+					const response = yield* httpClient.execute(request).pipe(
+						Effect.mapError(
+							(cause) =>
+								new OpenCodeSteerRequestError({
+									sessionId: input.sessionId,
+									cause,
+								}),
+						),
+					);
+					if (response.status !== 200) {
+						return yield* new OpenCodeSteerRequestError({
+							sessionId: input.sessionId,
+							cause: new Error(
+								`OpenCode service returned HTTP ${response.status}`,
+							),
+						});
+					}
+					yield* HttpClientResponse.schemaBodyJson(SteerResponse)(
+						response,
+					).pipe(
+						Effect.mapError(
+							(cause) =>
+								new OpenCodeSteerRequestError({
+									sessionId: input.sessionId,
+									cause,
+								}),
+						),
+					);
+				});
+
+			return { steer };
+		}),
+	},
+) {
+	static readonly layer = Layer.effect(
+		OpenCodeServiceClient,
+		OpenCodeServiceClient.make,
+	).pipe(Layer.provide(FetchHttpClient.layer));
+}

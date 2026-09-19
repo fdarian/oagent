@@ -8,6 +8,10 @@ import {
 	createAcpConnection,
 } from './acp-agent.ts';
 import { HarnessVersion } from './harness-version.ts';
+import {
+	type OpenCodeHarnessRegistry,
+	OpenCodeServiceClient,
+} from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
@@ -30,6 +34,11 @@ type OpenCodeService = AcpAgent['Service'] & {
 		AcpSessionError,
 		never
 	>;
+	requireSteerSupport: () => Effect.Effect<string, AcpSessionError, never>;
+	steer: (
+		harnesses: OpenCodeHarnessRegistry,
+		input: { sessionId: string; text: string },
+	) => Effect.Effect<void, Error, never>;
 };
 
 function getOpenCodeConfigOptions(
@@ -190,6 +199,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const settings = yield* Settings;
 		const acpAgent = yield* AcpAgent;
 		const harnessVersion = yield* HarnessVersion;
+		const serviceClient = yield* OpenCodeServiceClient;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 		const versionRef = yield* Ref.make<string | undefined>(undefined);
 		const versionSemaphore = yield* Semaphore.make(1);
@@ -284,6 +294,29 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				});
 			});
 
+		const requireSteerSupport = () =>
+			Effect.gen(function* () {
+				const version = yield* resolveVersion();
+				const major = parseOpenCodeMajor(version);
+				if (major === undefined || major < 2) {
+					return yield* new AcpSessionError({
+						cause: new Error(
+							`Steering is not supported by opencode ${version}; opencode v2 or newer is required.`,
+						),
+					});
+				}
+				return version;
+			});
+
+		const steer = (
+			harnesses: OpenCodeHarnessRegistry,
+			input: { sessionId: string; text: string },
+		) =>
+			Effect.gen(function* () {
+				yield* requireSteerSupport();
+				yield* serviceClient.steer(harnesses, input);
+			});
+
 		const listModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -322,12 +355,15 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			runTurn,
 			listModels,
 			listModelEfforts,
+			requireSteerSupport,
+			steer,
 		} satisfies OpenCodeService;
 	}),
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
 		Layer.provide(openCodeAcpLayer),
 		Layer.provide(HarnessVersion.layer),
+		Layer.provide(OpenCodeServiceClient.layer),
 		Layer.provide(Settings.layer),
 	);
 }
