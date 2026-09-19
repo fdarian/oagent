@@ -110,7 +110,10 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 				}),
 			);
 
-		return { runTurn, listModels } satisfies AcpAgent['Service'];
+		return { runTurn, listModels } satisfies Pick<
+			AcpAgent['Service'],
+			'runTurn' | 'listModels'
+		>;
 	}),
 }) {
 	static readonly layer = Layer.effect(Grok, Grok.make).pipe(

@@ -85,7 +85,7 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 						})),
 					),
 				),
-		} satisfies AcpAgent['Service'];
+		} satisfies Pick<AcpAgent['Service'], 'runTurn' | 'listModels'>;
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(

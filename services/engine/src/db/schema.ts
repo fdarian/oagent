@@ -24,6 +24,7 @@ export const jobs = sqliteTable(
 		prompt: text().notNull(),
 		cwd: text().notNull(),
 		model: text(),
+		agent_type: text(),
 		backend: text().notNull(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
@@ -183,6 +184,45 @@ export const modelAliases = sqliteTable(
 			.$defaultFn(() => new Date()),
 	},
 	(table) => [uniqueIndex('model_aliases_name_uq').on(table.name)],
+);
+
+export const agents = sqliteTable(
+	'agents',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		name: text().notNull(),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [uniqueIndex('agents_name_uq').on(table.name)],
+);
+
+export const agentHarnessTargets = sqliteTable(
+	'agent_harness_targets',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		agent_id: integer({ mode: 'number' })
+			.notNull()
+			.references(() => agents.id, { onDelete: 'cascade' }),
+		backend: text().notNull(),
+		target: text().notNull(),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex('agent_harness_targets_agent_id_backend_uq').on(
+			table.agent_id,
+			table.backend,
+		),
+	],
 );
 
 export const settings = sqliteTable(

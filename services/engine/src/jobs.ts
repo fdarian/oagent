@@ -5,13 +5,18 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, sql } from 'drizzle-orm';
 import { Context, Effect, Fiber, Layer, Schema } from 'effect';
+import {
+	type AgentNotMappedForBackend,
+	Agents,
+	type AgentTypeNotFound,
+} from './agents.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
-import type { Backend } from './model-catalog.ts';
+import { type Backend, isBackend, parseBackend } from './model-catalog.ts';
 import { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 
@@ -71,18 +76,6 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
-function parseBackend(value: string): Backend {
-	if (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	) {
-		return value;
-	}
-	throw new Error(`Invalid persisted job backend: ${value}`);
-}
-
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
 		const opencode = yield* OpenCode;
@@ -90,13 +83,14 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const grok = yield* Grok;
 		const codex = yield* Codex;
 		const settings = yield* Settings;
+		const agents = yield* Agents;
 		const { db } = yield* Db;
 
 		const resolveModel = (
 			model: string,
 		): Effect.Effect<
 			{
-				backend: string;
+				backend: Backend;
 				modelId: string;
 				reasoningEffort: string | undefined;
 			},
@@ -108,12 +102,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (colonIdx !== -1) {
 					const backend = model.slice(0, colonIdx);
 					const modelId = model.slice(colonIdx + 1);
-					if (
-						backend !== 'opencode' &&
-						backend !== 'cursor' &&
-						backend !== 'grok' &&
-						backend !== 'codex'
-					) {
+					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
 							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
@@ -133,6 +122,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_ALIAS',
 						message: `Model "${model}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
+					});
+				}
+				if (!isBackend(alias.backend)) {
+					return yield* new ModelResolutionError({
+						code: 'UNKNOWN_BACKEND',
+						message: `Model alias "${model}" references unknown backend "${alias.backend}".`,
 					});
 				}
 
@@ -361,10 +356,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const start = (input: {
 			prompt: string;
 			model?: string;
+			agentType?: string;
 			sessionId?: string;
 			mcpSessionId?: string;
 			cwd: string;
-		}): Effect.Effect<{ jobId: string }, ModelResolutionError, never> =>
+		}): Effect.Effect<
+			{ jobId: string },
+			ModelResolutionError | AgentTypeNotFound | AgentNotMappedForBackend,
+			never
+		> =>
 			Effect.gen(function* () {
 				const uuid = randomUUIDv7();
 
@@ -381,6 +381,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const backend = resolvedModel.backend;
 				const rest = resolvedModel.modelId;
 				const reasoningEffort = resolvedModel.reasoningEffort;
+				const agentTarget =
+					input.agentType === undefined
+						? undefined
+						: yield* agents.resolve(input.agentType, backend);
 
 				const jobRow = db
 					.insert(schema.jobs)
@@ -390,6 +394,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						prompt: input.prompt,
 						cwd: input.cwd,
 						model: rest,
+						agent_type: input.agentType,
 						backend,
 						session_id: input.sessionId,
 						mcp_session_id: input.mcpSessionId,
@@ -431,6 +436,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							prompt: input.prompt,
 							model: rest,
 							reasoningEffort,
+							mode: agentTarget,
 							sessionId: input.sessionId,
 							cwd: input.cwd,
 							onSessionId,
@@ -873,6 +879,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
 		Layer.provide(Settings.layer),
+		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),
 	);
 }

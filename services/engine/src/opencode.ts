@@ -4,6 +4,7 @@ import {
 	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
+	type AcpSessionCatalog,
 	AcpSessionError,
 	createAcpConnection,
 } from './acp-agent.ts';
@@ -12,6 +13,7 @@ import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
+const OPENCODE_MODE_CONFIG_ID = 'mode';
 const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
@@ -35,6 +37,7 @@ type OpenCodeService = AcpAgent['Service'] & {
 function getOpenCodeConfigOptions(
 	model: string | undefined,
 	reasoningEffort: string | undefined,
+	mode: string | undefined,
 ): ReadonlyArray<AcpConfigOption> | undefined {
 	const options: Array<AcpConfigOption> = [];
 	if (model !== undefined) options.push({ configId: 'model', value: model });
@@ -43,6 +46,9 @@ function getOpenCodeConfigOptions(
 			configId: OPENCODE_EFFORT_CONFIG_ID,
 			value: reasoningEffort,
 		});
+	}
+	if (mode !== undefined) {
+		options.push({ configId: OPENCODE_MODE_CONFIG_ID, value: mode });
 	}
 	return options.length === 0 ? undefined : options;
 }
@@ -202,6 +208,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				configOptions: getOpenCodeConfigOptions(
 					input.model,
 					input.reasoningEffort,
+					input.mode,
 				),
 			});
 
@@ -271,18 +278,28 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
 
-		const listModels = () =>
+		const listSessionCatalog = (): Effect.Effect<
+			AcpSessionCatalog,
+			AcpSessionError,
+			never
+		> =>
 			Effect.gen(function* () {
 				const version = yield* resolveVersion();
 				const major = parseOpenCodeMajor(version);
 				if (major !== undefined) {
-					if (major >= 2) return yield* acpAgent.listModels();
-					if (major === 1) return yield* listModelsCli();
+					if (major >= 2) return yield* acpAgent.listSessionCatalog();
+					if (major === 1) {
+						const models = yield* listModelsCli();
+						return { models, modes: [] };
+					}
 				}
 				return yield* new AcpSessionError({
 					cause: new Error(`Unsupported opencode version: ${version}`),
 				});
 			});
+
+		const listModels = () =>
+			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
 
 		const listModelEfforts = (model: string) =>
 			Effect.scoped(
@@ -321,6 +338,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		return {
 			runTurn,
 			listModels,
+			listSessionCatalog,
 			listModelEfforts,
 		} satisfies OpenCodeService;
 	}),
