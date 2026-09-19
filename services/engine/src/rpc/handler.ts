@@ -1,14 +1,14 @@
 import { ORPCError, onError } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
+import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
-import { ModelCatalogError } from '../model-catalog.ts';
 import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(
 	error: unknown,
 ): ORPCError<'INTERNAL_SERVER_ERROR', unknown> | undefined {
-	if (error instanceof HarnessesError || error instanceof ModelCatalogError) {
+	if (error instanceof HarnessesError || error instanceof HarnessModelError) {
 		return new ORPCError('INTERNAL_SERVER_ERROR', {
 			message: error.message,
 			cause: error,

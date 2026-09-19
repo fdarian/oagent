@@ -1,5 +1,12 @@
-import { Context, Effect, Layer } from 'effect';
-import { AcpAgent, type AcpAgentConfig } from './acp-agent.ts';
+import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
+import {
+	AcpAgent,
+	type AcpAgentConfig,
+	checkAcpConnection,
+	probeAcpConnection,
+} from './acp-agent.ts';
+import type { Harness } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
 const CURSOR_MODEL_ALIASES: Record<string, string> = {
@@ -20,6 +27,11 @@ const CURSOR_ID_TO_LABEL: ReadonlyMap<string, string> = new Map(
 );
 
 const CURSOR_BINARY = 'cursor-agent';
+
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
 
 export function getCursorBinary(): string {
 	return process.env.OAGENT_CURSOR_BIN ?? CURSOR_BINARY;
@@ -67,25 +79,62 @@ const cursorAcpLayer = Layer.unwrap(
 export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 	make: Effect.gen(function* () {
 		const acpAgent = yield* AcpAgent;
+		const settings = yield* Settings;
+		const createConfig = () =>
+			createCursorAcpConfig(() => settings.getHarnessEnv('cursor'));
+		const check = () => checkAcpConnection('cursor', createConfig());
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
+		const versionSemaphore = yield* Semaphore.make(1);
+		const version = () =>
+			versionSemaphore.withPermit(
+				Effect.gen(function* () {
+					const memoized = yield* Ref.get(versionRef);
+					if (memoized.loaded) return memoized.value;
+					const info = yield* probeAcpConnection(createConfig());
+					yield* Ref.set(versionRef, {
+						loaded: true,
+						value: info.agentVersion,
+					});
+					return info.agentVersion;
+				}),
+			);
+		const fetchModels = () =>
+			acpAgent.listModels().pipe(
+				Effect.map((models) =>
+					models.map((entry) => ({
+						id: entry.id,
+						label: CURSOR_ID_TO_LABEL.get(entry.id),
+					})),
+				),
+			);
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const listModels = () => modelCache.get();
+		const listModelEfforts = () => Effect.succeed([]);
+		const invalidate = () => modelCache.invalidate();
 
 		return {
+			backend: 'cursor',
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const model =
 					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES
 						? CURSOR_MODEL_ALIASES[input.model]
 						: input.model;
-				return acpAgent.runTurn({ ...input, model });
+				return acpAgent.runTurn({
+					...input,
+					model,
+					reasoningEffort: undefined,
+				});
 			},
-			listModels: () =>
-				acpAgent.listModels().pipe(
-					Effect.map((models) =>
-						models.map((entry) => ({
-							id: entry.id,
-							label: CURSOR_ID_TO_LABEL.get(entry.id),
-						})),
-					),
-				),
-		} satisfies AcpAgent['Service'];
+			listModels,
+			listModelEfforts,
+			resolveBinary: resolveCursorBinary,
+			version,
+			invalidate,
+			check,
+		} satisfies Harness;
 	}),
 }) {
 	static readonly layer = Layer.effect(Cursor, Cursor.make).pipe(

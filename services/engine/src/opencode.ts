@@ -5,9 +5,11 @@ import {
 	type AcpAgentConfig,
 	type AcpConfigOption,
 	AcpSessionError,
+	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
-import { HarnessVersion } from './harness-version.ts';
+import type { Harness } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
@@ -16,6 +18,11 @@ const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
 	/\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
+
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
 
 export type OpenCodeEffortOption = {
 	value: string;
@@ -189,9 +196,14 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	make: Effect.gen(function* () {
 		const settings = yield* Settings;
 		const acpAgent = yield* AcpAgent;
-		const harnessVersion = yield* HarnessVersion;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
-		const versionRef = yield* Ref.make<string | undefined>(undefined);
+		const createConfig = () =>
+			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode'));
+		const check = () => checkAcpConnection('opencode', createConfig());
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
 		const versionSemaphore = yield* Semaphore.make(1);
 
 		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
@@ -205,23 +217,13 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				),
 			});
 
-		const resolveVersion = () =>
+		const version = () =>
 			versionSemaphore.withPermit(
 				Effect.gen(function* () {
 					const memoized = yield* Ref.get(versionRef);
-					if (memoized !== undefined) return memoized;
-					const persisted = yield* harnessVersion
-						.get('opencode')
-						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-					if (persisted !== undefined) {
-						yield* Ref.set(versionRef, persisted);
-						return persisted;
-					}
+					if (memoized.loaded) return memoized.value;
 					const detected = yield* resolveOpenCodeVersion(binary);
-					yield* harnessVersion
-						.set('opencode', detected, binary)
-						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-					yield* Ref.set(versionRef, detected);
+					yield* Ref.set(versionRef, { loaded: true, value: detected });
 					return detected;
 				}),
 			);
@@ -271,25 +273,28 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
 
-		const listModels = () =>
+		const fetchModels = () =>
 			Effect.gen(function* () {
-				const version = yield* resolveVersion();
-				const major = parseOpenCodeMajor(version);
+				const detectedVersion = yield* version();
+				if (detectedVersion === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error('Could not detect an opencode version'),
+					});
+				}
+				const major = parseOpenCodeMajor(detectedVersion);
 				if (major !== undefined) {
 					if (major >= 2) return yield* acpAgent.listModels();
 					if (major === 1) return yield* listModelsCli();
 				}
 				return yield* new AcpSessionError({
-					cause: new Error(`Unsupported opencode version: ${version}`),
+					cause: new Error(`Unsupported opencode version: ${detectedVersion}`),
 				});
 			});
 
-		const listModelEfforts = (model: string) =>
+		const fetchModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
-					const connection = yield* createAcpConnection(
-						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
-					);
+					const connection = yield* createAcpConnection(createConfig());
 					const session = yield* Effect.tryPromise({
 						try: () =>
 							connection.conn.newSession({
@@ -317,17 +322,32 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 						: new AcpSessionError({ cause }),
 				),
 			);
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const effortCache = yield* ModelsCache.makeKeyed((model) =>
+			fetchModelEfforts(model),
+		);
+		const listModels = () => modelCache.get();
+		const listModelEfforts = (model: string) => effortCache.get(model);
+		const invalidate = () =>
+			Effect.gen(function* () {
+				yield* modelCache.invalidate();
+				yield* effortCache.invalidate();
+			});
 
 		return {
+			backend: 'opencode',
 			runTurn,
 			listModels,
 			listModelEfforts,
-		} satisfies OpenCodeService;
+			resolveBinary: resolveOpenCodeBinary,
+			version,
+			invalidate,
+			check,
+		} satisfies Harness & OpenCodeService;
 	}),
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
 		Layer.provide(openCodeAcpLayer),
-		Layer.provide(HarnessVersion.layer),
 		Layer.provide(Settings.layer),
 	);
 }
