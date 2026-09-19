@@ -2,12 +2,23 @@ import { ORPCError, onError } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
 import { HarnessesError } from '../harnesses.ts';
+import { JobNotFound, JobSteerError } from '../jobs.ts';
 import { ModelCatalogError } from '../model-catalog.ts';
 import { type EngineServices, router } from './router.ts';
 
-function toProcedureError(
-	error: unknown,
-): ORPCError<'INTERNAL_SERVER_ERROR', unknown> | undefined {
+function toProcedureError(error: unknown) {
+	if (error instanceof JobNotFound) {
+		return new ORPCError('NOT_FOUND', {
+			message: error.message,
+			cause: error,
+		});
+	}
+	if (error instanceof JobSteerError) {
+		return new ORPCError('BAD_REQUEST', {
+			message: error.message,
+			cause: error,
+		});
+	}
 	if (error instanceof HarnessesError || error instanceof ModelCatalogError) {
 		return new ORPCError('INTERNAL_SERVER_ERROR', {
 			message: error.message,

@@ -14,7 +14,7 @@ export const JobTimelineMessage = memo(function JobTimelineMessage({
 	part,
 }: JobTimelineMessageProps) {
 	return (
-		<Message from="assistant">
+		<Message from="assistant" className="pb-15">
 			<MessageContent>
 				<MessageResponse>{part.text}</MessageResponse>
 			</MessageContent>
