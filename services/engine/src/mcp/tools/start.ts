@@ -20,7 +20,7 @@ export type AliasPreset = {
 	backend: string;
 	model_id: string;
 	reasoning_effort?: string | null;
-	description: string | null;
+	description?: string | null;
 };
 
 /** Renders the preset/alias suffix shared by every `start` tool description. Empty when there are no aliases. */
@@ -39,7 +39,9 @@ export function formatPresets(aliases: AliasPreset[]): string {
 				? `[${a.reasoning_effort}]`
 				: '';
 		const desc =
-			a.description !== null && a.description !== ''
+			a.description !== undefined &&
+			a.description !== null &&
+			a.description !== ''
 				? ` — ${a.description}`
 				: '';
 		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${reasoningSuffix}${desc}`;
