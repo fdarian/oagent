@@ -12,6 +12,7 @@ import {
 	OpenCodeServiceClient,
 	type OpenCodeServiceDiscoveryError,
 	type OpenCodeSteerRequestError,
+	type OpenCodeSteerResult,
 } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
@@ -53,7 +54,7 @@ type OpenCodeService = AcpAgent['Service'] & {
 		sessionId: string;
 		text: string;
 	}) => Effect.Effect<
-		void,
+		OpenCodeSteerResult,
 		| AcpSessionError
 		| OpenCodeSteerNotSupportedError
 		| OpenCodeServiceDiscoveryError
@@ -328,7 +329,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const steer = (input: { sessionId: string; text: string }) =>
 			Effect.gen(function* () {
 				yield* requireSteerSupport();
-				yield* serviceClient.steer(binary, input);
+				return yield* serviceClient.steer(binary, input);
 			});
 
 		const listModelEfforts = (model: string) =>

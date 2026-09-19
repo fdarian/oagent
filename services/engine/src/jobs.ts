@@ -285,6 +285,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			});
 		};
 
+		const publishEvent = (
+			internalJobId: number,
+			jobId: string,
+			event: SessionUpdate,
+		): void => {
+			const eventId = insertEvent(internalJobId, event);
+			const emitter = liveEmitters.get(jobId);
+			if (emitter !== undefined) {
+				emitter.emit('event', { event, sequence: eventId });
+			}
+		};
+
 		const readEventsPage = (
 			jobId: number,
 			sinceId: number,
@@ -429,8 +441,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				liveEmitters.set(uuid, emitter);
 
 				const onEvent = (event: SessionUpdate): void => {
-					const eventId = insertEvent(internalId, event);
-					emitter.emit('event', { event, sequence: eventId });
+					publishEvent(internalId, uuid, event);
 				};
 
 				const closeResources = Effect.sync(() => {
@@ -628,18 +639,27 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				yield* opencode.steer({ sessionId: job.session_id, text }).pipe(
-					Effect.mapError(
-						(error) =>
-							new JobSteerError({
-								code:
-									error instanceof OpenCodeSteerNotSupportedError
-										? 'UNSUPPORTED_VERSION'
-										: 'DELIVERY_FAILED',
-								message: error.message,
-							}),
-					),
-				);
+				const result = yield* opencode
+					.steer({ sessionId: job.session_id, text })
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new JobSteerError({
+									code:
+										error instanceof OpenCodeSteerNotSupportedError
+											? 'UNSUPPORTED_VERSION'
+											: 'DELIVERY_FAILED',
+									message: error.message,
+								}),
+						),
+					);
+
+				publishEvent(job.id, jobId, {
+					sessionUpdate: 'user_message_chunk',
+					messageId: result.messageId,
+					content: { type: 'text', text: result.text },
+					_meta: { 'oagent/steer': true },
+				});
 			});
 
 		const wait = (input: {

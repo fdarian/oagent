@@ -24,6 +24,11 @@ type CommandResult = {
 	stderr: string;
 };
 
+export type OpenCodeSteerResult = {
+	messageId: string;
+	text: string;
+};
+
 export class OpenCodeServiceDiscoveryError extends Schema.TaggedError<OpenCodeServiceDiscoveryError>()(
 	'OpenCodeServiceDiscoveryError',
 	{
@@ -195,7 +200,7 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 				binaryPath: string,
 				input: { sessionId: string; text: string },
 			): Effect.Effect<
-				void,
+				OpenCodeSteerResult,
 				OpenCodeServiceDiscoveryError | OpenCodeSteerRequestError
 			> =>
 				Effect.gen(function* () {
@@ -240,7 +245,7 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 							),
 						});
 					}
-					yield* HttpClientResponse.schemaBodyJson(SteerResponse)(
+					const body = yield* HttpClientResponse.schemaBodyJson(SteerResponse)(
 						response,
 					).pipe(
 						Effect.mapError(
@@ -251,6 +256,10 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 								}),
 						),
 					);
+					return {
+						messageId: body.data.id,
+						text: body.data.payload.text,
+					};
 				});
 
 			return { steer };

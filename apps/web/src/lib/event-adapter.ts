@@ -7,6 +7,7 @@ import type {
 
 export type TimelinePart =
 	| { kind: 'text'; id: string; text: string; createdAt: number }
+	| { kind: 'steer'; id: string; text: string; createdAt: number }
 	| {
 			kind: 'reasoning';
 			id: string;
@@ -82,6 +83,14 @@ type OpenText = {
 	messageId?: string | null;
 };
 
+type OpenSteer = {
+	kind: 'steer';
+	id: string;
+	text: string;
+	createdAt: number;
+	messageId?: string | null;
+};
+
 type OpenReasoning = {
 	kind: 'reasoning';
 	id: string;
@@ -90,6 +99,18 @@ type OpenReasoning = {
 	createdAt: number;
 	messageId?: string | null;
 };
+
+type UserMessageChunk = Extract<
+	SessionUpdate,
+	{ sessionUpdate: 'user_message_chunk' }
+>;
+
+function isSteerMessageChunk(event: SessionUpdate): event is UserMessageChunk {
+	return (
+		event.sessionUpdate === 'user_message_chunk' &&
+		event._meta?.['oagent/steer'] === true
+	);
+}
 
 function shouldContinueAccumulating(
 	openPart: { messageId?: string | null } | null,
@@ -111,6 +132,7 @@ function shouldContinueAccumulating(
 export type ReduceState = {
 	parts: TimelinePart[];
 	openText: OpenText | null;
+	openSteer: OpenSteer | null;
 	openReasoning: OpenReasoning | null;
 	toolIndices: Map<string, number>;
 	idCounter: number;
@@ -122,6 +144,7 @@ export function createInitialState(): ReduceState {
 	return {
 		parts: [],
 		openText: null,
+		openSteer: null,
 		openReasoning: null,
 		toolIndices: new Map(),
 		idCounter: 0,
@@ -144,6 +167,23 @@ function flushOpenText(state: ReduceState): ReduceState {
 			},
 		],
 		openText: null,
+	};
+}
+
+function flushOpenSteer(state: ReduceState): ReduceState {
+	if (state.openSteer === null) return state;
+	return {
+		...state,
+		parts: [
+			...state.parts,
+			{
+				kind: 'steer',
+				id: state.openSteer.id,
+				text: state.openSteer.text,
+				createdAt: state.openSteer.createdAt,
+			},
+		],
+		openSteer: null,
 	};
 }
 
@@ -185,19 +225,20 @@ export function applyEvent(
 	event: SessionUpdate,
 	createdAt: number,
 ): ReduceState {
+	const isSteerChunk = isSteerMessageChunk(event);
 	const isAccumulatingChunk =
 		event.sessionUpdate === 'agent_message_chunk' ||
-		event.sessionUpdate === 'agent_thought_chunk';
-	const isFlushOnlyChunk = event.sessionUpdate === 'user_message_chunk';
+		event.sessionUpdate === 'agent_thought_chunk' ||
+		isSteerChunk;
 
 	let nextState = state;
 
 	if (!isAccumulatingChunk) {
 		nextState = flushOpenText(nextState);
+		nextState = flushOpenSteer(nextState);
 		nextState = flushOpenReasoning(nextState, createdAt);
 	}
-
-	if (isFlushOnlyChunk) {
+	if (event.sessionUpdate === 'user_message_chunk' && !isSteerChunk) {
 		return nextState;
 	}
 
@@ -209,6 +250,7 @@ export function applyEvent(
 
 		// Flush reasoning if open (different kind of chunk)
 		nextState = flushOpenReasoning(nextState, createdAt);
+		nextState = flushOpenSteer(nextState);
 
 		const shouldContinue = shouldContinueAccumulating(
 			nextState.openText,
@@ -267,6 +309,7 @@ export function applyEvent(
 
 		// Flush text if open (different kind of chunk)
 		nextState = flushOpenText(nextState);
+		nextState = flushOpenSteer(nextState);
 
 		const shouldContinue = shouldContinueAccumulating(
 			nextState.openReasoning,
@@ -312,6 +355,64 @@ export function applyEvent(
 					text: nextState.openReasoning.text,
 					isStreaming: nextState.openReasoning.isStreaming,
 					createdAt: nextState.openReasoning.createdAt,
+					messageId: chunkMessageId,
+				},
+			};
+		}
+
+		return nextState;
+	}
+
+	if (isSteerChunk) {
+		const chunkMessageId = event.messageId;
+		const contentBlock = event.content;
+		const chunkText =
+			contentBlock.type === 'text' ? contentBlock.text : undefined;
+
+		nextState = flushOpenText(nextState);
+		nextState = flushOpenReasoning(nextState, createdAt);
+
+		const shouldContinue = shouldContinueAccumulating(
+			nextState.openSteer,
+			chunkMessageId,
+		);
+		if (!shouldContinue && nextState.openSteer !== null) {
+			nextState = flushOpenSteer(nextState);
+		}
+
+		if (chunkText !== undefined) {
+			if (nextState.openSteer === null) {
+				nextState = {
+					...nextState,
+					openSteer: {
+						kind: 'steer',
+						id: makeId('steer', nextState.idCounter),
+						text: chunkText,
+						createdAt,
+						messageId: chunkMessageId,
+					},
+					idCounter: nextState.idCounter + 1,
+				};
+			} else {
+				nextState = {
+					...nextState,
+					openSteer: {
+						kind: 'steer',
+						id: nextState.openSteer.id,
+						text: nextState.openSteer.text + chunkText,
+						createdAt: nextState.openSteer.createdAt,
+						messageId: chunkMessageId,
+					},
+				};
+			}
+		} else if (nextState.openSteer !== null) {
+			nextState = {
+				...nextState,
+				openSteer: {
+					kind: 'steer',
+					id: nextState.openSteer.id,
+					text: nextState.openSteer.text,
+					createdAt: nextState.openSteer.createdAt,
 					messageId: chunkMessageId,
 				},
 			};
@@ -499,13 +600,14 @@ export function applyEvent(
 
 	// Ignored variants: plan, available_commands_update, current_mode_update,
 	// config_option_update, session_info_update, usage_update
-	// Open text/reasoning already flushed above.
+	// Open timeline parts already flushed above.
 	return nextState;
 }
 
 export function finalizeState(state: ReduceState): AdapterResult {
 	let parts = state.parts;
 	let openText = state.openText;
+	let openSteer = state.openSteer;
 	let openReasoning = state.openReasoning;
 
 	if (openText !== null) {
@@ -519,6 +621,18 @@ export function finalizeState(state: ReduceState): AdapterResult {
 			},
 		];
 		openText = null;
+	}
+	if (openSteer !== null) {
+		parts = [
+			...parts,
+			{
+				kind: 'steer',
+				id: openSteer.id,
+				text: openSteer.text,
+				createdAt: openSteer.createdAt,
+			},
+		];
+		openSteer = null;
 	}
 	if (openReasoning !== null) {
 		const durationMs = Date.now() - openReasoning.createdAt;
@@ -554,15 +668,22 @@ export function toDisplayState(state: ReduceState): DisplayState {
 					text: state.openText.text,
 					createdAt: state.openText.createdAt,
 				}
-			: state.openReasoning !== null
+			: state.openSteer !== null
 				? {
-						kind: 'reasoning',
-						id: state.openReasoning.id,
-						text: state.openReasoning.text,
-						isStreaming: true,
-						createdAt: state.openReasoning.createdAt,
+						kind: 'steer',
+						id: state.openSteer.id,
+						text: state.openSteer.text,
+						createdAt: state.openSteer.createdAt,
 					}
-				: null;
+				: state.openReasoning !== null
+					? {
+							kind: 'reasoning',
+							id: state.openReasoning.id,
+							text: state.openReasoning.text,
+							isStreaming: true,
+							createdAt: state.openReasoning.createdAt,
+						}
+					: null;
 
 	return {
 		parts: state.parts,

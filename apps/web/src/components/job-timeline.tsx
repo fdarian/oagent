@@ -14,6 +14,7 @@ import type { TimelinePart } from '@/lib/event-adapter';
 import { JobTimelineError } from './job-timeline-error';
 import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
+import { JobTimelineSteer } from './job-timeline-steer';
 import { JobTimelineTool } from './job-timeline-tool';
 
 export type JobTimelineProps = {
@@ -162,6 +163,8 @@ function renderPart(part: TimelineItem, cwd: string) {
 	switch (part.kind) {
 		case 'text':
 			return <JobTimelineMessage part={part} />;
+		case 'steer':
+			return <JobTimelineSteer part={part} />;
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
 		case 'tool':
