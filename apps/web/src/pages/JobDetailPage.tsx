@@ -78,8 +78,16 @@ export function JobDetailPage() {
 		<>
 			<div className="flex flex-col gap-0">
 				<JobStatusStrip
-					status={events.lastStatus}
-					isRunning={selectedJob.status === 'running' && !events.terminal}
+					status={
+						activeChild === undefined
+							? events.lastStatus
+							: activeChild.lastStatus
+					}
+					isRunning={
+						selectedJob.status === 'running' &&
+						!events.terminal &&
+						(activeChild === undefined || activeChild.status === 'running')
+					}
 				/>
 			</div>
 			{isPromptExpanded ? (
@@ -103,6 +111,7 @@ export function JobDetailPage() {
 						}
 						cwd={selectedJob.cwd}
 						childSessions={events.children}
+						currentChild={activeChild}
 						onChildSelect={selectChild}
 						isChildTimeline={activeChild !== undefined}
 						isLoading={

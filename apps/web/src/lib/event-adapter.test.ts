@@ -7,6 +7,7 @@ import {
 	type TimelinePart,
 	toDisplayState,
 } from './event-adapter';
+import { stripChildTitlePrefix } from './subagent-title';
 
 function childMeta(
 	id: string,
@@ -201,6 +202,45 @@ describe('subagent event timelines', () => {
 		if (child === undefined) throw new Error('Missing child timeline');
 		expect(child.status).toBe('running');
 		expect(child.endedAt).toBeUndefined();
+	});
+
+	test('scopes and normalizes running tool labels per timeline', () => {
+		let state = createInitialState();
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'parent-call',
+				title: 'subagent',
+				status: 'in_progress',
+				rawInput: {
+					agent: 'general',
+					description: 'Child task',
+				},
+			} as SessionUpdate,
+			12_000,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'child:tool-call',
+				title: 'Child task: sleep 10',
+				kind: 'execute',
+				status: 'in_progress',
+				_meta: childMeta('child', 'root-session', 1, 'Child task'),
+			} as SessionUpdate,
+			12_500,
+		);
+
+		const display = toDisplayState(state);
+		expect(display.lastStatus).toBe('Running tool: subagent');
+		expect(display.children.get('child')?.lastStatus).toBe(
+			'Running tool: sleep 10',
+		);
+		expect(stripChildTitlePrefix('Child task: sleep 10', 'Child task')).toBe(
+			'sleep 10',
+		);
 	});
 
 	test('replaces a description match with the authoritative legacy output id', () => {

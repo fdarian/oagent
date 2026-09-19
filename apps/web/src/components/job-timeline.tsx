@@ -24,6 +24,7 @@ export type JobTimelineProps = {
 	header?: ReactNode;
 	isLoading?: boolean;
 	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	currentChild?: ChildTimeline;
 	onChildSelect?: (sessionId: string) => void;
 	isChildTimeline?: boolean;
 };
@@ -139,7 +140,11 @@ function explorationSummary(parts: ToolPart[]): string {
 	return counts.join(', ');
 }
 
-function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
+function ExplorationGroup(props: {
+	group: ExplorationGroup;
+	cwd: string;
+	currentChild: ChildTimeline | undefined;
+}) {
 	return (
 		<Collapsible defaultOpen={false} className="group mb-3 w-full">
 			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
@@ -151,7 +156,12 @@ function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
 			</CollapsibleTrigger>
 			<CollapsibleContent className="ml-1 border-border border-l pl-4 pt-1">
 				{props.group.parts.map((part) => (
-					<JobTimelineTool key={part.id} part={part} cwd={props.cwd} />
+					<JobTimelineTool
+						key={part.id}
+						part={part}
+						cwd={props.cwd}
+						currentChild={props.currentChild}
+					/>
 				))}
 			</CollapsibleContent>
 		</Collapsible>
@@ -162,10 +172,13 @@ function renderPart(
 	part: TimelineItem,
 	cwd: string,
 	childSessions: ReadonlyMap<string, ChildTimeline> | undefined,
+	currentChild: ChildTimeline | undefined,
 	onChildSelect: ((sessionId: string) => void) | undefined,
 ) {
 	if (part.kind === 'exploration') {
-		return <ExplorationGroup group={part} cwd={cwd} />;
+		return (
+			<ExplorationGroup group={part} cwd={cwd} currentChild={currentChild} />
+		);
 	}
 
 	switch (part.kind) {
@@ -179,6 +192,7 @@ function renderPart(
 					part={part}
 					cwd={cwd}
 					childSessions={childSessions}
+					currentChild={currentChild}
 					onChildSelect={onChildSelect}
 				/>
 			);
@@ -233,6 +247,7 @@ export function JobTimeline(props: JobTimelineProps) {
 									partAt(virtualItem.index),
 									props.cwd,
 									props.childSessions,
+									props.currentChild,
 									props.onChildSelect,
 								)}
 							</div>

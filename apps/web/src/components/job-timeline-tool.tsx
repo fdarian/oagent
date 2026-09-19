@@ -16,6 +16,7 @@ import {
 	isSubagentToolPart,
 	type TimelineToolPart,
 } from '@/lib/event-adapter';
+import { stripChildTitlePrefix } from '@/lib/subagent-title';
 import { cn } from '@/lib/utils';
 import { JobTimelineSubagent } from './job-timeline-subagent';
 
@@ -25,6 +26,7 @@ export type JobTimelineToolProps = {
 	part: ToolPart;
 	cwd: string;
 	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	currentChild?: ChildTimeline;
 	onChildSelect?: (sessionId: string) => void;
 };
 
@@ -151,10 +153,29 @@ function ToolRow(props: ToolRowProps) {
 	);
 }
 
+function toolPartForDisplay(
+	part: ToolPart,
+	child: ChildTimeline | undefined,
+): ToolPart {
+	if (child === undefined) return part;
+	const title = stripChildTitlePrefix(
+		part.title,
+		child.title,
+		child.description,
+	);
+	const toolName = stripChildTitlePrefix(
+		part.toolName,
+		child.title,
+		child.description,
+	);
+	if (title === part.title && toolName === part.toolName) return part;
+	return { ...part, title, toolName };
+}
+
 export const JobTimelineTool = memo(function JobTimelineTool(
 	props: JobTimelineToolProps,
 ) {
-	const part = props.part;
+	const part = toolPartForDisplay(props.part, props.currentChild);
 	const isRunning =
 		part.state === 'input-available' || part.state === 'input-streaming';
 	const isError = part.state === 'output-error';

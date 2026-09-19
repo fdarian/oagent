@@ -1,5 +1,6 @@
 import type { ChildTimeline } from '@/lib/event-adapter';
 import { formatElapsed } from '@/lib/format';
+import { stripChildTitlePrefix } from '@/lib/subagent-title';
 import { useClock } from '@/lib/use-clock';
 import { cn } from '@/lib/utils';
 
@@ -11,20 +12,6 @@ export type SubagentDockProps = {
 
 function descriptionForChild(child: ChildTimeline): string {
 	return child.description === undefined ? child.title : child.description;
-}
-
-function activityForChild(child: ChildTimeline): string {
-	const titlePrefix = `${child.title}: `;
-	if (child.lastActivity.startsWith(titlePrefix)) {
-		return child.lastActivity.slice(titlePrefix.length);
-	}
-
-	const descriptionPrefix = `${descriptionForChild(child)}: `;
-	if (child.lastActivity.startsWith(descriptionPrefix)) {
-		return child.lastActivity.slice(descriptionPrefix.length);
-	}
-
-	return child.lastActivity;
 }
 
 export function SubagentDock(props: SubagentDockProps) {
@@ -70,7 +57,11 @@ export function SubagentDock(props: SubagentDockProps) {
 									{descriptionForChild(child)}
 								</span>
 								<span className="w-full truncate text-caption text-muted-foreground">
-									{activityForChild(child)}
+									{stripChildTitlePrefix(
+										child.lastActivity,
+										child.title,
+										child.description,
+									)}
 								</span>
 							</button>
 						);

@@ -4,6 +4,7 @@ import type {
 	ToolCallLocation,
 	ToolKind,
 } from '@oagent/engine';
+import { stripChildTitlePrefix } from './subagent-title';
 
 export type TimelineToolPart = {
 	kind: 'tool';
@@ -58,6 +59,7 @@ export type ChildTimeline = {
 	startedAt: number;
 	endedAt?: number;
 	lastActivity: string;
+	lastStatus?: string;
 	agentName?: string;
 	description?: string;
 };
@@ -913,7 +915,28 @@ type TimelineDisplay = {
 	lastStatus?: string;
 };
 
-function toTimelineDisplay(state: TimelineReduceState): TimelineDisplay {
+function lastStatusForTimeline(
+	state: TimelineReduceState,
+	childTitle: string | undefined,
+	childDescription: string | undefined,
+): string | undefined {
+	if (state.runningToolTitle === undefined) return undefined;
+	const title =
+		childTitle === undefined
+			? state.runningToolTitle
+			: stripChildTitlePrefix(
+					state.runningToolTitle,
+					childTitle,
+					childDescription,
+				);
+	return `Running tool: ${title}`;
+}
+
+function toTimelineDisplay(
+	state: TimelineReduceState,
+	childTitle?: string,
+	childDescription?: string,
+): TimelineDisplay {
 	const streamingTail: TimelinePart | null =
 		state.openText !== null
 			? {
@@ -935,10 +958,7 @@ function toTimelineDisplay(state: TimelineReduceState): TimelineDisplay {
 	return {
 		parts: state.parts,
 		streamingTail,
-		lastStatus:
-			state.runningToolTitle !== undefined
-				? `Running tool: ${state.runningToolTitle}`
-				: undefined,
+		lastStatus: lastStatusForTimeline(state, childTitle, childDescription),
 	};
 }
 
@@ -957,6 +977,7 @@ function toChildTimeline(
 		startedAt: child.startedAt,
 		endedAt: child.endedAt,
 		lastActivity: child.lastActivity,
+		lastStatus: timeline.lastStatus,
 		agentName: child.agentName,
 		description: child.description,
 	};
@@ -965,16 +986,15 @@ function toChildTimeline(
 function finalizeTimeline(
 	state: TimelineReduceState,
 	createdAt: number,
+	childTitle?: string,
+	childDescription?: string,
 ): TimelineDisplay {
 	const withText = flushOpenText(state);
 	const finalized = flushOpenReasoning(withText, createdAt);
 	return {
 		parts: finalized.parts,
 		streamingTail: null,
-		lastStatus:
-			state.runningToolTitle !== undefined
-				? `Running tool: ${state.runningToolTitle}`
-				: undefined,
+		lastStatus: lastStatusForTimeline(state, childTitle, childDescription),
 	};
 }
 
@@ -989,7 +1009,15 @@ export function finalizeState(state: ReduceState): AdapterResult {
 				: child;
 		children.set(
 			child.id,
-			toChildTimeline(terminalChild, finalizeTimeline(child.timeline, endedAt)),
+			toChildTimeline(
+				terminalChild,
+				finalizeTimeline(
+					child.timeline,
+					endedAt,
+					child.title,
+					child.description,
+				),
+			),
 		);
 	}
 
@@ -1006,7 +1034,10 @@ export function toDisplayState(state: ReduceState): DisplayState {
 	for (const child of state.children.values()) {
 		children.set(
 			child.id,
-			toChildTimeline(child, toTimelineDisplay(child.timeline)),
+			toChildTimeline(
+				child,
+				toTimelineDisplay(child.timeline, child.title, child.description),
+			),
 		);
 	}
 
