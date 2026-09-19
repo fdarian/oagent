@@ -38,6 +38,7 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
 		const services = yield* Effect.context<EngineServices>();
@@ -57,7 +58,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					server: McpServer,
 					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, services, waitUrlBase),
+				) => registerTools(server, jobs, agents, services, waitUrlBase),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -111,6 +112,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
+								agents,
 								services,
 								portlessPublicBase ?? url.origin,
 							);
