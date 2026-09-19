@@ -148,6 +148,7 @@ type ChildReduceState = {
 	timeline: TimelineReduceState;
 	status: ChildSessionStatus;
 	startedAt: number;
+	lastEventAt: number;
 	endedAt?: number;
 	lastActivity: string;
 	agentName?: string;
@@ -575,6 +576,12 @@ function readString(value: unknown, key: string): string | undefined {
 	return typeof property === 'string' ? property : undefined;
 }
 
+function readBoolean(value: unknown, key: string): boolean | undefined {
+	if (!isRecord(value)) return undefined;
+	const property = value[key];
+	return typeof property === 'boolean' ? property : undefined;
+}
+
 function readNestedString(
 	value: unknown,
 	parentKey: string,
@@ -679,18 +686,42 @@ function findUnlinkedChildSessionByDescription(
 
 function childStatusForTool(part: TimelineToolPart): ChildSessionStatus {
 	if (part.state === 'output-error') return 'failed';
-	if (part.state === 'output-available') return 'completed';
+	if (
+		part.state === 'output-available' &&
+		readBoolean(part.rawInput, 'background') !== true
+	) {
+		return 'completed';
+	}
 	return 'running';
 }
 
-function endedAtForTool(
+type ChildTiming = {
+	startedAt: number;
+	endedAt: number | undefined;
+};
+
+function timingForTool(
+	child: ChildReduceState,
 	part: TimelineToolPart,
+	status: ChildSessionStatus,
 	createdAt: number,
-): number | undefined {
-	if (isRunningToolState(part.state)) return undefined;
-	return part.durationMs === undefined
-		? createdAt
-		: part.createdAt + part.durationMs;
+): ChildTiming {
+	if (status === 'running') {
+		return { startedAt: child.startedAt, endedAt: undefined };
+	}
+
+	if (child.lastEventAt > child.startedAt) {
+		return { startedAt: child.startedAt, endedAt: child.lastEventAt };
+	}
+
+	if (part.durationMs !== undefined && part.durationMs > 0) {
+		return {
+			startedAt: part.createdAt,
+			endedAt: part.createdAt + part.durationMs,
+		};
+	}
+
+	return { startedAt: child.startedAt, endedAt: createdAt };
 }
 
 function updateChildFromTool(
@@ -699,10 +730,13 @@ function updateChildFromTool(
 	details: SubagentToolDetails,
 	createdAt: number,
 ): ChildReduceState {
+	const status = childStatusForTool(part);
+	const timing = timingForTool(child, part, status, createdAt);
 	return {
 		...child,
-		status: childStatusForTool(part),
-		endedAt: endedAtForTool(part, createdAt),
+		status,
+		startedAt: timing.startedAt,
+		endedAt: timing.endedAt,
 		agentName:
 			details.agentName !== undefined ? details.agentName : child.agentName,
 		description:
@@ -855,6 +889,7 @@ export function applyEvent(
 		status: existingChild === undefined ? 'running' : existingChild.status,
 		startedAt:
 			existingChild === undefined ? createdAt : existingChild.startedAt,
+		lastEventAt: createdAt,
 		endedAt: existingChild?.endedAt,
 		lastActivity: activityForChildEvent(
 			event,

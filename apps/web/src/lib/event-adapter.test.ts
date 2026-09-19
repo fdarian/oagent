@@ -76,7 +76,7 @@ describe('subagent event timelines', () => {
 					'Inspect the event model',
 				),
 			} as SessionUpdate,
-			1020,
+			4020,
 		);
 
 		const live = toDisplayState(state);
@@ -99,15 +99,108 @@ describe('subagent event timelines', () => {
 				status: 'completed',
 				rawOutput: { metadata: { sessionID: 'child-1' } },
 			} as SessionUpdate,
-			1040,
+			5040,
 		);
 
 		const completed = toDisplayState(state);
 		const completedChild = completed.children.get('child-1');
 		if (completedChild === undefined) throw new Error('Missing child timeline');
 		expect(completedChild.status).toBe('completed');
-		expect(completedChild.endedAt).toBe(1040);
+		expect(completedChild.startedAt).toBe(1010);
+		expect(completedChild.endedAt).toBe(4020);
 		expect(toolPartAt(completed.parts, 0).childSessionId).toBe('child-1');
+	});
+
+	test('falls back to parent tool duration when child event bounds have no range', () => {
+		let state = createInitialState();
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'parent-call',
+				title: 'subagent',
+				status: 'in_progress',
+				rawInput: { agent: 'general', description: 'One event child' },
+			} as SessionUpdate,
+			6000,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'Only child event' },
+				_meta: childMeta(
+					'one-event-child',
+					'root-session',
+					1,
+					'One event child',
+				),
+			} as SessionUpdate,
+			6500,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'parent-call',
+				status: 'completed',
+				rawOutput: { metadata: { sessionID: 'one-event-child' } },
+			} as SessionUpdate,
+			9000,
+		);
+
+		const child = toDisplayState(state).children.get('one-event-child');
+		if (child === undefined) throw new Error('Missing child timeline');
+		expect(child.startedAt).toBe(6000);
+		expect(child.endedAt).toBe(9000);
+	});
+
+	test('keeps background children running after their dispatch call completes', () => {
+		let state = createInitialState();
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'background-call',
+				title: 'subagent',
+				status: 'in_progress',
+				rawInput: {
+					agent: 'general',
+					description: 'Background child',
+					background: true,
+				},
+			} as SessionUpdate,
+			10_000,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_thought_chunk',
+				content: { type: 'text', text: 'Still working' },
+				_meta: childMeta(
+					'background-child',
+					'root-session',
+					1,
+					'Background child',
+				),
+			} as SessionUpdate,
+			10_500,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'background-call',
+				status: 'completed',
+				rawOutput: { metadata: { sessionID: 'background-child' } },
+			} as SessionUpdate,
+			11_000,
+		);
+
+		const child = toDisplayState(state).children.get('background-child');
+		if (child === undefined) throw new Error('Missing child timeline');
+		expect(child.status).toBe('running');
+		expect(child.endedAt).toBeUndefined();
 	});
 
 	test('replaces a description match with the authoritative legacy output id', () => {
