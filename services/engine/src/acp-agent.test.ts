@@ -3,21 +3,36 @@ import type { ClientSideConnection } from '@agentclientprotocol/sdk';
 import { Effect } from 'effect';
 import { runAcpTurn } from './acp-agent.ts';
 
-describe('ACP session persistence callback', () => {
-	test('runs after session creation and before the prompt', async () => {
+describe('ACP pre-prompt ordering', () => {
+	test('creates, persists, and configures a session before the prompt', async () => {
 		const order: string[] = [];
 		type NewSessionResult = Awaited<
 			ReturnType<ClientSideConnection['newSession']>
 		>;
 		type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
+		type SetConfigResult = Awaited<
+			ReturnType<ClientSideConnection['setSessionConfigOption']>
+		>;
 
 		const conn = {
 			newSession: async (): Promise<NewSessionResult> => {
 				order.push('new-session');
 				return { sessionId: 'ses_test' } as NewSessionResult;
 			},
-			prompt: async (): Promise<PromptResult> => {
+			setSessionConfigOption: async (
+				input: Parameters<ClientSideConnection['setSessionConfigOption']>[0],
+			): Promise<SetConfigResult> => {
+				expect(input).toEqual({
+					sessionId: 'ses_test',
+					configId: 'mode',
+					value: 'plan',
+				});
 				expect(order).toEqual(['new-session', 'persist-session']);
+				order.push('set-mode');
+				return {} as SetConfigResult;
+			},
+			prompt: async (): Promise<PromptResult> => {
+				expect(order).toEqual(['new-session', 'persist-session', 'set-mode']);
 				order.push('prompt');
 				return { stopReason: 'end_turn' } as PromptResult;
 			},
@@ -33,30 +48,50 @@ describe('ACP session persistence callback', () => {
 				{
 					prompt: 'continue',
 					cwd: '/tmp',
-					skipModelSet: true,
+					mode: 'plan',
 					onSessionId: () => order.push('persist-session'),
 				},
 			),
 		);
 
 		expect(result.sessionId).toBe('ses_test');
-		expect(order).toEqual(['new-session', 'persist-session', 'prompt']);
+		expect(order).toEqual([
+			'new-session',
+			'persist-session',
+			'set-mode',
+			'prompt',
+		]);
 	});
 
-	test('runs after session loading and before the prompt', async () => {
+	test('loads, persists, and configures a session before the prompt', async () => {
 		const order: string[] = [];
 		type LoadSessionResult = Awaited<
 			ReturnType<ClientSideConnection['loadSession']>
 		>;
 		type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
+		type SetConfigResult = Awaited<
+			ReturnType<ClientSideConnection['setSessionConfigOption']>
+		>;
 
 		const conn = {
 			loadSession: async (): Promise<LoadSessionResult> => {
 				order.push('load-session');
 				return {} as LoadSessionResult;
 			},
-			prompt: async (): Promise<PromptResult> => {
+			setSessionConfigOption: async (
+				input: Parameters<ClientSideConnection['setSessionConfigOption']>[0],
+			): Promise<SetConfigResult> => {
+				expect(input).toEqual({
+					sessionId: 'ses_existing',
+					configId: 'mode',
+					value: 'build',
+				});
 				expect(order).toEqual(['load-session', 'persist-session']);
+				order.push('set-mode');
+				return {} as SetConfigResult;
+			},
+			prompt: async (): Promise<PromptResult> => {
+				expect(order).toEqual(['load-session', 'persist-session', 'set-mode']);
 				order.push('prompt');
 				return { stopReason: 'end_turn' } as PromptResult;
 			},
@@ -73,7 +108,7 @@ describe('ACP session persistence callback', () => {
 					prompt: 'continue',
 					cwd: '/tmp',
 					sessionId: 'ses_existing',
-					skipModelSet: true,
+					mode: 'build',
 					onSessionId: (sessionId) => {
 						expect(sessionId).toBe('ses_existing');
 						order.push('persist-session');
@@ -83,6 +118,11 @@ describe('ACP session persistence callback', () => {
 		);
 
 		expect(result.sessionId).toBe('ses_existing');
-		expect(order).toEqual(['load-session', 'persist-session', 'prompt']);
+		expect(order).toEqual([
+			'load-session',
+			'persist-session',
+			'set-mode',
+			'prompt',
+		]);
 	});
 });

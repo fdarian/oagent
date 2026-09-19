@@ -131,7 +131,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 						return result;
 					}),
 				),
-		} satisfies AcpAgent['Service'];
+		} satisfies Pick<AcpAgent['Service'], 'runTurn' | 'listModels'>;
 	}),
 }) {
 	static readonly layer = Layer.effect(Codex, Codex.make).pipe(

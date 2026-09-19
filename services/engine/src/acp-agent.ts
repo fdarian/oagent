@@ -4,6 +4,7 @@ import {
 	ClientSideConnection,
 	ndJsonStream,
 	PROTOCOL_VERSION,
+	type SessionConfigOption,
 	type SessionConfigSelectGroup,
 	type SessionConfigSelectOption,
 	type SessionUpdate,
@@ -76,6 +77,40 @@ function extractModelIds(
 		}
 	}
 	return ids;
+}
+
+export type AcpModeOption = {
+	readonly id: string;
+	readonly name: string;
+	readonly description?: string;
+};
+
+export type AcpSessionCatalog = {
+	readonly models: ReadonlyArray<{ id: string }>;
+	readonly modes: ReadonlyArray<AcpModeOption>;
+};
+
+function extractModeOptions(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): ReadonlyArray<AcpModeOption> {
+	if (configOptions === undefined || configOptions === null) return [];
+	const modeOption = configOptions.find((option) => option.id === 'mode');
+	if (modeOption === undefined || modeOption.type !== 'select') return [];
+
+	const modes: Array<AcpModeOption> = [];
+	for (const item of modeOption.options) {
+		const options = isSelectGroup(item) ? item.options : [item];
+		for (const option of options) {
+			modes.push({
+				id: option.value,
+				name: option.name,
+				...(option.description === undefined || option.description === null
+					? {}
+					: { description: option.description }),
+			});
+		}
+	}
+	return modes;
 }
 
 export function createAcpConnection(config: {
@@ -264,6 +299,7 @@ export function runAcpTurn(
 		prompt: string;
 		model?: string;
 		reasoningEffort?: string;
+		mode?: string;
 		sessionId?: string;
 		cwd: string;
 		onSessionId?: (sessionId: string) => void;
@@ -297,6 +333,7 @@ export function runAcpTurn(
 							res.models === undefined || res.models === null
 								? undefined
 								: res.models.availableModels.map((m) => m.modelId),
+						availableModes: extractModeOptions(res.configOptions),
 					})),
 				);
 			}
@@ -310,6 +347,7 @@ export function runAcpTurn(
 						res.models === undefined || res.models === null
 							? undefined
 							: res.models.availableModels.map((m) => m.modelId),
+					availableModes: extractModeOptions(res.configOptions),
 				})),
 			);
 		})();
@@ -366,6 +404,9 @@ export function runAcpTurn(
 											},
 										]
 									: []),
+								...(input.mode !== undefined
+									? [{ configId: 'mode', value: input.mode }]
+									: []),
 							];
 			for (const configOption of configOptions) {
 				yield* Effect.tryPromise({
@@ -378,16 +419,23 @@ export function runAcpTurn(
 					catch: (cause) => {
 						const rpcMessage = getRpcMessage(cause);
 
-						const modelsHint =
-							sessionResult.availableModels !== undefined &&
-							sessionResult.availableModels.length > 0
-								? ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`
-								: '';
+						const optionHint =
+							configOption.configId === 'mode' &&
+							sessionResult.availableModes.length > 0
+								? ` — available modes: ${sessionResult.availableModes
+										.slice(0, 10)
+										.map((mode) => mode.id)
+										.join(', ')}`
+								: sessionResult.availableModels !== undefined &&
+										configOption.configId === 'model' &&
+										sessionResult.availableModels.length > 0
+									? ` — available models: ${sessionResult.availableModels.slice(0, 10).join(', ')}`
+									: undefined;
 
+						const detail =
+							rpcMessage !== undefined ? rpcMessage : 'setConfigOption failed';
 						const message =
-							rpcMessage !== undefined
-								? `${rpcMessage}${modelsHint}`
-								: `setConfigOption failed${modelsHint}`;
+							optionHint === undefined ? detail : `${detail}${optionHint}`;
 
 						return new AcpTurnFailed({
 							code: 'SET_CONFIG_OPTION',
@@ -436,7 +484,7 @@ export function runAcpTurn(
 
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
-const MODEL_LIST_TIMEOUT_MS = 15_000;
+const SESSION_CATALOG_TIMEOUT_MS = 15_000;
 
 export type AcpConfigOption = {
 	configId: string;
@@ -458,6 +506,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			prompt: string;
 			model?: string;
 			reasoningEffort?: string;
+			mode?: string;
 			sessionId?: string;
 			cwd: string;
 			onSessionId?: (sessionId: string) => void;
@@ -472,12 +521,12 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 				}),
 			);
 
-		// Model listing does NOT go through the shared, ref-counted
+		// Catalog listing does NOT go through the shared, ref-counted
 		// connection: it spins up its own throwaway connection (scoped to
-		// this call only, killed right after) so that listing models
+		// this call only, killed right after) so that discovery
 		// never spawns/holds the persistent backend harness.
-		const listModels = (): Effect.Effect<
-			ReadonlyArray<{ id: string }>,
+		const listSessionCatalog = (): Effect.Effect<
+			AcpSessionCatalog,
 			AcpSessionError,
 			never
 		> =>
@@ -494,21 +543,26 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						res.models !== undefined && res.models !== null
 							? res.models.availableModels
 							: [];
-					if (availableModels.length > 0) {
-						return availableModels.map((m) => ({ id: m.modelId }));
-					}
+					const models = (() => {
+						if (availableModels.length > 0) {
+							return availableModels.map((model) => ({ id: model.modelId }));
+						}
+						const modelOption = res.configOptions?.find(
+							(option) => option.id === 'model',
+						);
+						if (modelOption === undefined || modelOption.type !== 'select') {
+							return [];
+						}
+						return extractModelIds(modelOption.options);
+					})();
 
-					const modelOption = res.configOptions?.find(
-						(opt) => opt.id === 'model',
-					);
-					if (modelOption === undefined || modelOption.type !== 'select') {
-						return [];
-					}
-
-					return extractModelIds(modelOption.options);
+					return {
+						models,
+						modes: extractModeOptions(res.configOptions),
+					};
 				}),
 			).pipe(
-				Effect.timeout(MODEL_LIST_TIMEOUT_MS),
+				Effect.timeout(SESSION_CATALOG_TIMEOUT_MS),
 				Effect.mapError((cause) =>
 					cause instanceof AcpSessionError
 						? cause
@@ -516,7 +570,10 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 				),
 			);
 
-		return { runTurn, listModels };
+		const listModels = () =>
+			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
+
+		return { runTurn, listModels, listSessionCatalog };
 	});
 }
 
