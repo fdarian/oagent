@@ -2,10 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
 import {
 	isCurrentSideChatCreation,
-	isSideChatCreationForJob,
+	type SideChatCreation,
 	sideChatCreateMutationFilter,
 	sideChatCreateMutationKey,
-	type SideChatCreation,
 } from './side-chat-creation.ts';
 
 describe('side-chat creation guard', () => {
