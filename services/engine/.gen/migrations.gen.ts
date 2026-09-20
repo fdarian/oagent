@@ -11,6 +11,7 @@ import m0006 from '../drizzle/0006_wide_rhino.sql' with { type: 'text' };
 import m0007 from '../drizzle/0007_long_leo.sql' with { type: 'text' };
 import m0008 from '../drizzle/0008_colorful_stingray.sql' with { type: 'text' };
 import m0009 from '../drizzle/0009_many_brother_voodoo.sql' with { type: 'text' };
+import m0010 from '../drizzle/0010_curly_whizzer.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -24,6 +25,7 @@ export default {
   '0006_wide_rhino': m0006,
   '0007_long_leo': m0007,
   '0008_colorful_stingray': m0008,
-  '0009_many_brother_voodoo': m0009
+  '0009_many_brother_voodoo': m0009,
+  '0010_curly_whizzer': m0010
   } as Record<string, string>,
 };
