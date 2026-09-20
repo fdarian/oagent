@@ -184,6 +184,13 @@ const router = procedure.router({
 					Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
 				);
 			}),
+		steer: procedure
+			.input(v.object({ jobId: v.string(), prompt: v.string() }))
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				yield* jobs.steer(options.input.jobId, options.input.prompt);
+				return { ok: true as const };
+			}),
 		wait: procedure
 			.input(
 				v.object({

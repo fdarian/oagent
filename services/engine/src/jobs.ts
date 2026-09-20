@@ -17,12 +17,34 @@ import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Grok } from './grok.ts';
 import { type Backend, isBackend, parseBackend } from './model-catalog.ts';
-import { OpenCode } from './opencode.ts';
+import { OpenCode, OpenCodeSteerNotSupportedError } from './opencode.ts';
 import { Settings } from './settings.ts';
 
-class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
-	jobId: Schema.String,
-}) {}
+export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
+	'JobNotFound',
+	{
+		jobId: Schema.String,
+	},
+) {
+	override get message() {
+		return `Job not found: ${this.jobId}`;
+	}
+}
+
+export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
+	'JobSteerError',
+	{
+		code: Schema.Literals([
+			'NOT_RUNNING',
+			'UNSUPPORTED_BACKEND',
+			'UNSUPPORTED_VERSION',
+			'VERSION_CHECK_FAILED',
+			'SESSION_NOT_READY',
+			'DELIVERY_FAILED',
+		]),
+		message: Schema.String,
+	},
+) {}
 
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
@@ -258,6 +280,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			});
 		};
 
+		const publishEvent = (
+			internalJobId: number,
+			jobId: string,
+			event: SessionUpdate,
+		): void => {
+			const eventId = insertEvent(internalJobId, event);
+			const emitter = liveEmitters.get(jobId);
+			if (emitter !== undefined) {
+				emitter.emit('event', { event, sequence: eventId });
+			}
+		};
+
 		const readEventsPage = (
 			jobId: number,
 			sinceId: number,
@@ -412,8 +446,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				liveEmitters.set(uuid, emitter);
 
 				const onEvent = (event: SessionUpdate): void => {
-					const eventId = insertEvent(internalId, event);
-					emitter.emit('event', { event, sequence: eventId });
+					publishEvent(internalId, uuid, event);
 				};
 
 				const closeResources = Effect.sync(() => {
@@ -559,6 +592,80 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (fiber !== undefined) {
 					yield* Fiber.interrupt(fiber);
 				}
+			});
+
+		const steer = (
+			jobId: string,
+			text: string,
+		): Effect.Effect<void, JobNotFound | JobSteerError, never> =>
+			Effect.gen(function* () {
+				const job = db
+					.select()
+					.from(schema.jobs)
+					.where(eq(schema.jobs.uuid, jobId))
+					.limit(1)
+					.get();
+
+				if (job === undefined) {
+					return yield* new JobNotFound({ jobId });
+				}
+
+				if (job.status !== 'running') {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} cannot be steered because it is ${job.status}; only running jobs can be steered.`,
+					});
+				}
+
+				const backend = parseBackend(job.backend);
+				if (backend !== 'opencode') {
+					return yield* new JobSteerError({
+						code: 'UNSUPPORTED_BACKEND',
+						message: `Steering is not supported for backend "${backend}"; only opencode v2 or newer supports steering.`,
+					});
+				}
+
+				yield* opencode.requireSteerSupport().pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code:
+									error instanceof OpenCodeSteerNotSupportedError
+										? 'UNSUPPORTED_VERSION'
+										: 'VERSION_CHECK_FAILED',
+								message: error.message,
+							}),
+					),
+				);
+
+				if (job.session_id === null) {
+					return yield* new JobSteerError({
+						code: 'SESSION_NOT_READY',
+						message: `Job ${jobId} cannot be steered yet because its OpenCode session ID has not been recorded. Try again after the session starts.`,
+					});
+				}
+
+				const result = yield* opencode
+					.steer({ sessionId: job.session_id, text })
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new JobSteerError({
+									code:
+										error instanceof OpenCodeSteerNotSupportedError
+											? 'UNSUPPORTED_VERSION'
+											: 'DELIVERY_FAILED',
+									message: error.message,
+								}),
+						),
+					);
+
+				publishEvent(job.id, jobId, {
+					sessionUpdate: 'user_message_chunk',
+					messageId: result.messageId,
+					content: { type: 'text', text: result.text },
+					_meta: { 'oagent/steer': true },
+				});
 			});
 
 		const wait = (input: {
@@ -854,6 +961,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		return {
 			start,
 			cancel,
+			steer,
 			wait,
 			list,
 			listByMcpSession,

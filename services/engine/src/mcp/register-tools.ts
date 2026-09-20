@@ -13,6 +13,7 @@ import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
 import { resultTool } from './tools/result.ts';
 import { buildDescription, inputSchema, startTool } from './tools/start.ts';
+import { steerTool } from './tools/steer.ts';
 
 export function registerTools(
 	server: McpServer,
@@ -82,6 +83,15 @@ export function registerTools(
 			inputSchema: cancelTool.inputSchema,
 		},
 		(args) => runHandler(cancelTool.handle(args, { jobs })),
+	);
+
+	server.registerTool(
+		'steer',
+		{
+			description: steerTool.description,
+			inputSchema: steerTool.inputSchema,
+		},
+		(args) => runHandler(steerTool.handle(args, { jobs })),
 	);
 
 	server.registerTool(

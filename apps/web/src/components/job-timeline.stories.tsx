@@ -146,6 +146,38 @@ export const WithReasoning: Story = {
 	},
 };
 
+export const WithSteerMessages: Story = {
+	args: {
+		parts: [
+			{
+				kind: 'text',
+				id: 'text-before-steer',
+				text: 'I’ll update the API implementation next.',
+				createdAt: Date.now() - 5000,
+			},
+			{
+				kind: 'steer',
+				id: 'steer-short',
+				text: 'Please add a test for the error case too.',
+				createdAt: Date.now() - 4000,
+			},
+			{
+				kind: 'steer',
+				id: 'steer-long',
+				text: 'Before you finish, keep the public API backwards compatible.\nAdd coverage for both successful and failed requests.\nUse the existing error type rather than introducing another one.\nUpdate the Storybook example so the new state can be reviewed.\nThen run the package checks and report any unrelated failures.',
+				createdAt: Date.now() - 3000,
+			},
+			{
+				kind: 'text',
+				id: 'text-after-steer',
+				text: 'Got it — I’ll include those changes.',
+				createdAt: Date.now() - 2000,
+			},
+		] satisfies TimelinePart[],
+		streamingTail: null,
+	},
+};
+
 export const WithError: Story = {
 	args: {
 		parts: [
