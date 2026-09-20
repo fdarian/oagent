@@ -121,7 +121,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 				: 'Select an OpenCode agent';
 
 	return (
-		<Field>
+		<Field className="min-w-0">
 			<FieldLabel htmlFor="agent-target-opencode">OpenCode</FieldLabel>
 			<div className="flex items-center gap-2">
 				<Select
@@ -132,10 +132,13 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 					<SelectTrigger id="agent-target-opencode" className="w-full">
 						<SelectValue placeholder={placeholder}>{selectedLabel}</SelectValue>
 					</SelectTrigger>
-					<SelectContent>
+					<SelectContent
+						position="popper"
+						className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]"
+					>
 						{selectedTargetIsUnavailable ? (
 							<SelectItem value={props.value}>
-								<span className="flex min-w-0 flex-col">
+								<span className="flex w-full min-w-0 flex-col overflow-hidden">
 									<span className="font-mono">{props.value}</span>
 									<span className="text-xs text-muted-foreground">
 										Currently unavailable
@@ -145,7 +148,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 						) : null}
 						{targets?.map((target) => (
 							<SelectItem key={target.id} value={target.id}>
-								<span className="flex min-w-0 flex-col">
+								<span className="flex w-full min-w-0 flex-col overflow-hidden">
 									<span>{target.label}</span>
 									{hasDistinctTargetId(target) ? (
 										<span className="font-mono text-xs text-muted-foreground">
@@ -153,7 +156,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 										</span>
 									) : null}
 									{target.description !== undefined ? (
-										<span className="block w-full min-w-0 max-w-md truncate text-xs text-muted-foreground">
+										<span className="block w-full min-w-0 max-w-full truncate pr-6 text-xs text-muted-foreground">
 											{target.description}
 										</span>
 									) : null}
@@ -196,7 +199,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 					preserved unless you clear or replace it.
 				</FieldDescription>
 			) : selectedTarget?.description !== undefined ? (
-				<div className="w-full min-w-0">
+				<div className="w-full min-w-0 max-w-full">
 					<FieldDescription
 						className={
 							expandedTargetId === selectedTarget.id
