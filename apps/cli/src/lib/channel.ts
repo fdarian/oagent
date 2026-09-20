@@ -3,6 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import {
 	type AliasPreset,
 	cancelTool,
+	formatAgentTypes,
 	formatPresets,
 	resultTool,
 	startInputSchema,
@@ -179,22 +180,28 @@ async function waitAndNotify(
 	}
 }
 
-/** Fetch alias presets from the engine. Best-effort: returns [] if the engine is not up yet. */
-async function fetchAliasPresets(client: EngineClient): Promise<AliasPreset[]> {
-	try {
-		const rows = await client.aliases.list();
-		return rows.map(
+async function fetchStartDescriptionData(client: EngineClient): Promise<{
+	aliases: AliasPreset[];
+	agentTypes: string[];
+}> {
+	const responses = await Promise.all([
+		client.aliases.list(),
+		client.agents.list(),
+	]);
+	return {
+		aliases: responses[0].map(
 			(row): AliasPreset => ({
 				name: row.name,
 				backend: row.backend,
 				model_id: row.model_id,
 				reasoning_effort: row.reasoning_effort,
-				description: row.description ?? null,
+				...(row.description === undefined
+					? {}
+					: { description: row.description }),
 			}),
-		);
-	} catch {
-		return [];
-	}
+		),
+		agentTypes: responses[1].map((agent) => agent.name),
+	};
 }
 
 /** Returns the registered start tool handle so the caller can update its description. */
@@ -212,7 +219,13 @@ function registerChannelTools(
 		},
 		async (args) => {
 			try {
-				const started = await client.jobs.start(args);
+				const started = await client.jobs.start({
+					prompt: args.prompt,
+					cwd: args.cwd,
+					model: args.model,
+					agent_type: args.agent_type,
+					sessionId: args.sessionId,
+				});
 				const jobId = started.jobId;
 
 				if (args.background === true) {
@@ -321,13 +334,26 @@ export function runChannelServer(params: {
 			params.mcpName,
 		);
 
-		// Refresh presets on every connect so the description reflects current aliases even if the engine was down at boot.
+		// Fetch after connecting so a channel started before the engine still picks up current options.
 		server.server.oninitialized = () => {
-			void fetchAliasPresets(client).then((aliases) => {
-				startTool.update({
-					description: `${channelStartDescription(params.mcpName)}${formatPresets(aliases)}`,
-				});
-			});
+			void Effect.runFork(
+				Effect.tryPromise({
+					try: () => fetchStartDescriptionData(client),
+					catch: (cause) =>
+						new Error(
+							`Failed to load start tool options: ${errorMessage(cause)}`,
+						),
+				}).pipe(
+					Effect.tap((data) =>
+						Effect.sync(() => {
+							startTool.update({
+								description: `${channelStartDescription(params.mcpName)}${formatPresets(data.aliases)}${formatAgentTypes(data.agentTypes)}`,
+							});
+						}),
+					),
+					Effect.catch((error) => Effect.logWarning(error.message)),
+				),
+			);
 		};
 
 		yield* Effect.tryPromise({

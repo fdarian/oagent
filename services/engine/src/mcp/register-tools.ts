@@ -7,6 +7,7 @@ import {
 	Exit,
 	Option,
 } from 'effect';
+import type { Agents } from '../agents.ts';
 import type { Jobs } from '../jobs.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
@@ -17,6 +18,7 @@ import { steerTool } from './tools/steer.ts';
 export function registerTools(
 	server: McpServer,
 	jobs: Jobs['Service'],
+	agents: Agents['Service'],
 	services: Context.Context<never>,
 	waitUrlBase: string | undefined,
 ): void {
@@ -38,7 +40,13 @@ export function registerTools(
 
 	const registeredStart = server.registerTool(
 		'start',
-		{ description: buildDescription(jobs.listAliases()), inputSchema },
+		{
+			description: buildDescription(
+				jobs.listAliases(),
+				agents.list().map((agent) => agent.name),
+			),
+			inputSchema,
+		},
 		(args, extra) =>
 			runHandler(
 				startTool.handle(args, {
@@ -49,10 +57,13 @@ export function registerTools(
 			),
 	);
 
-	// Refresh aliases on every connect so the description reflects current state per session.
+	// Refresh dynamic options on every connect so the description reflects current state per session.
 	server.server.oninitialized = () => {
 		registeredStart.update({
-			description: buildDescription(jobs.listAliases()),
+			description: buildDescription(
+				jobs.listAliases(),
+				agents.list().map((agent) => agent.name),
+			),
 		});
 	};
 

@@ -6,12 +6,35 @@ import { OpenCode, type OpenCodeEffortOption } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
+export function isBackend(value: string): value is Backend {
+	return (
+		value === 'opencode' ||
+		value === 'cursor' ||
+		value === 'grok' ||
+		value === 'codex'
+	);
+}
+
+export function parseBackend(value: string): Backend {
+	if (isBackend(value)) return value;
+	throw new Error(`Invalid backend: ${value}`);
+}
+
 export type ModelEntry = { id: string; label?: string };
+
+export type AgentTargetEntry = {
+	id: string;
+	label: string;
+	description?: string;
+};
 
 type CacheEntry = {
 	models: ReadonlyArray<ModelEntry>;
+	agentTargets: ReadonlyArray<AgentTargetEntry>;
 	fetchedAt: number;
 };
+
+type CatalogData = Pick<CacheEntry, 'models' | 'agentTargets'>;
 
 type EffortCacheEntry = {
 	efforts: ReadonlyArray<OpenCodeEffortOption>;
@@ -41,21 +64,43 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 
 			const fetch = (
 				backend: Backend,
-			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> => {
+			): Effect.Effect<CatalogData, ModelCatalogError> => {
 				const inner = (() => {
-					if (backend === 'opencode') return opencode.listModels();
-					if (backend === 'grok') return grok.listModels();
-					if (backend === 'codex') return codex.listModels();
-					return cursor.listModels();
-				})();
-				return inner.pipe(
-					Effect.catch((cause) =>
-						Effect.fail(
-							new ModelCatalogError({
-								backend,
-								message: `Failed to list models for ${backend}: ${String(cause)}`,
+					if (backend === 'opencode') {
+						return opencode.listSessionCatalog().pipe(
+							Effect.map((catalog) => ({
+								models: catalog.models,
+								agentTargets: catalog.modes.map((mode) => ({
+									id: mode.id,
+									label: mode.name,
+									...(mode.description === undefined
+										? {}
+										: { description: mode.description }),
+								})),
+							})),
+						);
+					}
+					const models = (() => {
+						if (backend === 'grok') return grok.listModels();
+						if (backend === 'codex') return codex.listModels();
+						return cursor.listModels();
+					})();
+					return models.pipe(
+						Effect.map(
+							(entries): CatalogData => ({
+								models: entries,
+								agentTargets: [],
 							}),
 						),
+					);
+				})();
+				return inner.pipe(
+					Effect.catch(
+						(cause) =>
+							new ModelCatalogError({
+								backend,
+								message: `Failed to list capabilities for ${backend}: ${String(cause)}`,
+							}),
 					),
 				);
 			};
@@ -105,26 +150,42 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 				});
 			};
 
-			const list = (
+			const getCatalog = (
 				backend: Backend,
-			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
+			): Effect.Effect<CatalogData, ModelCatalogError> =>
 				Effect.gen(function* () {
 					const now = Date.now();
 					const current = yield* Ref.get(cache);
 					const entry = current.get(backend);
 					if (entry !== undefined && now - entry.fetchedAt < TTL_MS) {
-						return entry.models;
+						return entry;
 					}
-					const models = yield* fetch(backend);
-					if (models.length > 0) {
+					const catalog = yield* fetch(backend);
+					if (catalog.models.length > 0 || catalog.agentTargets.length > 0) {
 						yield* Ref.update(cache, (m) => {
 							const next = new Map(m);
-							next.set(backend, { models, fetchedAt: now });
+							next.set(backend, { ...catalog, fetchedAt: now });
 							return next;
 						});
 					}
-					return models;
+					return catalog;
 				});
+
+			const list = (
+				backend: Backend,
+			): Effect.Effect<ReadonlyArray<ModelEntry>, ModelCatalogError> =>
+				getCatalog(backend).pipe(Effect.map((catalog) => catalog.models));
+
+			const listAgentTargets = (
+				backend: Backend,
+			): Effect.Effect<ReadonlyArray<AgentTargetEntry>, ModelCatalogError> => {
+				if (backend !== 'opencode') {
+					return Effect.succeed([]);
+				}
+				return getCatalog(backend).pipe(
+					Effect.map((catalog) => catalog.agentTargets),
+				);
+			};
 
 			const invalidate = (backend: Backend) =>
 				Effect.gen(function* () {
@@ -138,7 +199,7 @@ export class ModelCatalog extends Context.Service<ModelCatalog>()(
 					}
 				});
 
-			return { list, listEfforts, invalidate };
+			return { list, listEfforts, listAgentTargets, invalidate };
 		}),
 	},
 ) {

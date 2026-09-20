@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Context, Effect, Layer, Schema } from 'effect';
+import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
@@ -37,6 +38,7 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
 		const services = yield* Effect.context<EngineServices>();
@@ -56,7 +58,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					server: McpServer,
 					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, services, waitUrlBase),
+				) => registerTools(server, jobs, agents, services, waitUrlBase),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -110,6 +112,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
+								agents,
 								services,
 								portlessPublicBase ?? url.origin,
 							);
@@ -271,5 +274,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(Jobs.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(Settings.layer),
+		Layer.provide(Agents.layer),
 	);
 }

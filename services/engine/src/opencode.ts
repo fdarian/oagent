@@ -4,7 +4,9 @@ import {
 	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
+	type AcpSessionCatalog,
 	AcpSessionError,
+	AcpTurnFailed,
 	createAcpConnection,
 } from './acp-agent.ts';
 import { HarnessVersion } from './harness-version.ts';
@@ -18,6 +20,7 @@ import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
+const OPENCODE_API_TIMEOUT_MS = 15_000;
 const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
@@ -26,6 +29,26 @@ const OPENCODE_VERSION_PATTERN =
 export type OpenCodeEffortOption = {
 	value: string;
 	label: string;
+};
+
+const OpenCodeAgentListResponse = Schema.fromJsonString(
+	Schema.Struct({
+		data: Schema.Array(
+			Schema.Struct({
+				id: Schema.String,
+				name: Schema.String,
+				description: Schema.optional(Schema.String),
+				mode: Schema.Literals(['primary', 'subagent', 'all']),
+				hidden: Schema.Boolean,
+			}),
+		),
+	}),
+);
+
+type OpenCodeCommandResult = {
+	exitCode: number;
+	stdout: string;
+	stderr: string;
 };
 
 export class OpenCodeSteerNotSupportedError extends Schema.TaggedError<OpenCodeSteerNotSupportedError>()(
@@ -116,6 +139,129 @@ function commandOutput(stdout: string, stderr: string): string {
 		(part) => part.length > 0,
 	);
 	return parts.join('\n');
+}
+
+function runOpenCodeApi(
+	binary: string,
+	args: ReadonlyArray<string>,
+	env: Readonly<Record<string, string>>,
+): Effect.Effect<string, AcpSessionError> {
+	const command = Effect.scoped(
+		Effect.gen(function* () {
+			const proc = yield* Effect.acquireRelease(
+				Effect.try({
+					try: () =>
+						Bun.spawn([binary, 'api', ...args], {
+							stdin: 'ignore',
+							stdout: 'pipe',
+							stderr: 'pipe',
+							env: { ...process.env, ...env },
+						}),
+					catch: (cause) => new AcpSessionError({ cause }),
+				}),
+				(child) =>
+					Effect.sync(() => {
+						if (child.exitCode === null) child.kill();
+					}),
+			);
+			const output = yield* Effect.tryPromise({
+				try: () =>
+					Promise.all([
+						new Response(proc.stdout).text(),
+						new Response(proc.stderr).text(),
+						proc.exited,
+					]),
+				catch: (cause) => new AcpSessionError({ cause }),
+			});
+			const result: OpenCodeCommandResult = {
+				stdout: output[0],
+				stderr: output[1],
+				exitCode: output[2],
+			};
+			if (result.exitCode !== 0) {
+				const detail = result.stderr.trim();
+				return yield* new AcpSessionError({
+					cause: new Error(
+						detail.length === 0
+							? `opencode api exited with code ${result.exitCode}`
+							: `opencode api exited with code ${result.exitCode}: ${detail}`,
+					),
+				});
+			}
+			return result.stdout;
+		}),
+	);
+	return command.pipe(
+		Effect.timeout(OPENCODE_API_TIMEOUT_MS),
+		Effect.mapError((cause) =>
+			cause instanceof AcpSessionError ? cause : new AcpSessionError({ cause }),
+		),
+	);
+}
+
+function listOpenCodeAgents(
+	binary: string,
+	env: Readonly<Record<string, string>>,
+	cwd: string,
+): Effect.Effect<AcpSessionCatalog['modes'], AcpSessionError> {
+	const location = `location.directory=${cwd}`;
+	return Effect.gen(function* () {
+		// OpenCode 2.0.9 can cache its ACP catalog before file agents load.
+		// This API operation waits for the same location's plugins to activate.
+		yield* runOpenCodeApi(
+			binary,
+			['integration.list', '--param', location],
+			env,
+		).pipe(
+			Effect.catch((error) =>
+				Effect.logDebug(
+					`OpenCode agent activation preflight was unavailable: ${error.message}`,
+				),
+			),
+		);
+		const output = yield* runOpenCodeApi(
+			binary,
+			['agent.list', '--param', location],
+			env,
+		);
+		const response = yield* Schema.decodeUnknownEffect(
+			OpenCodeAgentListResponse,
+		)(output).pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
+		const modes = response.data
+			.filter((agent) => agent.mode !== 'subagent' && !agent.hidden)
+			.map((agent) => ({
+				id: agent.id,
+				name: agent.name,
+				...(agent.description === undefined
+					? {}
+					: { description: agent.description }),
+			}));
+		if (modes.length === 0) {
+			return yield* new AcpSessionError({
+				cause: new Error('opencode api reported no selectable agents'),
+			});
+		}
+		return modes;
+	});
+}
+
+function switchOpenCodeAgent(
+	binary: string,
+	env: Readonly<Record<string, string>>,
+	sessionId: string,
+	agent: string,
+): Effect.Effect<void, AcpSessionError> {
+	return runOpenCodeApi(
+		binary,
+		[
+			'session.switchAgent',
+			'--param',
+			`sessionID=${sessionId}`,
+			'--data',
+			JSON.stringify({ agent }),
+		],
+		env,
+	).pipe(Effect.asVoid);
 }
 
 function parseOpenCodeVersion(output: string): string | undefined {
@@ -226,6 +372,40 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const versionRef = yield* Ref.make<string | undefined>(undefined);
 		const versionSemaphore = yield* Semaphore.make(1);
 
+		// OpenCode 2.0.9 rejects custom agents omitted from its cached ACP catalog,
+		// but its session API can persist the selection before the prompt starts.
+		const selectUnlistedMode = (input: {
+			sessionId: string;
+			mode: string;
+			cwd: string;
+		}) =>
+			Effect.gen(function* () {
+				const env = settings.getHarnessEnv('opencode');
+				const agents = yield* listOpenCodeAgents(binary, env, input.cwd);
+				if (!agents.some((agent) => agent.id === input.mode)) {
+					const available = agents
+						.slice(0, 10)
+						.map((agent) => agent.id)
+						.join(', ');
+					return yield* new AcpTurnFailed({
+						code: 'SET_CONFIG_OPTION',
+						message: `Unknown OpenCode agent "${input.mode}" — available modes: ${available}`,
+						cause: new Error(`Unknown OpenCode agent: ${input.mode}`),
+					});
+				}
+				yield* switchOpenCodeAgent(binary, env, input.sessionId, input.mode);
+			}).pipe(
+				Effect.mapError((cause) =>
+					cause instanceof AcpTurnFailed
+						? cause
+						: new AcpTurnFailed({
+								code: 'SET_CONFIG_OPTION',
+								message: `Failed to select OpenCode agent "${input.mode}": ${cause.message}`,
+								cause,
+							}),
+				),
+			);
+
 		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
 			acpAgent.runTurn({
 				...input,
@@ -235,6 +415,12 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 					input.model,
 					input.reasoningEffort,
 				),
+				setUnlistedMode: (mode) =>
+					selectUnlistedMode({
+						sessionId: mode.sessionId,
+						mode: mode.mode,
+						cwd: input.cwd,
+					}),
 			});
 
 		const resolveVersion = () =>
@@ -303,18 +489,42 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
 
-		const listModels = () =>
+		const listSessionCatalog = (): Effect.Effect<
+			AcpSessionCatalog,
+			AcpSessionError,
+			never
+		> =>
 			Effect.gen(function* () {
 				const version = yield* resolveVersion();
 				const major = parseOpenCodeMajor(version);
 				if (major !== undefined) {
-					if (major >= 2) return yield* acpAgent.listModels();
-					if (major === 1) return yield* listModelsCli();
+					if (major >= 2) {
+						const catalog = yield* acpAgent.listSessionCatalog();
+						const modes = yield* listOpenCodeAgents(
+							binary,
+							settings.getHarnessEnv('opencode'),
+							process.cwd(),
+						).pipe(
+							Effect.catch((error) =>
+								Effect.logDebug(
+									`Falling back to OpenCode ACP agent discovery: ${error.message}`,
+								).pipe(Effect.as(catalog.modes)),
+							),
+						);
+						return { models: catalog.models, modes };
+					}
+					if (major === 1) {
+						const models = yield* listModelsCli();
+						return { models, modes: [] };
+					}
 				}
 				return yield* new AcpSessionError({
 					cause: new Error(`Unsupported opencode version: ${version}`),
 				});
 			});
+
+		const listModels = () =>
+			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
 
 		const requireSteerSupport = () =>
 			Effect.gen(function* () {
@@ -369,6 +579,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		return {
 			runTurn,
 			listModels,
+			listSessionCatalog,
 			listModelEfforts,
 			requireSteerSupport,
 			steer,

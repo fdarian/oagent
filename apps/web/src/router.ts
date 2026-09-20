@@ -5,6 +5,7 @@ import {
 	redirect,
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
+import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
 import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
@@ -53,6 +54,12 @@ const settingsAliasesRoute = createRoute({
 	component: AliasesPage,
 });
 
+const settingsAgentsRoute = createRoute({
+	getParentRoute: () => settingsLayoutRoute,
+	path: 'agents',
+	component: AgentsPage,
+});
+
 const settingsTimeoutRoute = createRoute({
 	getParentRoute: () => settingsLayoutRoute,
 	path: 'timeout',
@@ -70,6 +77,7 @@ const routeTree = rootRoute.addChildren([
 	settingsLayoutRoute.addChildren([
 		settingsIndexRoute,
 		settingsAliasesRoute,
+		settingsAgentsRoute,
 		settingsTimeoutRoute,
 		settingsHarnessRoute,
 	]),
