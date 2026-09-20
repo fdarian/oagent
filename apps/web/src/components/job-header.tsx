@@ -21,6 +21,7 @@ import {
 import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { cn } from '@/lib/utils';
+import { ActionRow } from './ui/action-row';
 
 export type JobHeaderProps = {
 	id: string;
@@ -258,7 +259,7 @@ export function JobHeader(props: JobHeaderProps) {
 						</span>
 					</div>
 				</div>
-				<div className="flex flex-wrap items-center justify-end gap-10">
+				<ActionRow>
 					<div
 						className={cn(
 							'flex items-center gap-[6px] border px-2 py-1 text-caption',
@@ -324,7 +325,7 @@ export function JobHeader(props: JobHeaderProps) {
 						<CopyIcon className="h-3 w-3" />
 						{copied ? 'Copied' : 'ID'}
 					</button>
-				</div>
+				</ActionRow>
 			</div>
 		</div>
 	);
