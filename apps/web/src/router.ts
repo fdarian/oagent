@@ -5,6 +5,10 @@ import {
 	redirect,
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
+import {
+	jobDetailRoutePath,
+	jobDetailSearchSchema,
+} from './lib/job-detail-route.ts';
 import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
@@ -30,7 +34,8 @@ const consoleIndexRoute = createRoute({
 
 const jobDetailRoute = createRoute({
 	getParentRoute: () => consoleLayoutRoute,
-	path: 'jobs/$jobId',
+	path: jobDetailRoutePath,
+	validateSearch: jobDetailSearchSchema,
 	component: JobDetailPage,
 });
 

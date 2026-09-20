@@ -25,6 +25,7 @@ export const Running: Story = {
 		status: 'running',
 		terminatedAt: undefined,
 		onCancel: () => {},
+		onNewSideChat: () => {},
 	},
 };
 
@@ -34,6 +35,18 @@ export const Completed: Story = {
 		status: 'done',
 		terminatedAt: Date.now() - 30_000,
 		onCancel: undefined,
+		onNewSideChat: () => {},
+	},
+};
+
+export const WithSideChats: Story = {
+	args: {
+		...base,
+		status: 'done',
+		terminatedAt: Date.now() - 30_000,
+		onCancel: undefined,
+		onNewSideChat: () => {},
+		onOpenSideChats: () => {},
 	},
 };
 
@@ -43,5 +56,6 @@ export const Errored: Story = {
 		status: 'error',
 		terminatedAt: Date.now() - 15_000,
 		onCancel: undefined,
+		onNewSideChat: () => {},
 	},
 };

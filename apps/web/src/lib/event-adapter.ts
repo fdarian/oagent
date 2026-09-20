@@ -8,6 +8,7 @@ import type {
 export type TimelinePart =
 	| { kind: 'text'; id: string; text: string; createdAt: number }
 	| { kind: 'steer'; id: string; text: string; createdAt: number }
+	| { kind: 'user'; id: string; text: string; createdAt: number }
 	| {
 			kind: 'reasoning';
 			id: string;
@@ -604,7 +605,10 @@ export function applyEvent(
 	return nextState;
 }
 
-export function finalizeState(state: ReduceState): AdapterResult {
+export function finalizeState(
+	state: ReduceState,
+	finalizedAt: number = Date.now(),
+): AdapterResult {
 	let parts = state.parts;
 	let openText = state.openText;
 	let openSteer = state.openSteer;
@@ -635,7 +639,7 @@ export function finalizeState(state: ReduceState): AdapterResult {
 		openSteer = null;
 	}
 	if (openReasoning !== null) {
-		const durationMs = Date.now() - openReasoning.createdAt;
+		const durationMs = finalizedAt - openReasoning.createdAt;
 		parts = [
 			...parts,
 			{
@@ -707,4 +711,17 @@ export function reduceEvents(events: SessionUpdate[]): AdapterResult {
 	}
 
 	return finalizeState(state);
+}
+
+export function reduceTimedEvents(
+	events: Array<{ event: SessionUpdate; createdAt: number }>,
+	finalizedAt: number,
+): AdapterResult {
+	let state = createInitialState();
+
+	for (const item of events) {
+		state = applyEvent(state, item.event, item.createdAt);
+	}
+
+	return finalizeState(state, finalizedAt);
 }

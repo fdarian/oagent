@@ -11,6 +11,7 @@ import {
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { cn } from '@/lib/utils';
 import { JobTimelineError } from './job-timeline-error';
 import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
@@ -23,6 +24,7 @@ export type JobTimelineProps = {
 	cwd: string;
 	header?: ReactNode;
 	isLoading?: boolean;
+	contentClassName?: string;
 };
 
 type ReasoningPart = Extract<TimelinePart, { kind: 'reasoning' }>;
@@ -164,6 +166,7 @@ function renderPart(part: TimelineItem, cwd: string) {
 		case 'text':
 			return <JobTimelineMessage part={part} />;
 		case 'steer':
+		case 'user':
 			return <JobTimelineSteer part={part} />;
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
@@ -176,16 +179,12 @@ function renderPart(part: TimelineItem, cwd: string) {
 	}
 }
 
-export function JobTimeline({
-	parts,
-	streamingTail,
-	cwd,
-	header,
-	isLoading,
-}: JobTimelineProps) {
+export function JobTimeline(props: JobTimelineProps) {
 	const allParts = collapseExplorationParts(
 		collapseReasoningParts(
-			streamingTail !== null ? [...parts, streamingTail] : parts,
+			props.streamingTail !== null
+				? [...props.parts, props.streamingTail]
+				: props.parts,
 		),
 	);
 
@@ -208,14 +207,14 @@ export function JobTimeline({
 		>
 			{allParts.length === 0 ? (
 				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
-					{isLoading ? 'Loading events…' : 'Waiting for events…'}
+					{props.isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
-				<ConversationContent header={header}>
+				<ConversationContent header={props.header}>
 					{(virtualItem) => (
-						<div className="px-33">
+						<div className={cn('px-33', props.contentClassName)}>
 							<div className="mx-auto max-w-[900px]">
-								{renderPart(partAt(virtualItem.index), cwd)}
+								{renderPart(partAt(virtualItem.index), props.cwd)}
 							</div>
 						</div>
 					)}

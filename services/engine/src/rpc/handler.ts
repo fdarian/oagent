@@ -5,6 +5,7 @@ import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
 import { HarnessesError } from '../harnesses.ts';
 import { JobNotFound, JobSteerError } from '../jobs.ts';
 import { ModelCatalogError } from '../model-catalog.ts';
+import { SideChatError, SideChatNotFound } from '../side-chats.ts';
 import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(error: unknown) {
@@ -18,6 +19,19 @@ function toProcedureError(error: unknown) {
 		return new ORPCError('BAD_REQUEST', {
 			message: error.message,
 			cause: error,
+		});
+	}
+	if (error instanceof SideChatNotFound) {
+		return new ORPCError('NOT_FOUND', {
+			message: error.message,
+			cause: error,
+		});
+	}
+	if (error instanceof SideChatError) {
+		return new ORPCError('BAD_REQUEST', {
+			message: error.message,
+			cause: error,
+			data: { code: error.code },
 		});
 	}
 	if (

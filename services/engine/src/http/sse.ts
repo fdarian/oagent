@@ -6,8 +6,8 @@ export function handleJobEvents(
 	jobId: string,
 	signal: AbortSignal,
 ): Response {
-	const detail = jobs.getDetail(jobId);
-	if (detail === undefined) {
+	const job = jobs.getJobMetadata(jobId);
+	if (job === undefined) {
 		return new Response('Job not found', { status: 404 });
 	}
 
@@ -118,7 +118,7 @@ export function handleJobEvents(
 
 				// Race fix: if job became terminal between subscribe and drain,
 				// we may have missed the emitter event. Re-check status; if terminal, close now.
-				const current = jobs.getDetail(jobId);
+				const current = jobs.getJobMetadata(jobId);
 				if (current !== undefined && current.status !== 'running') {
 					if (!sawTerminal) {
 						safeEnqueue(encode('__terminal__'));

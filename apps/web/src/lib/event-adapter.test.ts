@@ -4,6 +4,7 @@ import {
 	applyEvent,
 	createInitialState,
 	finalizeState,
+	reduceTimedEvents,
 	toDisplayState,
 } from './event-adapter';
 
@@ -92,5 +93,28 @@ describe('event adapter steer messages', () => {
 		const state = applyEvent(createInitialState(), event, 1000);
 
 		expect(finalizeState(state).parts).toEqual([]);
+	});
+});
+
+describe('historical event reduction', () => {
+	test('finalizes reasoning at the persisted turn termination time', () => {
+		const event = {
+			sessionUpdate: 'agent_thought_chunk',
+			messageId: 'thought-1',
+			content: { type: 'text', text: 'Thinking' },
+		} satisfies SessionUpdate;
+
+		const result = reduceTimedEvents([{ event, createdAt: 1000 }], 1750);
+
+		expect(result.parts).toEqual([
+			{
+				kind: 'reasoning',
+				id: 'reasoning-0',
+				text: 'Thinking',
+				isStreaming: false,
+				createdAt: 1000,
+				durationMs: 750,
+			},
+		]);
 	});
 });

@@ -1,12 +1,13 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
+import { getEngineEndpointURL } from './orpc.ts';
 import { queryKeys } from './query-keys';
 
 export function useJobListStream() {
 	const queryClient = useQueryClient();
 
 	useEffect(() => {
-		const source = new EventSource('/jobs/events');
+		const source = new EventSource(getEngineEndpointURL('/jobs/events'));
 
 		source.onmessage = () => {
 			queryClient.invalidateQueries({ queryKey: queryKeys.jobs() });
