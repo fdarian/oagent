@@ -8,7 +8,7 @@ import {
 	defineExtension,
 	KEY_ENTER_COMMAND,
 } from 'lexical';
-import { SendIcon } from 'lucide-react';
+import { CornerDownLeftIcon } from 'lucide-react';
 import {
 	type MutableRefObject,
 	useCallback,
@@ -94,17 +94,24 @@ function ComposerController(props: ComposerControllerProps) {
 	);
 
 	return (
-		<button
-			type="button"
-			disabled={props.disabled || isSubmitting || !hasText}
-			onClick={() => {
-				void submit();
-			}}
-			className="flex size-8 shrink-0 items-center justify-center border border-border text-muted-foreground transition-colors hover:border-ink hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
-			aria-label="Send side-chat message"
-		>
-			<SendIcon className="size-3.5" />
-		</button>
+		<>
+			{!hasText && (
+				<span className="pointer-events-none absolute top-1 left-0 text-caption text-muted-foreground">
+					Ask a quick question...
+				</span>
+			)}
+			<button
+				type="button"
+				disabled={props.disabled || isSubmitting || !hasText}
+				onClick={() => {
+					void submit();
+				}}
+				className="absolute top-1/2 right-0 flex size-6 -translate-y-1/2 items-center justify-center border-0 bg-transparent p-0 text-muted-foreground transition-colors hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+				aria-label="Send side-chat message"
+			>
+				<CornerDownLeftIcon className="size-4" />
+			</button>
+		</>
 	);
 }
 
@@ -116,9 +123,8 @@ export function SideChatComposer(props: SideChatComposerProps) {
 				role="textbox"
 				aria-multiline="true"
 				aria-label="Side-chat message"
-				aria-placeholder="Message the side chat"
-				placeholder="Message the side chat"
-				className="min-h-8 min-w-0 flex-1 whitespace-pre-wrap break-words py-1 text-body font-light text-foreground outline-none"
+				aria-placeholder="Ask a quick question..."
+				className="min-h-8 min-w-0 flex-1 whitespace-pre-wrap break-words py-1 pr-8 text-caption font-light text-foreground outline-none"
 				onCompositionStart={() => {
 					isComposing.current = true;
 				}}
@@ -131,7 +137,7 @@ export function SideChatComposer(props: SideChatComposerProps) {
 	);
 
 	return (
-		<div className="flex items-end gap-10 border border-border bg-background p-10 transition-colors focus-within:border-foreground focus-within:ring-1 focus-within:ring-foreground">
+		<div className="relative flex min-h-8 items-center gap-10">
 			<LexicalExtensionComposer
 				extension={sideChatComposerExtension}
 				contentEditable={contentEditable}

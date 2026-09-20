@@ -1,9 +1,10 @@
 import { PlusIcon, XCircleIcon, XIcon } from 'lucide-react';
 import { Dialog as DialogPrimitive } from 'radix-ui';
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { JobTimeline } from '@/components/job-timeline.tsx';
 import { SideChatComposer } from '@/components/side-chat-composer.tsx';
 import type { SideChat, SideChatTimeline } from '@/lib/side-chat-timeline.ts';
+import { ActionRow } from './ui/action-row';
 
 export type SideChatDrawerProps = {
 	open: boolean;
@@ -45,10 +46,49 @@ function DrawerMessage(props: {
 }
 
 export function SideChatDrawer(props: SideChatDrawerProps) {
+	const [closedSideChatIds, setClosedSideChatIds] = useState<Set<string>>(
+		() => new Set(),
+	);
+	useEffect(() => {
+		if (!props.open) setClosedSideChatIds(new Set());
+	}, [props.open]);
+
+	const visibleSideChats =
+		props.sideChats === undefined
+			? undefined
+			: props.sideChats.filter(
+					(sideChat) => !closedSideChatIds.has(sideChat.id),
+				);
 	const hasSideChats =
-		props.sideChats !== undefined && props.sideChats.length > 0;
+		visibleSideChats !== undefined && visibleSideChats.length > 0;
 	const isUnsupported = props.unsupportedMessage !== undefined;
 	const isTurnRunning = props.timeline?.isRunning === true;
+	const handleCloseSideChat = (sideChatId: string) => {
+		if (visibleSideChats === undefined) return;
+		const sideChatIndex = visibleSideChats.findIndex(
+			(sideChat) => sideChat.id === sideChatId,
+		);
+		if (sideChatIndex < 0) return;
+
+		const remainingSideChats = visibleSideChats.filter(
+			(sideChat) => sideChat.id !== sideChatId,
+		);
+		setClosedSideChatIds((previous) => {
+			const next = new Set(previous);
+			next.add(sideChatId);
+			return next;
+		});
+
+		if (sideChatId !== props.selectedSideChatId) return;
+		const nextSideChat =
+			remainingSideChats[sideChatIndex] ??
+			remainingSideChats[sideChatIndex - 1];
+		if (nextSideChat === undefined) {
+			props.onOpenChange(false);
+			return;
+		}
+		props.onSelectSideChat(nextSideChat.id);
+	};
 	const handleCloseAutoFocus = (event: Event) => {
 		if (props.onCloseAutoFocus === undefined) return;
 		event.preventDefault();
@@ -72,7 +112,7 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 								Forked conversations stay separate from the main job.
 							</DialogPrimitive.Description>
 						</div>
-						<div className="flex shrink-0 items-center gap-1">
+						<ActionRow size="sm">
 							{!isUnsupported && (
 								<button
 									type="button"
@@ -93,7 +133,7 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 									<XIcon className="size-4" />
 								</button>
 							</DialogPrimitive.Close>
-						</div>
+						</ActionRow>
 					</div>
 
 					{isUnsupported ? (
@@ -113,27 +153,41 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 									</div>
 								)}
 								{hasSideChats && (
-									<div className="shrink-0 border-b border-border px-22 py-10">
+									<div className="shrink-0 border-b border-border px-22 pt-2">
 										<fieldset
 											aria-label="Side chats"
-											className="flex min-w-0 max-w-full gap-1 border-0 p-0 overflow-x-auto"
+											className="flex min-w-0 max-w-full gap-1 overflow-x-auto border-0 p-0"
 										>
-											{props.sideChats?.map((sideChat, index) => (
-												<button
+											{visibleSideChats?.map((sideChat, index) => (
+												<div
 													key={sideChat.id}
-													type="button"
-													aria-pressed={
-														sideChat.id === props.selectedSideChatId
-													}
-													onClick={() => props.onSelectSideChat(sideChat.id)}
-													className={
-														sideChat.id === props.selectedSideChatId
-															? 'shrink-0 border-b-2 border-foreground px-3 py-1 text-caption text-foreground'
-															: 'shrink-0 border-b-2 border-transparent px-3 py-1 text-caption text-muted-foreground transition-colors hover:text-foreground'
-													}
+													className="group relative flex shrink-0"
 												>
-													Chat {index + 1}
-												</button>
+													<button
+														type="button"
+														aria-pressed={
+															sideChat.id === props.selectedSideChatId
+														}
+														onClick={() => props.onSelectSideChat(sideChat.id)}
+														className={
+															sideChat.id === props.selectedSideChatId
+																? 'shrink-0 border-b-2 border-foreground px-3 py-1 text-caption text-foreground'
+																: 'shrink-0 border-b-2 border-transparent px-3 py-1 text-caption text-muted-foreground transition-colors hover:text-foreground'
+														}
+													>
+														<span className="max-w-32 truncate group-hover:mask-r-from-[calc(100%-2.25rem)] group-hover:mask-r-to-[calc(100%-0.75rem)]">
+															Chat {index + 1}
+														</span>
+													</button>
+													<button
+														type="button"
+														aria-label={`Close Chat ${index + 1}`}
+														onClick={() => handleCloseSideChat(sideChat.id)}
+														className="absolute top-1/2 right-0.5 z-10 flex size-5 -translate-y-1/2 items-center justify-center rounded-full border-0 bg-transparent p-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 hover:text-foreground focus-visible:opacity-100 focus-visible:outline-none"
+													>
+														<XIcon className="size-3" />
+													</button>
+												</div>
 											))}
 										</fieldset>
 									</div>
@@ -163,11 +217,12 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 										Select a side chat to view it.
 									</div>
 								) : (
-									<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+									<div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden py-5">
 										<JobTimeline
 											parts={props.timeline.parts}
 											streamingTail={props.timeline.streamingTail}
 											cwd={props.cwd}
+											contentClassName="px-22"
 											isLoading={props.isLoading}
 										/>
 									</div>
@@ -177,33 +232,33 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 							{props.selectedSideChatId !== undefined &&
 								props.timeline !== undefined && (
 									<div className="shrink-0 border-t border-border p-15">
-										<div className="mb-10 flex items-center justify-between gap-10">
-											<span className="text-caption text-muted-foreground">
-												{isTurnRunning
-													? 'Waiting for the current turn to finish'
-													: 'Messages stay in this side chat'}
-											</span>
-											{props.timeline?.activeTurnId !== undefined &&
-												isTurnRunning &&
-												props.onCancelTurn !== undefined && (
-													<button
-														type="button"
-														onClick={() => {
-															const activeTurnId = props.timeline?.activeTurnId;
-															if (
-																activeTurnId !== undefined &&
-																props.onCancelTurn !== undefined
-															) {
-																props.onCancelTurn(activeTurnId);
-															}
-														}}
-														className="flex items-center gap-1 text-caption text-destructive transition-colors hover:text-foreground"
-													>
-														<XCircleIcon className="size-3" />
-														Cancel turn
-													</button>
-												)}
-										</div>
+										{isTurnRunning && (
+											<div className="mb-2 flex items-center justify-between gap-10">
+												<span className="text-caption text-muted-foreground">
+													Waiting for the current turn to finish
+												</span>
+												{props.timeline?.activeTurnId !== undefined &&
+													props.onCancelTurn !== undefined && (
+														<button
+															type="button"
+															onClick={() => {
+																const activeTurnId =
+																	props.timeline?.activeTurnId;
+																if (
+																	activeTurnId !== undefined &&
+																	props.onCancelTurn !== undefined
+																) {
+																	props.onCancelTurn(activeTurnId);
+																}
+															}}
+															className="flex items-center gap-1 text-caption text-destructive transition-colors hover:text-foreground"
+														>
+															<XCircleIcon className="size-3" />
+															Cancel turn
+														</button>
+													)}
+											</div>
+										)}
 										<SideChatComposer
 											key={props.selectedSideChatId}
 											disabled={props.isSending || isTurnRunning}
