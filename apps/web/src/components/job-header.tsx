@@ -259,7 +259,7 @@ export function JobHeader(props: JobHeaderProps) {
 						</span>
 					</div>
 				</div>
-				<ActionRow>
+				<ActionRow size="md">
 					<div
 						className={cn(
 							'flex items-center gap-[6px] border px-2 py-1 text-caption',
