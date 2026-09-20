@@ -11,3 +11,5 @@ apps/web/dist/
 apps/web/storybook-static/
 tmp/
 .claude/worktrees/*
+spaces/tester/.mcp.json
+spaces/tester/opencode.json
