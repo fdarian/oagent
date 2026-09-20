@@ -84,16 +84,24 @@ function getFormTargets(values: AgentFormValues): Array<AgentTarget> {
 	return targets;
 }
 
+function hasDistinctTargetId(target: AgentTargetOption): boolean {
+	return target.label.toLowerCase() !== target.id.toLowerCase();
+}
+
 function getTargetLabel(
 	target: AgentTargetOption | undefined,
 	value: string,
 ): string | undefined {
 	if (value === '') return undefined;
-	if (target === undefined || target.label === target.id) return value;
+	if (target === undefined) return value;
+	if (!hasDistinctTargetId(target)) return target.label;
 	return `${target.label} (${target.id})`;
 }
 
 function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
+	const expandedTargetIdState = useState<string>();
+	const expandedTargetId = expandedTargetIdState[0];
+	const setExpandedTargetId = expandedTargetIdState[1];
 	const targetsQuery = useQuery({
 		queryKey: queryKeys.agentTargets('opencode'),
 		queryFn: () => orpc.agents.targets({ backend: 'opencode' }),
@@ -139,13 +147,13 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 							<SelectItem key={target.id} value={target.id}>
 								<span className="flex min-w-0 flex-col">
 									<span>{target.label}</span>
-									{target.label !== target.id ? (
+									{hasDistinctTargetId(target) ? (
 										<span className="font-mono text-xs text-muted-foreground">
 											{target.id}
 										</span>
 									) : null}
 									{target.description !== undefined ? (
-										<span className="max-w-md text-xs text-muted-foreground">
+										<span className="block w-full min-w-0 max-w-md truncate text-xs text-muted-foreground">
 											{target.description}
 										</span>
 									) : null}
@@ -188,7 +196,32 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 					preserved unless you clear or replace it.
 				</FieldDescription>
 			) : selectedTarget?.description !== undefined ? (
-				<FieldDescription>{selectedTarget.description}</FieldDescription>
+				<div className="w-full min-w-0">
+					<FieldDescription
+						className={
+							expandedTargetId === selectedTarget.id
+								? 'w-full break-words whitespace-normal'
+								: 'w-full truncate'
+						}
+					>
+						{selectedTarget.description}
+					</FieldDescription>
+					<Button
+						type="button"
+						variant="link"
+						size="xs"
+						className="h-auto shrink-0 px-0 py-0"
+						onClick={() =>
+							setExpandedTargetId(
+								expandedTargetId === selectedTarget.id
+									? undefined
+									: selectedTarget.id,
+							)
+						}
+					>
+						{expandedTargetId === selectedTarget.id ? 'Show less' : 'Show more'}
+					</Button>
+				</div>
 			) : (
 				<FieldDescription>
 					Choose the OpenCode agent used for this agent type.

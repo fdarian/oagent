@@ -17,6 +17,7 @@ export type JobHeaderProps = {
 	cwd: string;
 	backend: Backend;
 	model?: string;
+	agentType?: string;
 	sessionId?: string;
 	createdAt: number;
 	terminatedAt?: number;
@@ -221,6 +222,15 @@ export function JobHeader(props: JobHeaderProps) {
 						<span className="flex min-w-0 max-w-full items-center gap-10">
 							{props.model !== undefined && props.model !== '' && (
 								<span className="truncate">{props.model}</span>
+							)}
+							{props.agentType !== undefined && props.agentType !== '' && (
+								<Badge
+									variant="outline"
+									className="max-w-full truncate rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground"
+									title={props.agentType}
+								>
+									{props.agentType}
+								</Badge>
 							)}
 							<HarnessSessionPopover
 								backend={props.backend}

@@ -15,6 +15,7 @@ export type JobListItem = {
 	cwd: string;
 	backend: Backend;
 	model?: string;
+	agentType?: string;
 	sessionId?: string;
 	mcpSessionId?: string;
 };

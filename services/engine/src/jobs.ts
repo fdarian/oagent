@@ -629,6 +629,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			cwd: string;
 			backend: Backend;
 			model?: string;
+			agentType?: string;
 			sessionId?: string;
 			mcpSessionId?: string;
 		};
@@ -644,6 +645,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			cwd: row.cwd,
 			backend: parseBackend(row.backend),
 			model: row.model ?? undefined,
+			agentType: row.agent_type ?? undefined,
 			sessionId: row.session_id === null ? undefined : row.session_id,
 			mcpSessionId: row.mcp_session_id ?? undefined,
 		});
@@ -687,6 +689,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					cwd: string;
 					backend: Backend;
 					model?: string;
+					agentType?: string;
 					sessionId?: string;
 					recentEvents: SessionUpdate[];
 			  }
@@ -718,6 +721,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				cwd: job.cwd,
 				backend: parseBackend(job.backend),
 				model: job.model ?? undefined,
+				agentType: job.agent_type ?? undefined,
 				sessionId: job.session_id === null ? undefined : job.session_id,
 				recentEvents: allEvents,
 			};

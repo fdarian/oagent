@@ -336,6 +336,10 @@ export function runAcpTurn(
 		model?: string;
 		reasoningEffort?: string;
 		mode?: string;
+		setUnlistedMode?: (input: {
+			sessionId: string;
+			mode: string;
+		}) => Effect.Effect<void, AcpTurnFailed>;
 		sessionId?: string;
 		cwd: string;
 		onSessionId?: (sessionId: string) => void;
@@ -440,12 +444,12 @@ export function runAcpTurn(
 											},
 										]
 									: []),
-								...(input.mode !== undefined
-									? [{ configId: 'mode', value: input.mode }]
-									: []),
 							];
-			for (const configOption of configOptions) {
-				yield* Effect.tryPromise({
+			const requestedMode =
+				configOptions.find((option) => option.configId === 'mode')?.value ??
+				input.mode;
+			const setConfigOption = (configOption: AcpConfigOption) =>
+				Effect.tryPromise({
 					try: () =>
 						env.conn.setSessionConfigOption({
 							sessionId: sessionResult.sessionId,
@@ -469,6 +473,26 @@ export function runAcpTurn(
 						});
 					},
 				});
+			for (const configOption of configOptions) {
+				if (configOption.configId === 'mode') continue;
+				yield* setConfigOption(configOption);
+			}
+			if (requestedMode !== undefined) {
+				const modeIsListed = sessionResult.availableModes.some(
+					(mode) => mode.id === requestedMode,
+				);
+				if (
+					sessionResult.availableModes.length > 0 &&
+					!modeIsListed &&
+					input.setUnlistedMode !== undefined
+				) {
+					yield* input.setUnlistedMode({
+						sessionId: sessionResult.sessionId,
+						mode: requestedMode,
+					});
+				} else {
+					yield* setConfigOption({ configId: 'mode', value: requestedMode });
+				}
 			}
 
 			return yield* Effect.tryPromise({
@@ -527,6 +551,10 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			model?: string;
 			reasoningEffort?: string;
 			mode?: string;
+			setUnlistedMode?: (input: {
+				sessionId: string;
+				mode: string;
+			}) => Effect.Effect<void, AcpTurnFailed>;
 			sessionId?: string;
 			cwd: string;
 			onSessionId?: (sessionId: string) => void;

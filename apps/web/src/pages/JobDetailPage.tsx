@@ -83,6 +83,7 @@ export function JobDetailPage() {
 										cwd={selectedJob.cwd}
 										backend={selectedJob.backend}
 										model={selectedJob.model}
+										agentType={selectedJob.agentType}
 										sessionId={selectedJob.sessionId}
 										createdAt={selectedJob.createdAt}
 										terminatedAt={selectedJob.terminatedAt}

@@ -151,6 +151,7 @@ const router = procedure.router({
 					cwd: detail.cwd,
 					backend: detail.backend,
 					model: detail.model,
+					agentType: detail.agentType,
 					sessionId: detail.sessionId,
 				};
 			}),
