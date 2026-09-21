@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
 import {
 	buildDescription,
+	formatAgentTypeInstructions,
 	formatAgentTypes,
 	inputSchema,
 	startTool,
@@ -47,11 +48,37 @@ async function expectStructuredError(error: AgentStartError) {
 
 describe('start tool agent types', () => {
 	test('lists each configured name without inventing metadata', () => {
-		expect(formatAgentTypes(['reviewer', 'planner'])).toBe(`
+		expect(formatAgentTypes([{ name: 'reviewer' }, { name: 'planner' }])).toBe(`
 
 Configured agent types (use as \`agent_type\`):
   - \`reviewer\`
   - \`planner\``);
+	});
+
+	test('formats configured agent types for server instructions', () => {
+		expect(
+			formatAgentTypeInstructions([
+				{
+					name: 'reviewer',
+					targets: [{ backend: 'opencode', target: 'plan' }],
+				},
+				{
+					name: 'builder',
+					targets: [
+						{ backend: 'opencode', target: 'build' },
+						{ backend: 'cursor', target: 'composer' },
+					],
+				},
+				{ name: 'unmapped', targets: [] },
+			]),
+		).toBe(`Available agent types for the \`start\` tool:
+- reviewer: opencode:plan
+- builder: opencode:build, cursor:composer
+- unmapped: no harness targets configured`);
+	});
+
+	test('omits agent instructions when none are configured', () => {
+		expect(formatAgentTypeInstructions([])).toBeUndefined();
 	});
 
 	test('states when no agent types are configured', () => {

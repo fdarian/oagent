@@ -41,10 +41,7 @@ export function registerTools(
 	const registeredStart = server.registerTool(
 		'start',
 		{
-			description: buildDescription(
-				jobs.listAliases(),
-				agents.list().map((agent) => agent.name),
-			),
+			description: buildDescription(jobs.listAliases(), agents.list()),
 			inputSchema,
 		},
 		(args, extra) =>
@@ -60,10 +57,7 @@ export function registerTools(
 	// Refresh dynamic options on every connect so the description reflects current state per session.
 	server.server.oninitialized = () => {
 		registeredStart.update({
-			description: buildDescription(
-				jobs.listAliases(),
-				agents.list().map((agent) => agent.name),
-			),
+			description: buildDescription(jobs.listAliases(), agents.list()),
 		});
 	};
 

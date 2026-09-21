@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
+import type { AgentDefinition } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
 
 const BASE_DESCRIPTION = `\
@@ -53,23 +54,50 @@ Available presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form
 ${lines.join('\n')}`;
 }
 
-export function formatAgentTypes(agentTypes: ReadonlyArray<string>): string {
+type AgentTypeName = string | Pick<AgentDefinition, 'name'>;
+
+function getAgentTypeName(agentType: AgentTypeName): string {
+	return typeof agentType === 'string' ? agentType : agentType.name;
+}
+
+export function formatAgentTypes(
+	agentTypes: ReadonlyArray<AgentTypeName>,
+): string {
 	if (agentTypes.length === 0) {
 		return `
 
 Configured agent types: none.`;
 	}
 
-	const lines = agentTypes.map((name) => `  - \`${name}\``);
+	const lines = agentTypes.map(
+		(agentType) => `  - \`${getAgentTypeName(agentType)}\``,
+	);
 	return `
 
 Configured agent types (use as \`agent_type\`):
 ${lines.join('\n')}`;
 }
 
+export function formatAgentTypeInstructions(
+	agentTypes: ReadonlyArray<AgentDefinition>,
+): string | undefined {
+	if (agentTypes.length === 0) return undefined;
+
+	const lines = agentTypes.map((agentType) => {
+		const description =
+			agentType.targets.length === 0
+				? 'no harness targets configured'
+				: agentType.targets
+						.map((target) => `${target.backend}:${target.target}`)
+						.join(', ');
+		return `- ${agentType.name}: ${description}`;
+	});
+	return `Available agent types for the \`start\` tool:\n${lines.join('\n')}`;
+}
+
 export function buildDescription(
 	aliases: AliasPreset[],
-	agentTypes: ReadonlyArray<string>,
+	agentTypes: ReadonlyArray<AgentTypeName>,
 ): string {
 	return `${BASE_DESCRIPTION}${formatPresets(aliases)}${formatAgentTypes(agentTypes)}`;
 }
