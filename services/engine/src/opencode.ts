@@ -7,6 +7,7 @@ import {
 	type AcpSessionCatalog,
 	AcpSessionError,
 	AcpTurnFailed,
+	type AcpTurnRecovery,
 	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
@@ -433,6 +434,19 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 								}),
 						),
 					),
+				recovery: {
+					isSessionBusy: (sessionId) =>
+						serviceClient.isSessionActive(binary, sessionId).pipe(
+							Effect.mapError(
+								(cause) =>
+									new AcpTurnFailed({
+										code: 'ACP_RECOVERY_STATUS_FAILED',
+										message: cause.message,
+										cause,
+									}),
+							),
+						),
+				} satisfies AcpTurnRecovery,
 			});
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>

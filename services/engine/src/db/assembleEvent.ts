@@ -7,6 +7,7 @@ import type {
 	ToolCallContent,
 	ToolCallLocation,
 } from '@agentclientprotocol/sdk';
+import { EVENT_DEDUPE_META_KEY } from '../event-key.ts';
 
 type EventRow = {
 	id: number;
@@ -42,7 +43,16 @@ export function assembleEvent(
 	event: EventRow,
 	variant: VariantRow,
 ): SessionUpdate {
-	const meta = event.meta ?? undefined;
+	const visibleMetaEntries =
+		event.meta === null
+			? []
+			: Object.entries(event.meta).filter(
+					(entry) => entry[0] !== EVENT_DEDUPE_META_KEY,
+				);
+	const meta =
+		visibleMetaEntries.length === 0
+			? undefined
+			: Object.fromEntries(visibleMetaEntries);
 
 	switch (event.type) {
 		case 'user_message_chunk':

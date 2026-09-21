@@ -13,6 +13,7 @@ import {
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Settings } from './settings.ts';
@@ -203,12 +204,29 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
-		const insertEvent = (jobId: number, event: SessionUpdate): number => {
+		const insertEvent = (
+			jobId: number,
+			event: SessionUpdate,
+		): { id: number; inserted: boolean } => {
 			return db.transaction((tx) => {
-				const meta =
+				const sourceMeta =
 					'_meta' in event && event._meta !== undefined && event._meta !== null
 						? (event._meta as Record<string, unknown>)
 						: null;
+				const key = eventDedupeKey(event);
+				const existing = tx
+					.select({ id: schema.events.id, meta: schema.events.meta })
+					.from(schema.events)
+					.where(eq(schema.events.job_id, jobId))
+					.all()
+					.find((row) => row.meta?.[EVENT_DEDUPE_META_KEY] === key);
+				if (existing !== undefined) {
+					return { id: existing.id, inserted: false };
+				}
+				const meta = {
+					...(sourceMeta ?? {}),
+					[EVENT_DEDUPE_META_KEY]: key,
+				};
 
 				const eventRow = tx
 					.insert(schema.events)
@@ -314,7 +332,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					}
 				}
 
-				return eventId;
+				return { id: eventId, inserted: true };
 			});
 		};
 
@@ -323,10 +341,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			jobId: string,
 			event: SessionUpdate,
 		): void => {
-			const eventId = insertEvent(internalJobId, event);
+			const inserted = insertEvent(internalJobId, event);
+			if (!inserted.inserted) return;
 			const emitter = liveEmitters.get(jobId);
 			if (emitter !== undefined) {
-				emitter.emit('event', { event, sequence: eventId });
+				emitter.emit('event', { event, sequence: inserted.id });
 			}
 		};
 
