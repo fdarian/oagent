@@ -42,7 +42,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
+type Backend = 'opencode' | 'cursor' | 'grok' | 'codex' | 'claude';
 
 type CodexReasoningEffort =
 	| 'minimal'
@@ -69,12 +69,21 @@ const CODEX_REASONING_EFFORT_OPTIONS: ReadonlyArray<ReasoningEffortOption> = [
 	{ value: 'ultra', label: 'Ultra' },
 ];
 
+const CLAUDE_EFFORT_OPTIONS: ReadonlyArray<ReasoningEffortOption> = [
+	{ value: 'default', label: 'Default' },
+	{ value: 'low', label: 'Low' },
+	{ value: 'medium', label: 'Medium' },
+	{ value: 'high', label: 'High' },
+	{ value: 'max', label: 'Max' },
+];
+
 function isBackend(value: string): value is Backend {
 	return (
 		value === 'opencode' ||
 		value === 'cursor' ||
 		value === 'grok' ||
-		value === 'codex'
+		value === 'codex' ||
+		value === 'claude'
 	);
 }
 
@@ -273,7 +282,9 @@ function AliasForm(props: AliasFormProps) {
 					? value.reasoning_effort
 					: value.backend === 'opencode' && value.reasoning_effort !== 'default'
 						? value.reasoning_effort
-						: undefined;
+						: value.backend === 'claude' && value.reasoning_effort !== 'default'
+							? value.reasoning_effort
+							: undefined;
 			saveMutation.mutate({
 				name: value.name.trim(),
 				backend: value.backend,
@@ -299,9 +310,11 @@ function AliasForm(props: AliasFormProps) {
 	const effortOptions =
 		backend === 'codex'
 			? CODEX_REASONING_EFFORT_OPTIONS
-			: effortsQuery.data === undefined
-				? []
-				: effortsQuery.data;
+			: backend === 'claude'
+				? CLAUDE_EFFORT_OPTIONS
+				: effortsQuery.data === undefined
+					? []
+					: effortsQuery.data;
 
 	return (
 		<form
@@ -366,6 +379,7 @@ function AliasForm(props: AliasFormProps) {
 								<SelectItem value="cursor">cursor</SelectItem>
 								<SelectItem value="grok">grok</SelectItem>
 								<SelectItem value="codex">codex</SelectItem>
+								<SelectItem value="claude">claude</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
@@ -432,68 +446,75 @@ function AliasForm(props: AliasFormProps) {
 				</form.Field>
 			)}
 
-			{backend === 'opencode' && modelId.trim() !== '' && (
-				<form.Field name="reasoning_effort">
-					{(field) => {
-						if (effortsQuery.isPending) {
+			{(backend === 'opencode' || backend === 'claude') &&
+				modelId.trim() !== '' && (
+					<form.Field name="reasoning_effort">
+						{(field) => {
+							if (effortsQuery.isPending) {
+								return (
+									<Field>
+										<FieldLabel htmlFor={field.name}>
+											Reasoning effort
+										</FieldLabel>
+										<Select value="" disabled>
+											<SelectTrigger id={field.name} disabled>
+												<SelectValue placeholder="Loading…" />
+											</SelectTrigger>
+										</Select>
+									</Field>
+								);
+							}
+
+							if (effortsQuery.isError) {
+								return (
+									<Field>
+										<FieldLabel htmlFor={field.name}>
+											Reasoning effort
+										</FieldLabel>
+										<FieldError>
+											Failed to load reasoning efforts:{' '}
+											{effortsQuery.error.message}
+										</FieldError>
+									</Field>
+								);
+							}
+
+							if (effortOptions.length === 0) {
+								return (
+									<Field>
+										<FieldLabel htmlFor={field.name}>
+											Reasoning effort
+										</FieldLabel>
+										<FieldDescription>
+											No effort variants for this model
+										</FieldDescription>
+									</Field>
+								);
+							}
+
 							return (
 								<Field>
 									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
-									<Select value="" disabled>
-										<SelectTrigger id={field.name} disabled>
-											<SelectValue placeholder="Loading…" />
+									<Select
+										value={field.state.value}
+										onValueChange={(value) => field.handleChange(value)}
+									>
+										<SelectTrigger id={field.name}>
+											<SelectValue placeholder="Select reasoning effort" />
 										</SelectTrigger>
+										<SelectContent>
+											{effortOptions.map((option) => (
+												<SelectItem key={option.value} value={option.value}>
+													{option.label}
+												</SelectItem>
+											))}
+										</SelectContent>
 									</Select>
 								</Field>
 							);
-						}
-
-						if (effortsQuery.isError) {
-							return (
-								<Field>
-									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
-									<FieldError>
-										Failed to load reasoning efforts:{' '}
-										{effortsQuery.error.message}
-									</FieldError>
-								</Field>
-							);
-						}
-
-						if (effortOptions.length === 0) {
-							return (
-								<Field>
-									<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
-									<FieldDescription>
-										No effort variants for this model
-									</FieldDescription>
-								</Field>
-							);
-						}
-
-						return (
-							<Field>
-								<FieldLabel htmlFor={field.name}>Reasoning effort</FieldLabel>
-								<Select
-									value={field.state.value}
-									onValueChange={(value) => field.handleChange(value)}
-								>
-									<SelectTrigger id={field.name}>
-										<SelectValue placeholder="Select reasoning effort" />
-									</SelectTrigger>
-									<SelectContent>
-										{effortOptions.map((option) => (
-											<SelectItem key={option.value} value={option.value}>
-												{option.label}
-											</SelectItem>
-										))}
-									</SelectContent>
-								</Select>
-							</Field>
-						);
-					}}
-				</form.Field>
-			)}
+						}}
+					</form.Field>
+				)}
 
 			<form.Field name="description">
 				{(field) => (
