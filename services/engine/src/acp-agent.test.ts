@@ -25,6 +25,57 @@ const SESSION_MODE_CONFIG_OPTIONS: Array<SessionConfigOption> = [
 ];
 
 describe('ACP pre-prompt ordering', () => {
+	test('uses model config options when the session omits top-level models', async () => {
+		type NewSessionResult = Awaited<
+			ReturnType<ClientSideConnection['newSession']>
+		>;
+		const conn = {
+			newSession: async (): Promise<NewSessionResult> =>
+				({
+					sessionId: 'ses_test',
+					configOptions: [
+						{
+							id: 'model',
+							name: 'Model',
+							category: 'model',
+							type: 'select',
+							currentValue: 'model-a',
+							options: [
+								{ value: 'model-a', name: 'Model A' },
+								{ value: 'model-b', name: 'Model B' },
+							],
+						},
+					],
+				}) as NewSessionResult,
+			setSessionConfigOption: async () => {
+				throw new Error('model is unavailable');
+			},
+			prompt: async () => {
+				throw new Error('prompt must not run after setup fails');
+			},
+		} as unknown as ClientSideConnection;
+
+		await expect(
+			Effect.runPromise(
+				runAcpTurn(
+					{
+						conn,
+						registerListener: () => () => {},
+						extNotificationHandlers: new Map(),
+					},
+					{
+						prompt: 'continue',
+						cwd: '/tmp',
+						model: 'missing-model',
+					},
+				),
+			),
+		).rejects.toMatchObject({
+			code: 'SET_CONFIG_OPTION',
+			message: expect.stringContaining('available models: model-a, model-b'),
+		});
+	});
+
 	test('creates, persists, and configures a session before the prompt', async () => {
 		const order: string[] = [];
 		type NewSessionResult = Awaited<

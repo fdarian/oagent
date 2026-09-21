@@ -165,7 +165,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
 						});
 					}
 					return { backend, modelId, reasoningEffort: undefined };

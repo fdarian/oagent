@@ -6,14 +6,15 @@ import type {
 	AcpTurnFailed,
 } from './acp-agent.ts';
 
-export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
+export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex' | 'claude';
 
 export function isBackend(value: string): value is Backend {
 	return (
 		value === 'opencode' ||
 		value === 'cursor' ||
 		value === 'grok' ||
-		value === 'codex'
+		value === 'codex' ||
+		value === 'claude'
 	);
 }
 
