@@ -2,7 +2,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { type Backend, parseBackend } from './model-catalog.ts';
+import { type Backend, parseBackend } from './harness.ts';
 
 export type AgentHarnessTarget = {
 	readonly backend: Backend;

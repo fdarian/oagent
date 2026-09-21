@@ -10,6 +10,7 @@ import {
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
+import type { Backend, HarnessCheckResult } from './harness.ts';
 
 type AcpEnv =
 	| Record<string, string | undefined>
@@ -331,6 +332,22 @@ export function probeAcpConnection(
 				agentVersion: agentInfo === undefined ? undefined : agentInfo.version,
 			};
 		}),
+	);
+}
+
+export function checkAcpConnection(
+	backend: Backend,
+	config: AcpAgentConfig,
+): Effect.Effect<HarnessCheckResult, never, never> {
+	return probeAcpConnection(config).pipe(
+		Effect.map((info) => ({ backend, ok: true as const, ...info })),
+		Effect.catchTag('AcpSessionError', (error) =>
+			Effect.succeed({
+				backend,
+				ok: false as const,
+				message: error.message,
+			}),
+		),
 	);
 }
 
