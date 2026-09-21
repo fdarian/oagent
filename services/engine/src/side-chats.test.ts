@@ -12,7 +12,7 @@ import { runMigrations } from './db/migrate.ts';
 import * as schema from './db/schema.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
-import { OpenCode } from './opencode.ts';
+import type { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 import { SIDE_CHAT_FIRST_PROMPT_REMINDER, SideChats } from './side-chats.ts';
 

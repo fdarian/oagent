@@ -10,7 +10,7 @@ import {
 	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
-import { HarnessSteerError, type Harness } from './harness.ts';
+import { type Harness, HarnessSteerError } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import { OpenCodeServiceClient } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';

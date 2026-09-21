@@ -7,8 +7,8 @@ import {
 	probeAcpConnection,
 } from './acp-agent.ts';
 import {
-	HarnessAuthError,
 	type Harness,
+	HarnessAuthError,
 	type HarnessAuthStatus,
 	type HarnessCancelLoginResult,
 	type HarnessLoginResult,

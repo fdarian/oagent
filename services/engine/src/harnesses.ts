@@ -2,12 +2,12 @@ import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import {
-	type Backend,
-	type HarnessAuthStatus,
-	type HarnessCancelLoginResult,
-	type HarnessCheckResult,
-	type HarnessLoginResult,
+import type {
+	Backend,
+	HarnessAuthStatus,
+	HarnessCancelLoginResult,
+	HarnessCheckResult,
+	HarnessLoginResult,
 } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 

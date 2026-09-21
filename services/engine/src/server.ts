@@ -5,12 +5,12 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
-import { HarnessRegistry } from './harness-registry.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { createEngineHandler } from './rpc/handler.ts';
