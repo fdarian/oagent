@@ -41,7 +41,7 @@ function channelStartDescription(source: string) {
 	return `\
 Delegate a task to the coding agent, running as a subprocess via the oagent engine. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
-agent is the coding agent. Supports two backends: OpenCode and Cursor. Returns \
+agent is the coding agent. Supports the configured ACP backends. Returns \
 immediately with {jobId}. You do NOT need to poll or wait: when the job finishes, \
 its result is pushed into this session as a <channel source="${source}" job_id="..." \
 status="..."> event. Continue with other work — you will be notified. The pushed \
