@@ -93,7 +93,7 @@ export const ConversationContent = ({
 	const virtualItems = virtualizer.getVirtualItems();
 
 	return (
-		<div ref={scrollRef} className="flex-1 overflow-y-auto">
+		<div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
 			{header !== undefined && (
 				<div className="sticky top-0 z-10 bg-background">{header}</div>
 			)}

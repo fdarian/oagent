@@ -4,12 +4,20 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import * as v from 'valibot';
+import { Agents } from '../agents.ts';
 import { HarnessModelError, HarnessRegistry } from '../harness.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { Settings } from '../settings.ts';
+import { SideChats } from '../side-chats.ts';
 
-export type EngineServices = Jobs | Harnesses | Settings | HarnessRegistry;
+export type EngineServices =
+	| Jobs
+	| SideChats
+	| Harnesses
+	| Settings
+	| HarnessRegistry
+	| Agents;
 export type EngineContext = WithEffectContext<EngineServices>;
 
 const procedure = os.$context<EngineContext>();
@@ -21,6 +29,11 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 
 const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
+const agentNameSchema = v.pipe(v.string(), v.nonEmpty());
+const agentTargetSchema = v.object({
+	backend: backendSchema,
+	target: v.pipe(v.string(), v.nonEmpty()),
+});
 
 const harnessEnvEntrySchema = v.object({
 	key: v.pipe(
@@ -129,18 +142,19 @@ const router = procedure.router({
 			.input(v.object({ jobId: v.string() }))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
-				const detail = jobs.getDetail(options.input.jobId);
-				if (detail === undefined) return undefined;
+				const job = jobs.getRootJobMetadata(options.input.jobId);
+				if (job === undefined) return undefined;
 				return {
-					id: detail.id,
-					status: detail.status,
-					createdAt: detail.createdAt,
-					terminatedAt: detail.terminatedAt,
-					prompt: detail.prompt,
-					cwd: detail.cwd,
-					backend: detail.backend,
-					model: detail.model,
-					sessionId: detail.sessionId,
+					id: job.id,
+					status: job.status,
+					createdAt: job.createdAt,
+					terminatedAt: job.terminatedAt,
+					prompt: job.prompt,
+					cwd: job.cwd,
+					backend: job.backend,
+					model: job.model,
+					agentType: job.agentType,
+					sessionId: job.sessionId,
 				};
 			}),
 		start: procedure
@@ -149,12 +163,19 @@ const router = procedure.router({
 					prompt: v.string(),
 					cwd: v.string(),
 					model: v.optional(v.string()),
+					agent_type: v.optional(v.string()),
 					sessionId: v.optional(v.string()),
 				}),
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
-				return yield* jobs.start(options.input);
+				return yield* jobs.start({
+					prompt: options.input.prompt,
+					cwd: options.input.cwd,
+					model: options.input.model,
+					agentType: options.input.agent_type,
+					sessionId: options.input.sessionId,
+				});
 			}),
 		cancel: procedure
 			.input(v.object({ jobId: v.string() }))
@@ -164,6 +185,13 @@ const router = procedure.router({
 					Effect.map(() => ({ ok: true })),
 					Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
 				);
+			}),
+		steer: procedure
+			.input(v.object({ jobId: v.string(), prompt: v.string() }))
+			.effect(function* (options) {
+				const jobs = yield* Jobs;
+				yield* jobs.steer(options.input.jobId, options.input.prompt);
+				return { ok: true as const };
 			}),
 		wait: procedure
 			.input(
@@ -182,6 +210,31 @@ const router = procedure.router({
 						}),
 					),
 				);
+			}),
+	},
+	sideChats: {
+		list: procedure
+			.input(v.object({ sourceJobId: v.string() }))
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.list(options.input.sourceJobId);
+			}),
+		create: procedure
+			.input(v.object({ sourceJobId: v.string() }))
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.create(options.input.sourceJobId);
+			}),
+		send: procedure
+			.input(
+				v.object({
+					sideChatId: v.string(),
+					prompt: v.pipe(v.string(), v.nonEmpty()),
+				}),
+			)
+			.effect(function* (options) {
+				const sideChats = yield* SideChats;
+				return yield* sideChats.send(options.input);
 			}),
 	},
 	aliases: {
@@ -216,6 +269,45 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				return { ok: jobs.deleteAlias(options.input.name) };
+			}),
+	},
+	agents: {
+		list: procedure.input(v.void_()).effect(function* () {
+			const agents = yield* Agents;
+			return agents.list();
+		}),
+		save: procedure
+			.input(
+				v.object({
+					name: agentNameSchema,
+					targets: v.array(agentTargetSchema),
+				}),
+			)
+			.effect(function* (options) {
+				const agents = yield* Agents;
+				return agents.save(options.input);
+			}),
+		delete: procedure
+			.input(v.object({ name: agentNameSchema }))
+			.effect(function* (options) {
+				const agents = yield* Agents;
+				return { ok: agents.delete(options.input.name) };
+			}),
+		targets: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const harnessRegistry = yield* HarnessRegistry;
+				return yield* harnessRegistry
+					.listAgentTargets(options.input.backend)
+					.pipe(
+						Effect.mapError(
+							(cause) =>
+								new HarnessModelError({
+									backend: options.input.backend,
+									message: `Failed to list agent targets for ${options.input.backend}: ${String(cause)}`,
+								}),
+						),
+					);
 			}),
 	},
 	settings: {

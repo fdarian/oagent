@@ -1,7 +1,9 @@
 import type { Preview } from '@storybook/react-vite';
 import '../src/styles.css';
+import { withAppProviders } from './with-app-providers';
 
 const preview: Preview = {
+	decorators: [withAppProviders],
 	parameters: {
 		layout: 'fullscreen',
 		backgrounds: {

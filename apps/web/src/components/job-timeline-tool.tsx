@@ -128,7 +128,7 @@ function ToolRow(props: ToolRowProps) {
 	}
 
 	return (
-		<Collapsible defaultOpen={false} className="group mb-2 w-full">
+		<Collapsible defaultOpen={false} className="group/tool-row mb-2 w-full">
 			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
 				<span className="shrink-0 font-medium text-sm">{props.label}</span>
 				{props.descriptor !== undefined && props.descriptor !== null && (
@@ -137,7 +137,7 @@ function ToolRow(props: ToolRowProps) {
 				{props.running && (
 					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
 				)}
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90 group-data-[state=open]:opacity-100" />
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover/tool-row:opacity-100 group-data-[state=open]/tool-row:rotate-90 group-data-[state=open]/tool-row:opacity-100" />
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-2">{props.children}</CollapsibleContent>
 		</Collapsible>
@@ -211,6 +211,13 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 
 	if (part.toolKind === 'search') {
 		return <SearchRow part={part} running={isRunning} error={isError} />;
+	}
+
+	if (
+		part.toolName.toLowerCase() === 'skill' ||
+		part.title.toLowerCase() === 'skill'
+	) {
+		return <SkillRow part={part} running={isRunning} error={isError} />;
 	}
 
 	if (readStringProp(part.rawInput, 'variant') === 'ListDir') {
@@ -423,17 +430,24 @@ function EditRow(props: { part: ToolPart; cwd: string }) {
 			part.locations[0]?.path ??
 			readStringProp(part.rawInput, 'filePath') ??
 			readStringProp(part.rawInput, 'path');
+		const patchText = readStringProp(part.rawInput, 'patchText');
 		const descriptor =
 			rawPath !== undefined && rawPath.length > 0
 				? relativePath(rawPath, props.cwd)
 				: 'file';
+		const children =
+			patchText !== undefined && patchText.length > 0 ? (
+				<CodeBlock code={patchText} language="diff" />
+			) : null;
 		return (
 			<ToolRow
 				label="Edit"
 				descriptor={descriptor}
 				running={isRunning}
 				error={isError}
-			/>
+			>
+				{children}
+			</ToolRow>
 		);
 	}
 
@@ -560,6 +574,34 @@ function SearchRow(props: {
 	return (
 		<ToolRow
 			label={label}
+			descriptor={descriptor}
+			running={props.running}
+			error={props.error}
+		>
+			{children}
+		</ToolRow>
+	);
+}
+
+function SkillRow(props: { part: ToolPart; running: boolean; error: boolean }) {
+	const part = props.part;
+	const skillName =
+		readStringProp(part.rawInput, 'id') ??
+		readStringProp(part.rawInput, 'name');
+	const descriptor = skillName === undefined ? undefined : `${skillName}`;
+	const output = extractEffectiveOutput(part);
+	const children =
+		part.content.length > 0 ? (
+			part.content.map((c, i) => (
+				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+			))
+		) : output.length > 0 ? (
+			<GenericOutput output={output} />
+		) : null;
+
+	return (
+		<ToolRow
+			label="Skill"
 			descriptor={descriptor}
 			running={props.running}
 			error={props.error}

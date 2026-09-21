@@ -1,3 +1,5 @@
+import { getEngineEndpointURL } from './orpc.ts';
+
 const warmedAt = new Map<string, number>();
 const active = new Set<string>();
 const WARMUP_COOLDOWN_MS = 5000;
@@ -18,7 +20,9 @@ export function warmUpJobEvents(
 	warmedAt.set(jobId, Date.now());
 	active.add(jobId);
 
-	const source = new EventSource(`/jobs/${jobId}/events`);
+	const source = new EventSource(
+		getEngineEndpointURL(`/jobs/${encodeURIComponent(jobId)}/events`),
+	);
 	let done = false;
 
 	const cleanup = (): void => {

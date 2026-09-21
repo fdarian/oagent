@@ -3,17 +3,20 @@ import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { Context, Effect, Layer, Schema } from 'effect';
+import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
+import { HarnessRegistry } from './harness.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
 import { Settings } from './settings.ts';
+import { SideChats } from './side-chats.ts';
 
 const PORTLESS_ALIAS = 'oagent';
 const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
@@ -37,6 +40,7 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
 		const services = yield* Effect.context<EngineServices>();
@@ -56,7 +60,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					server: McpServer,
 					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, services, waitUrlBase),
+				) => registerTools(server, jobs, agents, services, waitUrlBase),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -110,6 +114,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
+								agents,
 								services,
 								portlessPublicBase ?? url.origin,
 							);
@@ -269,7 +274,10 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Settings.layer),
+		Layer.provide(Agents.layer),
 	);
 }

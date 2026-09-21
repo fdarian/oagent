@@ -1,4 +1,3 @@
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	type AcpAgentConfig,
@@ -121,14 +120,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 		const listModelEfforts = () => Effect.succeed([]);
 		const invalidate = () => modelCache.invalidate();
 
-		const runTurn = (input: {
-			prompt: string;
-			model?: string;
-			sessionId?: string;
-			cwd: string;
-			onSessionId?: (sessionId: string) => void;
-			onEvent?: (event: SessionUpdate) => void;
-		}) =>
+		const runTurn = (input: Parameters<typeof runAcpTurn>[1]) =>
 			Effect.scoped(
 				Effect.gen(function* () {
 					const connEnv = yield* createAcpConnection(
@@ -152,6 +144,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 			runTurn,
 			listModels,
 			listModelEfforts,
+			listAgentTargets: () => Effect.succeed([]),
 			resolveBinary: resolveGrokBinary,
 			version,
 			invalidate,

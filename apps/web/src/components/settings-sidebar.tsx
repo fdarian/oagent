@@ -13,6 +13,7 @@ import { cn } from '@/lib/utils';
 
 const NAV = [
 	{ label: 'Aliases', to: '/settings/aliases' as const },
+	{ label: 'Agents', to: '/settings/agents' as const },
 	{ label: 'Timeout', to: '/settings/timeout' as const },
 ];
 
@@ -37,7 +38,7 @@ export function SettingsSidebar() {
 	);
 
 	return (
-		<nav className="flex flex-col border-t border-border">
+		<nav className="flex min-h-0 flex-1 flex-col border-t border-border">
 			{NAV.map((item) => (
 				<Link
 					key={item.to}

@@ -502,6 +502,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 			},
 			listModels,
 			listModelEfforts,
+			listAgentTargets: () => Effect.succeed([]),
 			resolveBinary: resolveCodexBinary,
 			version,
 			invalidate,

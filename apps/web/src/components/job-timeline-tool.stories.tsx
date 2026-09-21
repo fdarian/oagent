@@ -96,3 +96,48 @@ export const OutputError: Story = {
 		},
 	},
 };
+
+export const PatchText: Story = {
+	args: {
+		part: {
+			kind: 'tool',
+			id: 'tool-patch',
+			toolCallId: 'tc-patch',
+			toolName: 'patch',
+			title: 'patch',
+			toolKind: 'edit',
+			state: 'output-available',
+			content: [],
+			locations: [],
+			rawInput: {
+				patchText: `*** Begin Patch
+*** Update File: src/config.ts
+@@
+-export const port = 3000;
++export const port = 3001;
+*** End Patch`,
+			},
+			createdAt: Date.now() - 500,
+			durationMs: 100,
+		},
+	},
+};
+
+export const Skill: Story = {
+	args: {
+		part: {
+			kind: 'tool',
+			id: 'tool-skill',
+			toolCallId: 'tc-skill',
+			toolName: 'skill',
+			title: 'Skill',
+			state: 'output-available',
+			content: [],
+			locations: [],
+			rawInput: { id: 'code-ts' },
+			rawOutput: { formatted_output: 'Loaded skill code-ts' },
+			createdAt: Date.now() - 500,
+			durationMs: 100,
+		},
+	},
+};

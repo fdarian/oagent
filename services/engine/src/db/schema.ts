@@ -6,7 +6,9 @@ import type {
 	ToolCallContent,
 	ToolCallLocation,
 } from '@agentclientprotocol/sdk';
+import { sql } from 'drizzle-orm';
 import {
+	type AnySQLiteColumn,
 	index,
 	integer,
 	real,
@@ -24,6 +26,7 @@ export const jobs = sqliteTable(
 		prompt: text().notNull(),
 		cwd: text().notNull(),
 		model: text(),
+		agent_type: text(),
 		backend: text().notNull(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
@@ -34,10 +37,44 @@ export const jobs = sqliteTable(
 		text: text(),
 		stop_reason: text(),
 		error_message: text(),
+		side_chat_id: integer({ mode: 'number' }).references(
+			(): AnySQLiteColumn => sideChats.id,
+			{ onDelete: 'cascade' },
+		),
 	},
 	(table) => [
 		uniqueIndex('jobs_uuid_uq').on(table.uuid),
 		index('jobs_status_created_at_idx').on(table.status, table.created_at),
+		index('jobs_side_chat_created_at_idx').on(
+			table.side_chat_id,
+			table.created_at,
+		),
+		uniqueIndex('jobs_side_chat_running_uq')
+			.on(table.side_chat_id)
+			.where(sql`${table.status} = 'running'`),
+	],
+);
+
+export const sideChats = sqliteTable(
+	'side_chats',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		uuid: text().notNull(),
+		source_job_id: integer({ mode: 'number' })
+			.notNull()
+			.references((): AnySQLiteColumn => jobs.id, { onDelete: 'cascade' }),
+		session_id: text(),
+		first_turn_dispatched_at: integer({ mode: 'timestamp_ms' }),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex('side_chats_uuid_uq').on(table.uuid),
+		index('side_chats_source_job_created_at_idx').on(
+			table.source_job_id,
+			table.created_at,
+		),
 	],
 );
 
@@ -183,6 +220,45 @@ export const modelAliases = sqliteTable(
 			.$defaultFn(() => new Date()),
 	},
 	(table) => [uniqueIndex('model_aliases_name_uq').on(table.name)],
+);
+
+export const agents = sqliteTable(
+	'agents',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		name: text().notNull(),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [uniqueIndex('agents_name_uq').on(table.name)],
+);
+
+export const agentHarnessTargets = sqliteTable(
+	'agent_harness_targets',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		agent_id: integer({ mode: 'number' })
+			.notNull()
+			.references(() => agents.id, { onDelete: 'cascade' }),
+		backend: text().notNull(),
+		target: text().notNull(),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex('agent_harness_targets_agent_id_backend_uq').on(
+			table.agent_id,
+			table.backend,
+		),
+	],
 );
 
 export const settings = sqliteTable(

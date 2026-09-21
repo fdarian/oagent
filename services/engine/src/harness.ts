@@ -1,6 +1,16 @@
 import { Context, Effect, Layer, Schema } from 'effect';
-import type { AcpAgent, AcpSessionError, AcpTurnFailed } from './acp-agent.ts';
+import type {
+	AcpAgent,
+	AcpForkNotSupportedError,
+	AcpSessionError,
+	AcpTurnFailed,
+} from './acp-agent.ts';
 import type { CodexAuthError } from './codex.ts';
+import {
+	type HarnessForkSession,
+	type HarnessSteer,
+	HarnessSteerError,
+} from './harness-capabilities.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
@@ -8,7 +18,27 @@ import { OpenCode } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
+export function isBackend(value: string): value is Backend {
+	return (
+		value === 'opencode' ||
+		value === 'cursor' ||
+		value === 'grok' ||
+		value === 'codex'
+	);
+}
+
+export function parseBackend(value: string): Backend {
+	if (isBackend(value)) return value;
+	throw new Error(`Invalid persisted job backend: ${value}`);
+}
+
 export type ModelEntry = { id: string; label?: string };
+
+export type AgentTargetEntry = {
+	id: string;
+	label: string;
+	description?: string;
+};
 
 export type ModelEffort = {
 	value: string;
@@ -23,7 +53,12 @@ export class HarnessModelError extends Schema.TaggedError<HarnessModelError>()(
 	},
 ) {}
 
-export type HarnessError = AcpSessionError | AcpTurnFailed | CodexAuthError;
+export type HarnessError =
+	| AcpForkNotSupportedError
+	| AcpSessionError
+	| AcpTurnFailed
+	| CodexAuthError
+	| HarnessSteerError;
 
 export type HarnessCheckResult =
 	| {
@@ -89,11 +124,18 @@ export type Harness = {
 	listModelEfforts: (
 		model: string,
 	) => Effect.Effect<ReadonlyArray<ModelEffort>, HarnessError, never>;
+	listAgentTargets: () => Effect.Effect<
+		ReadonlyArray<AgentTargetEntry>,
+		HarnessError,
+		never
+	>;
 	resolveBinary: () => string | undefined;
 	version: () => Effect.Effect<string | undefined, HarnessError, never>;
 	invalidate: () => Effect.Effect<void, never, never>;
 	check: () => Effect.Effect<HarnessCheckResult, never, never>;
 	auth?: HarnessAuth;
+	steer?: HarnessSteer;
+	forkSession?: HarnessForkSession;
 };
 
 export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
@@ -118,8 +160,10 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 			];
 
 			const get = (backend: Backend): Harness => byBackend[backend];
+			const listAgentTargets = (backend: Backend) =>
+				get(backend).listAgentTargets();
 
-			return { all, get };
+			return { all, get, listAgentTargets };
 		}),
 	},
 ) {

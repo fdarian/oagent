@@ -64,6 +64,20 @@
       "when": 1789716718114,
       "tag": "0008_colorful_stingray",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1789788826463,
+      "tag": "0009_many_brother_voodoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "6",
+      "when": 1789888995691,
+      "tag": "0010_curly_whizzer",
+      "breakpoints": true
     }
   ]
 }

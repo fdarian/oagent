@@ -1,3 +1,4 @@
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
 	AcpAgent,
@@ -126,10 +127,18 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 					...input,
 					model,
 					reasoningEffort: undefined,
+					onExtensionEvent: (method, params) => {
+						input.onExtensionEvent?.(method, params);
+						input.onEvent?.({
+							sessionUpdate: 'cursor_extension',
+							_meta: { method, params },
+						} as unknown as SessionUpdate);
+					},
 				});
 			},
 			listModels,
 			listModelEfforts,
+			listAgentTargets: () => Effect.succeed([]),
 			resolveBinary: resolveCursorBinary,
 			version,
 			invalidate,
