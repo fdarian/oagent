@@ -1,20 +1,10 @@
-import { Context, Effect, Layer, Schema } from 'effect';
+import { Effect, Schema } from 'effect';
 import type {
 	AcpAgent,
 	AcpForkNotSupportedError,
 	AcpSessionError,
 	AcpTurnFailed,
 } from './acp-agent.ts';
-import type { CodexAuthError } from './codex.ts';
-import {
-	type HarnessForkSession,
-	type HarnessSteer,
-	HarnessSteerError,
-} from './harness-capabilities.ts';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
-import { Grok } from './grok.ts';
-import { OpenCode } from './opencode.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex';
 
@@ -53,11 +43,38 @@ export class HarnessModelError extends Schema.TaggedError<HarnessModelError>()(
 	},
 ) {}
 
+export class HarnessAuthError extends Schema.TaggedError<HarnessAuthError>()(
+	'HarnessAuthError',
+	{
+		operation: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		return this.cause instanceof Error
+			? this.cause.message
+			: String(this.cause);
+	}
+}
+
+export class HarnessSteerError extends Schema.TaggedError<HarnessSteerError>()(
+	'HarnessSteerError',
+	{
+		code: Schema.Literals([
+			'UNSUPPORTED_VERSION',
+			'VERSION_CHECK_FAILED',
+			'DELIVERY_FAILED',
+		]),
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
 export type HarnessError =
 	| AcpForkNotSupportedError
 	| AcpSessionError
 	| AcpTurnFailed
-	| CodexAuthError
+	| HarnessAuthError
 	| HarnessSteerError;
 
 export type HarnessCheckResult =
@@ -113,6 +130,25 @@ export type HarnessAuth = {
 	logout: () => Effect.Effect<HarnessAuthStatus, HarnessError, never>;
 };
 
+export type HarnessSteerResult = {
+	messageId: string;
+	text: string;
+};
+
+export type HarnessSteer = (input: {
+	sessionId: string;
+	text: string;
+}) => Effect.Effect<HarnessSteerResult, HarnessSteerError, never>;
+
+export type HarnessForkSession = (input: {
+	sessionId: string;
+	cwd: string;
+}) => Effect.Effect<
+	{ sessionId: string },
+	AcpForkNotSupportedError | AcpSessionError,
+	never
+>;
+
 export type Harness = {
 	backend: Backend;
 	runTurn: AcpAgent['Service']['runTurn'];
@@ -137,43 +173,3 @@ export type Harness = {
 	steer?: HarnessSteer;
 	forkSession?: HarnessForkSession;
 };
-
-export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
-	'oagent/HarnessRegistry',
-	{
-		make: Effect.gen(function* () {
-			const opencode = yield* OpenCode;
-			const cursor = yield* Cursor;
-			const grok = yield* Grok;
-			const codex = yield* Codex;
-			const byBackend: Record<Backend, Harness> = {
-				opencode,
-				cursor,
-				grok,
-				codex,
-			};
-			const all: ReadonlyArray<Harness> = [
-				byBackend.opencode,
-				byBackend.cursor,
-				byBackend.grok,
-				byBackend.codex,
-			];
-
-			const get = (backend: Backend): Harness => byBackend[backend];
-			const listAgentTargets = (backend: Backend) =>
-				get(backend).listAgentTargets();
-
-			return { all, get, listAgentTargets };
-		}),
-	},
-) {
-	static readonly layer = Layer.effect(
-		HarnessRegistry,
-		HarnessRegistry.make,
-	).pipe(
-		Layer.provide(OpenCode.layer),
-		Layer.provide(Cursor.layer),
-		Layer.provide(Grok.layer),
-		Layer.provide(Codex.layer),
-	);
-}

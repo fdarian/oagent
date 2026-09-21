@@ -8,8 +8,8 @@ import {
 	type HarnessCancelLoginResult,
 	type HarnessCheckResult,
 	type HarnessLoginResult,
-	HarnessRegistry,
 } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 
 export type HarnessRecord = {
 	backend: Backend;

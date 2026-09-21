@@ -13,12 +13,8 @@ import {
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import {
-	type Backend,
-	HarnessRegistry,
-	isBackend,
-	parseBackend,
-} from './harness.ts';
+import { type Backend, isBackend, parseBackend } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { Settings } from './settings.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(

@@ -10,8 +10,7 @@ import {
 	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
-import type { Harness } from './harness.ts';
-import { HarnessSteerError } from './harness-capabilities.ts';
+import { HarnessSteerError, type Harness } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import { OpenCodeServiceClient } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
@@ -428,23 +427,6 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
 			acpAgent.forkSession(input);
 
-		const resolveVersion = () =>
-			versionSemaphore.withPermit(
-				Effect.gen(function* () {
-					const memoized = yield* Ref.get(versionRef);
-					if (memoized.loaded) {
-						if (memoized.value === undefined) {
-							return yield* new AcpSessionError({
-								cause: new Error('Could not detect an opencode version'),
-							});
-						}
-						return memoized.value;
-					}
-					const detected = yield* resolveOpenCodeVersion(binary);
-					yield* Ref.set(versionRef, { loaded: true, value: detected });
-					return detected;
-				}),
-			);
 		const version = () =>
 			versionSemaphore.withPermit(
 				Effect.gen(function* () {
@@ -507,8 +489,13 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const version = yield* resolveVersion();
-				const major = parseOpenCodeMajor(version);
+				const detectedVersion = yield* version();
+				if (detectedVersion === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error('Could not detect an opencode version'),
+					});
+				}
+				const major = parseOpenCodeMajor(detectedVersion);
 				if (major !== undefined) {
 					if (major >= 2) {
 						const catalog = yield* acpAgent.listSessionCatalog();
@@ -531,7 +518,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 					}
 				}
 				return yield* new AcpSessionError({
-					cause: new Error(`Unsupported opencode version: ${version}`),
+					cause: new Error(`Unsupported opencode version: ${detectedVersion}`),
 				});
 			});
 
@@ -552,12 +539,19 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 
 		const requireSteerSupport = () =>
 			Effect.gen(function* () {
-				const version = yield* resolveVersion();
-				const major = parseOpenCodeMajor(version);
-				if (major === undefined || major < 2) {
-					return yield* new OpenCodeSteerNotSupportedError({ version });
+				const detectedVersion = yield* version();
+				if (detectedVersion === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error('Could not detect an opencode version'),
+					});
 				}
-				return version;
+				const major = parseOpenCodeMajor(detectedVersion);
+				if (major === undefined || major < 2) {
+					return yield* new OpenCodeSteerNotSupportedError({
+						version: detectedVersion,
+					});
+				}
+				return detectedVersion;
 			});
 
 		const steer = (input: { sessionId: string; text: string }) =>

@@ -6,11 +6,12 @@ import {
 	checkAcpConnection,
 	probeAcpConnection,
 } from './acp-agent.ts';
-import type {
-	Harness,
-	HarnessAuthStatus,
-	HarnessCancelLoginResult,
-	HarnessLoginResult,
+import {
+	HarnessAuthError,
+	type Harness,
+	type HarnessAuthStatus,
+	type HarnessCancelLoginResult,
+	type HarnessLoginResult,
 } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
@@ -43,7 +44,7 @@ const AUTH_COMMAND_TIMEOUT_MS = 15_000;
 const AUTH_PROMPT_TIMEOUT_MS = 15_000;
 const AUTH_LOGIN_TIMEOUT_MS = 15 * 60 * 1_000;
 
-export class CodexAuthError extends Schema.TaggedError<CodexAuthError>()(
+class CodexAuthError extends Schema.TaggedError<CodexAuthError>()(
 	'CodexAuthError',
 	{
 		operation: Schema.String,
@@ -55,6 +56,19 @@ export class CodexAuthError extends Schema.TaggedError<CodexAuthError>()(
 			? this.cause.message
 			: String(this.cause);
 	}
+}
+
+function toHarnessAuthError(error: CodexAuthError): HarnessAuthError {
+	return new HarnessAuthError({
+		operation: error.operation,
+		cause: error.cause,
+	});
+}
+
+function mapAuthError<A>(
+	effect: Effect.Effect<A, CodexAuthError, never>,
+): Effect.Effect<A, HarnessAuthError, never> {
+	return effect.pipe(Effect.mapError(toHarnessAuthError));
 }
 
 function stripAnsi(value: string): string {
@@ -487,6 +501,14 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 				yield* invalidate();
 				return { backend: 'codex', status: 'logged_out' as const };
 			});
+
+		const auth = {
+			authStatus: () => mapAuthError(authStatus()),
+			login: () => mapAuthError(login()),
+			cancelLogin: () => mapAuthError(cancelLogin()),
+			logout: () => mapAuthError(logout()),
+		};
+
 		return {
 			backend: 'codex',
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
@@ -507,7 +529,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 			version,
 			invalidate,
 			check,
-			auth: { authStatus, login, cancelLogin, logout },
+			auth,
 		} satisfies Harness;
 	}),
 }) {

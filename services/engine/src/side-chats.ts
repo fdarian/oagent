@@ -7,7 +7,7 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { HarnessRegistry } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
 
 export const SIDE_CHAT_FIRST_PROMPT_REMINDER =

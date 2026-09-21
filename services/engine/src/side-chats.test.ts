@@ -10,7 +10,7 @@ import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import { runMigrations } from './db/migrate.ts';
 import * as schema from './db/schema.ts';
-import { HarnessRegistry } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
