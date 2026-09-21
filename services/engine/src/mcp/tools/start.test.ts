@@ -46,11 +46,16 @@ async function expectStructuredError(error: AgentStartError) {
 }
 
 describe('start tool agent types', () => {
-	test('lists each configured name without inventing metadata', () => {
-		expect(formatAgentTypes(['reviewer', 'planner'])).toBe(`
+	test('lists configured names with their descriptions', () => {
+		expect(
+			formatAgentTypes([
+				{ name: 'reviewer', description: 'Reviews changes.' },
+				{ name: 'planner' },
+			]),
+		).toBe(`
 
 Configured agent types (use as \`agent_type\`):
-  - \`reviewer\`
+  - \`reviewer\` — Reviews changes.
   - \`planner\``);
 	});
 

@@ -25,6 +25,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
@@ -37,6 +38,7 @@ type AgentTargetOption = Awaited<
 
 type AgentFormValues = {
 	name: string;
+	description: string;
 	opencodeTarget: string;
 	cursorTarget: string;
 	grokTarget: string;
@@ -63,6 +65,14 @@ function getTarget(agent: Agent | undefined, backend: Backend): string {
 	if (agent === undefined) return '';
 	const target = agent.targets.find((entry) => entry.backend === backend);
 	return target === undefined ? '' : target.target;
+}
+
+function useOpenCodeTargets() {
+	return useQuery({
+		queryKey: queryKeys.agentTargets('opencode'),
+		queryFn: () => orpc.agents.targets({ backend: 'opencode' }),
+		staleTime: 5 * 60 * 1000,
+	});
 }
 
 function addTarget(
@@ -102,11 +112,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 	const expandedTargetIdState = useState<string>();
 	const expandedTargetId = expandedTargetIdState[0];
 	const setExpandedTargetId = expandedTargetIdState[1];
-	const targetsQuery = useQuery({
-		queryKey: queryKeys.agentTargets('opencode'),
-		queryFn: () => orpc.agents.targets({ backend: 'opencode' }),
-		staleTime: 5 * 60 * 1000,
-	});
+	const targetsQuery = useOpenCodeTargets();
 	const targets = targetsQuery.data;
 	const selectedTarget = targets?.find((target) => target.id === props.value);
 	const selectedLabel = getTargetLabel(selectedTarget, props.value);
@@ -260,8 +266,11 @@ function AgentForm(props: AgentFormProps) {
 	const queryClient = useQueryClient();
 	const [saveError, setSaveError] = useState<string | undefined>();
 	const saveMutation = useMutation({
-		mutationFn: (input: { name: string; targets: Array<AgentTarget> }) =>
-			orpc.agents.save(input),
+		mutationFn: (input: {
+			name: string;
+			description: string | null;
+			targets: Array<AgentTarget>;
+		}) => orpc.agents.save(input),
 		onSuccess: () => {
 			queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
 			props.onSuccess();
@@ -273,6 +282,11 @@ function AgentForm(props: AgentFormProps) {
 	const form = useForm({
 		defaultValues: {
 			name: props.editingAgent === undefined ? '' : props.editingAgent.name,
+			description:
+				props.editingAgent?.description === undefined ||
+				props.editingAgent.description === null
+					? ''
+					: props.editingAgent.description,
 			opencodeTarget: getTarget(props.editingAgent, 'opencode'),
 			cursorTarget: getTarget(props.editingAgent, 'cursor'),
 			grokTarget: getTarget(props.editingAgent, 'grok'),
@@ -281,14 +295,24 @@ function AgentForm(props: AgentFormProps) {
 		onSubmit: (submission) => {
 			const values: AgentFormValues = submission.value;
 			setSaveError(undefined);
+			const description = values.description.trim();
 			saveMutation.mutate({
 				name: values.name.trim(),
+				description: description === '' ? null : description,
 				targets: getFormTargets(values),
 			});
 		},
 	});
 	const canSubmit = useStore(form.store, (state) => state.canSubmit);
 	const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
+	const opencodeTarget = useStore(
+		form.store,
+		(state) => state.values.opencodeTarget,
+	);
+	const openCodeTargetsQuery = useOpenCodeTargets();
+	const nativeDescription = openCodeTargetsQuery.data?.find(
+		(target) => target.id === opencodeTarget,
+	)?.description;
 
 	return (
 		<form
@@ -331,6 +355,44 @@ function AgentForm(props: AgentFormProps) {
 							) : null}
 							{isInvalid ? (
 								<FieldError errors={field.state.meta.errors} />
+							) : null}
+						</Field>
+					);
+				}}
+			</form.Field>
+
+			<form.Field name="description">
+				{(field) => {
+					const canUseNativeDescription =
+						field.state.value.trim() === '' &&
+						nativeDescription !== undefined &&
+						nativeDescription.trim() !== '';
+					return (
+						<Field>
+							<FieldLabel htmlFor={field.name}>Description</FieldLabel>
+							<Textarea
+								id={field.name}
+								value={field.state.value}
+								onBlur={field.handleBlur}
+								onChange={(event) => {
+									field.handleChange(event.target.value);
+									setSaveError(undefined);
+								}}
+								placeholder="Optional description"
+							/>
+							{canUseNativeDescription ? (
+								<Button
+									type="button"
+									variant="link"
+									size="xs"
+									className="h-auto self-start px-0 py-0"
+									onClick={() => {
+										if (nativeDescription === undefined) return;
+										field.handleChange(nativeDescription);
+									}}
+								>
+									Use OpenCode description
+								</Button>
 							) : null}
 						</Field>
 					);
@@ -520,6 +582,7 @@ export function AgentsPage() {
 							<thead>
 								<tr className="border-b border-border text-muted-foreground">
 									<th className="py-3 pr-4 font-normal">Name</th>
+									<th className="py-3 pr-4 font-normal">Description</th>
 									<th className="py-3 pr-4 font-normal">Harness targets</th>
 									<th className="py-3 text-right font-normal">Actions</th>
 								</tr>
@@ -532,6 +595,13 @@ export function AgentsPage() {
 									>
 										<td className="py-3 pr-4 font-mono text-foreground">
 											{agent.name}
+										</td>
+										<td className="max-w-[280px] py-3 pr-4 break-words whitespace-pre-wrap text-muted-foreground">
+											{agent.description !== undefined &&
+											agent.description !== null &&
+											agent.description.trim() !== ''
+												? agent.description
+												: null}
 										</td>
 										<td className="py-3 pr-4">
 											<AgentTargets agent={agent} />
@@ -580,7 +650,7 @@ export function AgentsPage() {
 						<DialogDescription>
 							{editingAgent === undefined
 								? 'Define an agent type and its harness mappings.'
-								: 'Update the harness mappings for this agent type.'}
+								: 'Update the description and harness mappings for this agent type.'}
 						</DialogDescription>
 					</DialogHeader>
 					{isFormOpen ? (

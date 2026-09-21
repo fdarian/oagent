@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
+	type AgentTypePreset,
 	type AliasPreset,
 	cancelTool,
 	formatAgentTypes,
@@ -182,7 +183,7 @@ async function waitAndNotify(
 
 async function fetchStartDescriptionData(client: EngineClient): Promise<{
 	aliases: AliasPreset[];
-	agentTypes: string[];
+	agentTypes: AgentTypePreset[];
 }> {
 	const responses = await Promise.all([
 		client.aliases.list(),
@@ -200,7 +201,14 @@ async function fetchStartDescriptionData(client: EngineClient): Promise<{
 					: { description: row.description }),
 			}),
 		),
-		agentTypes: responses[1].map((agent) => agent.name),
+		agentTypes: responses[1].map(
+			(agent): AgentTypePreset => ({
+				name: agent.name,
+				...(agent.description === undefined
+					? {}
+					: { description: agent.description }),
+			}),
+		),
 	};
 }
 

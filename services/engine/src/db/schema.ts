@@ -227,6 +227,7 @@ export const agents = sqliteTable(
 	{
 		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
 		name: text().notNull(),
+		description: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),
