@@ -4,17 +4,10 @@ import type { AgentDefinition } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
 
 const BASE_DESCRIPTION = `\
-Launch or continue an agent.
-
-It returns the final result as a discriminated union:
-- Success: \`{ status: "done", text, sessionId, stopReason }\` — the final aggregated assistant text plus the \`sessionId\` you can pass back into a subsequent \`start\` call to continue the same conversation
-- Error: \`{ status: "error", message, sessionId? }\` — the job terminated with an error; \
-  \`sessionId\` is included when the harness created a session before the error
-- Cancelled: \`{ status: "cancelled", sessionId? }\` — \`sessionId\` is included when the \
-  harness created a session before cancellation
-- Pending: \`{ status: "running", jobId }\` — the job is still running. Wait by running \`oagent jobs wait <jobId>\` verbatim as a background command (it can block for many minutes). Do NOT pipe, redirect, or wrap it (no \`| tail\`, \`2>&1\`, \`echo $?\`, etc.) — it prints exactly one JSON result line to stdout that you read directly.
-
-If this tool timed-out, you can find the jobId from \`oagent jobs list\``;
+Launch or continue a coding-agent session and return its result. If it returns \
+\`{ status: "running", jobId }\`, run \`oagent jobs wait <jobId>\` as a \
+background command or use the \`result\` tool; pass a returned \`sessionId\` to \
+a later call to resume the session.`;
 
 export type AliasPreset = {
 	name: string;
@@ -24,7 +17,7 @@ export type AliasPreset = {
 	description?: string | null;
 };
 
-/** Renders the preset/alias suffix shared by every `start` tool description. Empty when there are no aliases. */
+/** Renders the preset/alias suffix used by the Claude channel start description. */
 export function formatPresets(aliases: AliasPreset[]): string {
 	if (aliases.length === 0) {
 		return '';
@@ -52,6 +45,21 @@ export function formatPresets(aliases: AliasPreset[]): string {
 
 Available presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form):
 ${lines.join('\n')}`;
+}
+
+function formatAliasInstructions(aliases: AliasPreset[]): string | undefined {
+	if (aliases.length === 0) return undefined;
+
+	const lines = aliases.map((alias) => {
+		const description =
+			alias.description !== undefined &&
+			alias.description !== null &&
+			alias.description !== ''
+				? ` — ${alias.description}`
+				: '';
+		return `- ${alias.name}: ${alias.backend}:${alias.model_id}${description}`;
+	});
+	return `Available model aliases for the \`start\` tool:\n${lines.join('\n')}`;
 }
 
 type AgentTypeName = string | Pick<AgentDefinition, 'name'>;
@@ -95,41 +103,48 @@ export function formatAgentTypeInstructions(
 	return `Available agent types for the \`start\` tool:\n${lines.join('\n')}`;
 }
 
-export function buildDescription(
+export function formatMcpInstructions(
 	aliases: AliasPreset[],
-	agentTypes: ReadonlyArray<AgentTypeName>,
-): string {
-	return `${BASE_DESCRIPTION}${formatPresets(aliases)}${formatAgentTypes(agentTypes)}`;
+	agentTypes: ReadonlyArray<AgentDefinition>,
+): string | undefined {
+	const sections: Array<string> = [];
+	const aliasInstructions = formatAliasInstructions(aliases);
+	if (aliasInstructions !== undefined) sections.push(aliasInstructions);
+	const agentTypeInstructions = formatAgentTypeInstructions(agentTypes);
+	if (agentTypeInstructions !== undefined) {
+		sections.push(agentTypeInstructions);
+	}
+	return sections.length === 0 ? undefined : sections.join('\n\n');
+}
+
+export function buildDescription(): string {
+	return BASE_DESCRIPTION;
 }
 
 export const inputSchema = {
-	prompt: z.string().describe('The task instructions'),
-	cwd: z
-		.string()
-		.describe('Absolute path to the directory the agent should operate in'),
+	prompt: z.string().describe('Task instructions for the agent.'),
+	cwd: z.string().describe('Absolute working directory for the agent.'),
 	model: z
 		.string()
 		.optional()
 		.describe(
-			'Model id in either: `<backend>:<modelId>` format or an `alias`. If the user has not specified a model, ask them which model and backend to use.',
+			'Pick a model alias from the server instructions, or pass a raw `<backend>:<modelId>` value.',
 		),
 	agent_type: z
 		.string()
 		.optional()
-		.describe(
-			'Configured agent type to run. Available agent types are listed in this tool description.',
-		),
+		.describe('Optional configured agent type from the server instructions.'),
 	sessionId: z
 		.string()
 		.optional()
 		.describe(
-			'Resume a prior session. Pass the `sessionId` returned from a previous result done response.',
+			'Session ID from a previous `start` result to resume that session.',
 		),
 	background: z
 		.boolean()
 		.optional()
 		.describe(
-			'`false` (default), block until the job finishes (up to the configured timeout) and return the final result; When `true`, return immediately with `{ status:"running", jobId }`',
+			'When true, return immediately with a jobId instead of waiting for the result.',
 		),
 };
 

@@ -4,8 +4,7 @@ import { z } from 'zod';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
 import {
 	buildDescription,
-	formatAgentTypeInstructions,
-	formatAgentTypes,
+	formatMcpInstructions,
 	inputSchema,
 	startTool,
 } from './start.ts';
@@ -46,43 +45,48 @@ async function expectStructuredError(error: AgentStartError) {
 	});
 }
 
-describe('start tool agent types', () => {
-	test('lists each configured name without inventing metadata', () => {
-		expect(formatAgentTypes([{ name: 'reviewer' }, { name: 'planner' }])).toBe(`
-
-Configured agent types (use as \`agent_type\`):
-  - \`reviewer\`
-  - \`planner\``);
-	});
-
-	test('formats configured agent types for server instructions', () => {
+describe('start tool descriptions', () => {
+	test('formats aliases and agent types for server instructions', () => {
 		expect(
-			formatAgentTypeInstructions([
-				{
-					name: 'reviewer',
-					targets: [{ backend: 'opencode', target: 'plan' }],
-				},
-				{
-					name: 'builder',
-					targets: [
-						{ backend: 'opencode', target: 'build' },
-						{ backend: 'cursor', target: 'composer' },
-					],
-				},
-				{ name: 'unmapped', targets: [] },
-			]),
-		).toBe(`Available agent types for the \`start\` tool:
+			formatMcpInstructions(
+				[
+					{
+						name: 'fast',
+						backend: 'opencode',
+						model_id: 'model',
+						description: 'Fast implementation model',
+					},
+					{
+						name: 'fallback',
+						backend: 'cursor',
+						model_id: 'auto',
+					},
+				],
+				[
+					{
+						name: 'reviewer',
+						targets: [{ backend: 'opencode', target: 'plan' }],
+					},
+					{ name: 'unmapped', targets: [] },
+				],
+			),
+		).toBe(`Available model aliases for the \`start\` tool:
+- fast: opencode:model — Fast implementation model
+- fallback: cursor:auto
+
+Available agent types for the \`start\` tool:
 - reviewer: opencode:plan
-- builder: opencode:build, cursor:composer
 - unmapped: no harness targets configured`);
 	});
 
-	test('omits agent instructions when none are configured', () => {
-		expect(formatAgentTypeInstructions([])).toBeUndefined();
+	test('omits server instructions when no aliases or agent types are configured', () => {
+		expect(formatMcpInstructions([], [])).toBeUndefined();
 	});
 
-	test('states when no agent types are configured', () => {
-		expect(buildDescription([], [])).toContain('Configured agent types: none.');
+	test('keeps the start tool description focused', () => {
+		expect(buildDescription()).toBe(
+			'Launch or continue a coding-agent session and return its result. If it returns `{ status: "running", jobId }`, run `oagent jobs wait <jobId>` as a background command or use the `result` tool; pass a returned `sessionId` to a later call to resume the session.',
+		);
 	});
 
 	test('accepts agent_type in the shared input schema', () => {
