@@ -122,4 +122,37 @@ describe('Agents', () => {
 			}).pipe(Effect.provide(createAgentsLayer())),
 		);
 	});
+
+	test('round-trips an edited description through save and list', async () => {
+		await Effect.runPromise(
+			Effect.gen(function* () {
+				const agents = yield* Agents;
+				agents.save({
+					name: 'reviewer',
+					description: 'Initial description.',
+					targets: [{ backend: 'opencode', target: 'plan' }],
+				});
+				expect(agents.list()).toEqual([
+					{
+						name: 'reviewer',
+						description: 'Initial description.',
+						targets: [{ backend: 'opencode', target: 'plan' }],
+					},
+				]);
+
+				agents.save({
+					name: 'reviewer',
+					description: 'Updated description.',
+					targets: [{ backend: 'opencode', target: 'plan' }],
+				});
+				expect(agents.list()).toEqual([
+					{
+						name: 'reviewer',
+						description: 'Updated description.',
+						targets: [{ backend: 'opencode', target: 'plan' }],
+					},
+				]);
+			}).pipe(Effect.provide(createAgentsLayer())),
+		);
+	});
 });
