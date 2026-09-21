@@ -1,6 +1,6 @@
 # oagent
 
-MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex. Semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
+MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex, Claude. Semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
 
 https://github.com/user-attachments/assets/59e762b9-cfe7-49c6-80ff-03722baf4a68
 
@@ -14,12 +14,20 @@ Install the CLI for whichever backend(s) you plan to use — each backend manage
 | `cursor` | `cursor-agent` | `OAGENT_CURSOR_BIN` |
 | `grok` | `grok` | `OAGENT_GROK_BIN` |
 | `codex` | `codex-acp` (uses `codex` from `$PATH` when available) | `OAGENT_CODEX_BIN` |
+| `claude` | `claude-agent-acp` | `OAGENT_CLAUDE_BIN` |
 
 The Codex backend always speaks ACP through `codex-acp`. When a `codex` executable
 is available on `$PATH`, oagent passes its path through `CODEX_PATH` so the adapter
 uses that installed Codex runtime instead of its bundled one. Set `CODEX_PATH`
 explicitly to choose a different Codex runtime; `OAGENT_CODEX_BIN` still selects
 the ACP adapter itself.
+
+The Claude adapter can be installed globally with npm so oagent can discover its
+binary: `npm install -g @agentclientprotocol/claude-agent-acp`. It requires Node
+22 or newer. Authenticate with the native Claude CLI before starting a job, for
+example `claude auth login --claudeai` or `claude auth login --console`. Check the
+current status with `claude auth status --json`; oagent does not manage Claude
+credentials.
 
 <details>
 <summary>Permissions: `--dangerously-skip-permissions` by default</summary>
@@ -154,7 +162,7 @@ Launches or continues an agent. By default it blocks (up to 30 minutes) and retu
 Input:
 - `prompt: string` — the task to send
 - `cwd: string` — **required** absolute path to the directory the agent should operate in; typically the parent agent's project root
-- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`. If the user hasn't specified a model, ask them which model and backend to use.
+- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`, `claude`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`, `claude:<modelId>`. If the user hasn't specified a model, ask them which model and backend to use.
 - `agent_type?: string` — configured agent type to use for the selected backend. The tool description lists the currently configured names. Unknown names and names without a mapping for the selected backend return distinct errors.
 - `sessionId?: string` — pass the `sessionId` returned from a prior `done` result to continue that conversation.
 - `background?: boolean` — default `false` (block until finished, up to 30 minutes). If `true`, return immediately with `{ status: "running", jobId }`.

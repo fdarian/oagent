@@ -7,14 +7,12 @@ import { eq } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect, Fiber } from 'effect';
 import { Agents } from './agents.ts';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
 import { Db } from './db/client.ts';
 import { runMigrations } from './db/migrate.ts';
 import * as schema from './db/schema.ts';
-import { Grok } from './grok.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
-import { OpenCode } from './opencode.ts';
+import type { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 import { SIDE_CHAT_FIRST_PROMPT_REMINDER, SideChats } from './side-chats.ts';
 
@@ -76,6 +74,22 @@ function createSharedTestDatabases() {
 	};
 }
 
+function createHarnessRegistry(
+	opencode: OpenCode['Service'],
+): HarnessRegistry['Service'] {
+	return {
+		all: [opencode],
+		get: (backend) => {
+			if (backend === 'opencode') return opencode;
+			throw new Error(`Unexpected test harness: ${backend}`);
+		},
+		listAgentTargets: (backend) => {
+			if (backend === 'opencode') return opencode.listAgentTargets();
+			throw new Error(`Unexpected test harness: ${backend}`);
+		},
+	};
+}
+
 async function createSideChatServices(
 	database: ReturnType<typeof createTestDatabase>,
 	opencode: OpenCode['Service'],
@@ -87,10 +101,7 @@ async function createSideChatServices(
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
 			Effect.provideService(Db, dbService),
-			Effect.provideService(OpenCode, opencode),
-			Effect.provideService(Cursor, {} as Cursor['Service']),
-			Effect.provideService(Grok, {} as Grok['Service']),
-			Effect.provideService(Codex, {} as Codex['Service']),
+			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			Effect.provideService(Settings, {} as Settings['Service']),
 			Effect.provideService(Agents, {} as Agents['Service']),
 		),
@@ -99,7 +110,7 @@ async function createSideChatServices(
 		SideChats.make.pipe(
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Jobs, jobs),
-			Effect.provideService(OpenCode, opencode),
+			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 		),
 	);
 	return { jobs, sideChats };
@@ -224,7 +235,7 @@ describe('side chats', () => {
 			SideChats.make.pipe(
 				Effect.provideService(Db, dbService),
 				Effect.provideService(Jobs, jobs),
-				Effect.provideService(OpenCode, opencode),
+				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			),
 		);
 
@@ -768,7 +779,7 @@ describe('side chats', () => {
 			SideChats.make.pipe(
 				Effect.provideService(Db, dbService),
 				Effect.provideService(Jobs, jobs),
-				Effect.provideService(OpenCode, opencode),
+				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			),
 		);
 
@@ -865,7 +876,7 @@ describe('side chats', () => {
 			SideChats.make.pipe(
 				Effect.provideService(Db, dbService),
 				Effect.provideService(Jobs, jobs),
-				Effect.provideService(OpenCode, opencode),
+				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			),
 		);
 

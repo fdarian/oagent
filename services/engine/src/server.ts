@@ -5,6 +5,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
@@ -281,6 +282,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(Jobs.layer),
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 	);

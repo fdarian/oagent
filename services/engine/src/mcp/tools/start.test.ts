@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
 import {
 	buildDescription,
+	formatAgentTypes,
 	formatMcpInstructions,
 	inputSchema,
 	startTool,
@@ -65,6 +66,7 @@ describe('start tool descriptions', () => {
 				[
 					{
 						name: 'reviewer',
+						description: 'Reviews changes.',
 						targets: [{ backend: 'opencode', target: 'plan' }],
 					},
 					{ name: 'unmapped', targets: [] },
@@ -75,8 +77,21 @@ describe('start tool descriptions', () => {
 - fallback: cursor:auto
 
 Available agent types for the \`start\` tool:
-- reviewer: opencode:plan
+- reviewer: opencode:plan — Reviews changes.
 - unmapped: no harness targets configured`);
+	});
+
+	test('formats agent descriptions for the Claude channel start description', () => {
+		expect(
+			formatAgentTypes([
+				{ name: 'reviewer', description: 'Reviews changes.' },
+				{ name: 'planner' },
+			]),
+		).toBe(`
+
+Configured agent types (use as \`agent_type\`):
+  - \`reviewer\` — Reviews changes.
+  - \`planner\``);
 	});
 
 	test('omits server instructions when no aliases or agent types are configured', () => {

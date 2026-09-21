@@ -5,9 +5,10 @@ import { os } from '@orpc/server';
 import { Effect } from 'effect';
 import * as v from 'valibot';
 import { Agents } from '../agents.ts';
-import { type Harness, Harnesses } from '../harnesses.ts';
+import { HarnessModelError } from '../harness.ts';
+import { HarnessRegistry } from '../harness-registry.ts';
+import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
-import { ModelCatalog } from '../model-catalog.ts';
 import { Settings } from '../settings.ts';
 import { SideChats } from '../side-chats.ts';
 
@@ -16,7 +17,7 @@ export type EngineServices =
 	| SideChats
 	| Harnesses
 	| Settings
-	| ModelCatalog
+	| HarnessRegistry
 	| Agents;
 export type EngineContext = WithEffectContext<EngineServices>;
 
@@ -27,7 +28,13 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 	return value;
 }
 
-const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+const backendSchema = v.picklist([
+	'opencode',
+	'cursor',
+	'grok',
+	'codex',
+	'claude',
+]);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
 const agentNameSchema = v.pipe(v.string(), v.nonEmpty());
 const agentTargetSchema = v.object({
@@ -51,7 +58,7 @@ const harnessEnvEntriesSchema = v.pipe(
 	),
 );
 
-const toHarnessDto = (harness: Harness) => ({
+const toHarnessDto = (harness: HarnessRecord) => ({
 	backend: harness.backend,
 	binaryPath: harness.binaryPath,
 	version: harness.version,
@@ -246,7 +253,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-					backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+					backend: backendSchema,
 					model_id: v.pipe(v.string(), v.nonEmpty()),
 					reasoning_effort: reasoningEffortSchema,
 					description: v.optional(v.string()),
@@ -280,6 +287,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					name: agentNameSchema,
+					description: v.optional(v.nullable(v.string())),
 					targets: v.array(agentTargetSchema),
 				}),
 			)
@@ -296,8 +304,18 @@ const router = procedure.router({
 		targets: procedure
 			.input(v.object({ backend: backendSchema }))
 			.effect(function* (options) {
-				const modelCatalog = yield* ModelCatalog;
-				return yield* modelCatalog.listAgentTargets(options.input.backend);
+				const harnessRegistry = yield* HarnessRegistry;
+				return yield* harnessRegistry
+					.listAgentTargets(options.input.backend)
+					.pipe(
+						Effect.mapError(
+							(cause) =>
+								new HarnessModelError({
+									backend: options.input.backend,
+									message: `Failed to list agent targets for ${options.input.backend}: ${String(cause)}`,
+								}),
+						),
+					);
 			}),
 	},
 	settings: {
@@ -328,10 +346,10 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				const settings = yield* Settings;
-				const modelCatalog = yield* ModelCatalog;
+				const harnessRegistry = yield* HarnessRegistry;
 				yield* harnesses.cancelLogin('codex');
 				settings.setCodexHome(options.input.home);
-				yield* modelCatalog.invalidate('codex');
+				yield* harnessRegistry.get('codex').invalidate();
 				return { home: settings.getCodexHome() };
 			}),
 		getHarnessEnv: procedure
@@ -400,8 +418,19 @@ const router = procedure.router({
 		list: procedure
 			.input(v.object({ backend: backendSchema }))
 			.effect(function* (options) {
-				const modelCatalog = yield* ModelCatalog;
-				const models = yield* modelCatalog.list(options.input.backend);
+				const harnessRegistry = yield* HarnessRegistry;
+				const models = yield* harnessRegistry
+					.get(options.input.backend)
+					.listModels()
+					.pipe(
+						Effect.mapError(
+							(cause) =>
+								new HarnessModelError({
+									backend: options.input.backend,
+									message: `Failed to list models for ${options.input.backend}: ${String(cause)}`,
+								}),
+						),
+					);
 				return models.map((entry) => ({ id: entry.id, label: entry.label }));
 			}),
 		efforts: procedure
@@ -412,11 +441,19 @@ const router = procedure.router({
 				}),
 			)
 			.effect(function* (options) {
-				const modelCatalog = yield* ModelCatalog;
-				const efforts = yield* modelCatalog.listEfforts(
-					options.input.backend,
-					options.input.model_id,
-				);
+				const harnessRegistry = yield* HarnessRegistry;
+				const efforts = yield* harnessRegistry
+					.get(options.input.backend)
+					.listModelEfforts(options.input.model_id)
+					.pipe(
+						Effect.mapError(
+							(cause) =>
+								new HarnessModelError({
+									backend: options.input.backend,
+									message: `Failed to list reasoning efforts for ${options.input.backend}: ${String(cause)}`,
+								}),
+						),
+					);
 				return [...efforts];
 			}),
 	},

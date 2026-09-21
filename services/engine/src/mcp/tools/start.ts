@@ -17,6 +17,11 @@ export type AliasPreset = {
 	description?: string | null;
 };
 
+export type AgentTypePreset = {
+	name: string;
+	description?: string | null;
+};
+
 /** Renders the preset/alias suffix used by the Claude channel start description. */
 export function formatPresets(aliases: AliasPreset[]): string {
 	if (aliases.length === 0) {
@@ -62,14 +67,8 @@ function formatAliasInstructions(aliases: AliasPreset[]): string | undefined {
 	return `Available model aliases for the \`start\` tool:\n${lines.join('\n')}`;
 }
 
-type AgentTypeName = string | Pick<AgentDefinition, 'name'>;
-
-function getAgentTypeName(agentType: AgentTypeName): string {
-	return typeof agentType === 'string' ? agentType : agentType.name;
-}
-
 export function formatAgentTypes(
-	agentTypes: ReadonlyArray<AgentTypeName>,
+	agentTypes: ReadonlyArray<AgentTypePreset>,
 ): string {
 	if (agentTypes.length === 0) {
 		return `
@@ -77,9 +76,15 @@ export function formatAgentTypes(
 Configured agent types: none.`;
 	}
 
-	const lines = agentTypes.map(
-		(agentType) => `  - \`${getAgentTypeName(agentType)}\``,
-	);
+	const lines = agentTypes.map((agentType) => {
+		const description =
+			agentType.description !== undefined &&
+			agentType.description !== null &&
+			agentType.description !== ''
+				? ` — ${agentType.description}`
+				: '';
+		return `  - \`${agentType.name}\`${description}`;
+	});
 	return `
 
 Configured agent types (use as \`agent_type\`):
@@ -92,13 +97,19 @@ export function formatAgentTypeInstructions(
 	if (agentTypes.length === 0) return undefined;
 
 	const lines = agentTypes.map((agentType) => {
-		const description =
+		const mappings =
 			agentType.targets.length === 0
 				? 'no harness targets configured'
 				: agentType.targets
 						.map((target) => `${target.backend}:${target.target}`)
 						.join(', ');
-		return `- ${agentType.name}: ${description}`;
+		const description =
+			agentType.description !== undefined &&
+			agentType.description !== null &&
+			agentType.description !== ''
+				? ` — ${agentType.description}`
+				: '';
+		return `- ${agentType.name}: ${mappings}${description}`;
 	});
 	return `Available agent types for the \`start\` tool:\n${lines.join('\n')}`;
 }

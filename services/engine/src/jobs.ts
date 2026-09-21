@@ -10,14 +10,11 @@ import {
 	Agents,
 	type AgentTypeNotFound,
 } from './agents.ts';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { Grok } from './grok.ts';
-import { type Backend, isBackend, parseBackend } from './model-catalog.ts';
-import { OpenCode, OpenCodeSteerNotSupportedError } from './opencode.ts';
+import { type Backend, isBackend, parseBackend } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { Settings } from './settings.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
@@ -143,10 +140,7 @@ function isRunningSideChatTurnConflict(cause: unknown): boolean {
 
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
-		const opencode = yield* OpenCode;
-		const cursor = yield* Cursor;
-		const grok = yield* Grok;
-		const codex = yield* Codex;
+		const harnessRegistry = yield* HarnessRegistry;
 		const settings = yield* Settings;
 		const agents = yield* Agents;
 		const dbService = yield* Db;
@@ -171,7 +165,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
 						});
 					}
 					return { backend, modelId, reasoningEffort: undefined };
@@ -639,56 +633,19 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				};
 
-				const runTurnEffect = (() => {
-					if (input.reservation.backend === 'opencode') {
-						return opencode.runTurn({
-							prompt: agentPrompt,
-							model: input.reservation.model,
-							reasoningEffort: input.reservation.reasoningEffort,
-							mode: input.reservation.agentTarget,
-							sessionId,
-							cwd: input.reservation.cwd,
-							onSessionId,
-							onEvent,
-							onPromptDispatch: input.onPromptDispatch,
-						});
-					}
-					if (input.reservation.backend === 'grok') {
-						return grok.runTurn({
-							prompt: agentPrompt,
-							model: input.reservation.model,
-							sessionId,
-							cwd: input.reservation.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					if (input.reservation.backend === 'codex') {
-						return codex.runTurn({
-							prompt: agentPrompt,
-							model: input.reservation.model,
-							reasoningEffort: input.reservation.reasoningEffort,
-							sessionId,
-							cwd: input.reservation.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					return cursor.runTurn({
+				const runTurnEffect = harnessRegistry
+					.get(input.reservation.backend)
+					.runTurn({
 						prompt: agentPrompt,
 						model: input.reservation.model,
+						reasoningEffort: input.reservation.reasoningEffort,
+						mode: input.reservation.agentTarget,
 						sessionId,
 						cwd: input.reservation.cwd,
 						onSessionId,
 						onEvent,
-						onExtensionEvent: (method, params) => {
-							onEvent({
-								sessionUpdate: 'cursor_extension',
-								_meta: { method, params },
-							} as unknown as SessionUpdate);
-						},
+						onPromptDispatch: input.onPromptDispatch,
 					});
-				})();
 
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
@@ -827,25 +784,14 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				const backend = parseBackend(job.backend);
-				if (backend !== 'opencode') {
+				const harness = harnessRegistry.get(backend);
+				const steer = harness.steer;
+				if (steer === undefined) {
 					return yield* new JobSteerError({
 						code: 'UNSUPPORTED_BACKEND',
-						message: `Steering is not supported for backend "${backend}"; only opencode v2 or newer supports steering.`,
+						message: `Steering is not supported for backend "${backend}".`,
 					});
 				}
-
-				yield* opencode.requireSteerSupport().pipe(
-					Effect.mapError(
-						(error) =>
-							new JobSteerError({
-								code:
-									error instanceof OpenCodeSteerNotSupportedError
-										? 'UNSUPPORTED_VERSION'
-										: 'VERSION_CHECK_FAILED',
-								message: error.message,
-							}),
-					),
-				);
 
 				if (job.session_id === null) {
 					return yield* new JobSteerError({
@@ -854,20 +800,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				const result = yield* opencode
-					.steer({ sessionId: job.session_id, text })
-					.pipe(
-						Effect.mapError(
-							(error) =>
-								new JobSteerError({
-									code:
-										error instanceof OpenCodeSteerNotSupportedError
-											? 'UNSUPPORTED_VERSION'
-											: 'DELIVERY_FAILED',
-									message: error.message,
-								}),
-						),
-					);
+				const result = yield* steer({ sessionId: job.session_id, text }).pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code: error.code,
+								message: error.message,
+							}),
+					),
+				);
 
 				publishEvent(job.id, jobId, {
 					sessionUpdate: 'user_message_chunk',
@@ -1181,10 +1122,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Jobs, Jobs.make).pipe(
-		Layer.provide(OpenCode.layer),
-		Layer.provide(Cursor.layer),
-		Layer.provide(Grok.layer),
-		Layer.provide(Codex.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),

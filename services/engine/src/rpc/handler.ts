@@ -2,9 +2,9 @@ import { ORPCError, onError } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
+import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
 import { JobNotFound, JobSteerError } from '../jobs.ts';
-import { ModelCatalogError } from '../model-catalog.ts';
 import { SideChatError, SideChatNotFound } from '../side-chats.ts';
 import { type EngineServices, router } from './router.ts';
 
@@ -36,7 +36,7 @@ function toProcedureError(error: unknown) {
 	}
 	if (
 		error instanceof HarnessesError ||
-		error instanceof ModelCatalogError ||
+		error instanceof HarnessModelError ||
 		error instanceof AgentTypeNotFound ||
 		error instanceof AgentNotMappedForBackend
 	) {

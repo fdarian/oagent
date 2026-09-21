@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { parseLoginPrompt } from './harnesses.ts';
+import { parseLoginPrompt } from './codex.ts';
 
 const capturedLoginOutput = [
 	'',

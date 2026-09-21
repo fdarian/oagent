@@ -11,10 +11,11 @@ export {
 	Agents,
 	AgentTypeNotFound,
 } from './agents.ts';
+export { Claude } from './claude.ts';
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';
-export { HarnessVersion } from './harness-version.ts';
+export { HarnessRegistry } from './harness-registry.ts';
 export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
@@ -24,6 +25,7 @@ export { registerTools } from './mcp/register-tools.ts';
 export { cancelTool } from './mcp/tools/cancel.ts';
 export { resultTool } from './mcp/tools/result.ts';
 export {
+	type AgentTypePreset,
 	type AliasPreset,
 	formatAgentTypes,
 	formatMcpInstructions,

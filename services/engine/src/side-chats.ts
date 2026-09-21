@@ -7,8 +7,8 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
-import { OpenCode } from './opencode.ts';
 
 export const SIDE_CHAT_FIRST_PROMPT_REMINDER =
 	"<system-reminder>You are in a forked side chat. This conversation is separate from the main session. Do not continue the main session's task unless the user explicitly asks you to do so here. Messages in this side chat are not sent back to the main session, though both sessions share the same working directory and filesystem.</system-reminder>";
@@ -58,7 +58,7 @@ export class SideChats extends Context.Service<SideChats>()(
 			const dbService = yield* Db;
 			const db = dbService.db;
 			const jobs = yield* Jobs;
-			const opencode = yield* OpenCode;
+			const harnessRegistry = yield* HarnessRegistry;
 
 			const findSourceJob = (
 				sourceJobId: string,
@@ -289,11 +289,18 @@ export class SideChats extends Context.Service<SideChats>()(
 										),
 									);
 
-								const forkedSession = opencode
-									.forkSession({
-										sessionId: sourceSessionId,
-										cwd: sourceJob.cwd,
-									})
+								const forkSession = harnessRegistry.get('opencode').forkSession;
+								if (forkSession === undefined) {
+									return yield* new SideChatError({
+										code: 'FORK_NOT_SUPPORTED',
+										message:
+											'The OpenCode harness does not support session forking.',
+									});
+								}
+								const forkedSession = forkSession({
+									sessionId: sourceSessionId,
+									cwd: sourceJob.cwd,
+								})
 									.pipe(
 										Effect.mapError((error) =>
 											error instanceof AcpForkNotSupportedError
@@ -388,7 +395,7 @@ export class SideChats extends Context.Service<SideChats>()(
 ) {
 	static readonly layer = Layer.effect(SideChats, SideChats.make).pipe(
 		Layer.provide(Jobs.layer),
-		Layer.provide(OpenCode.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Db.layer),
 	);
 }

@@ -4,19 +4,15 @@ import {
 	AcpAgent,
 	type AcpAgentConfig,
 	type AcpConfigOption,
-	type AcpForkNotSupportedError,
 	type AcpSessionCatalog,
 	AcpSessionError,
 	AcpTurnFailed,
+	checkAcpConnection,
 	createAcpConnection,
 } from './acp-agent.ts';
-import { HarnessVersion } from './harness-version.ts';
-import {
-	OpenCodeServiceClient,
-	type OpenCodeServiceDiscoveryError,
-	type OpenCodeSteerRequestError,
-	type OpenCodeSteerResult,
-} from './opencode-service-client.ts';
+import { type Harness, HarnessSteerError } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
+import { OpenCodeServiceClient } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
@@ -52,6 +48,11 @@ type OpenCodeCommandResult = {
 	stderr: string;
 };
 
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
+
 export class OpenCodeSteerNotSupportedError extends Schema.TaggedError<OpenCodeSteerNotSupportedError>()(
 	'OpenCodeSteerNotSupportedError',
 	{ version: Schema.String },
@@ -61,7 +62,12 @@ export class OpenCodeSteerNotSupportedError extends Schema.TaggedError<OpenCodeS
 	}
 }
 
-type OpenCodeService = AcpAgent['Service'] & {
+type OpenCodeService = Harness & {
+	listSessionCatalog: () => Effect.Effect<
+		AcpSessionCatalog,
+		AcpSessionError,
+		never
+	>;
 	listModelEfforts: (
 		model: string,
 	) => Effect.Effect<
@@ -72,25 +78,6 @@ type OpenCodeService = AcpAgent['Service'] & {
 	requireSteerSupport: () => Effect.Effect<
 		string,
 		AcpSessionError | OpenCodeSteerNotSupportedError,
-		never
-	>;
-	steer: (input: {
-		sessionId: string;
-		text: string;
-	}) => Effect.Effect<
-		OpenCodeSteerResult,
-		| AcpSessionError
-		| OpenCodeSteerNotSupportedError
-		| OpenCodeServiceDiscoveryError
-		| OpenCodeSteerRequestError,
-		never
-	>;
-	forkSession: (input: {
-		sessionId: string;
-		cwd: string;
-	}) => Effect.Effect<
-		{ sessionId: string },
-		AcpForkNotSupportedError | AcpSessionError,
 		never
 	>;
 };
@@ -375,10 +362,15 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 	make: Effect.gen(function* () {
 		const settings = yield* Settings;
 		const acpAgent = yield* AcpAgent;
-		const harnessVersion = yield* HarnessVersion;
 		const serviceClient = yield* OpenCodeServiceClient;
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
-		const versionRef = yield* Ref.make<string | undefined>(undefined);
+		const createConfig = () =>
+			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode'));
+		const check = () => checkAcpConnection('opencode', createConfig());
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
 		const versionSemaphore = yield* Semaphore.make(1);
 
 		// OpenCode 2.0.9 rejects custom agents omitted from its cached ACP catalog,
@@ -435,23 +427,13 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
 			acpAgent.forkSession(input);
 
-		const resolveVersion = () =>
+		const version = () =>
 			versionSemaphore.withPermit(
 				Effect.gen(function* () {
 					const memoized = yield* Ref.get(versionRef);
-					if (memoized !== undefined) return memoized;
-					const persisted = yield* harnessVersion
-						.get('opencode')
-						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-					if (persisted !== undefined) {
-						yield* Ref.set(versionRef, persisted);
-						return persisted;
-					}
+					if (memoized.loaded) return memoized.value;
 					const detected = yield* resolveOpenCodeVersion(binary);
-					yield* harnessVersion
-						.set('opencode', detected, binary)
-						.pipe(Effect.mapError((cause) => new AcpSessionError({ cause })));
-					yield* Ref.set(versionRef, detected);
+					yield* Ref.set(versionRef, { loaded: true, value: detected });
 					return detected;
 				}),
 			);
@@ -507,8 +489,13 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const version = yield* resolveVersion();
-				const major = parseOpenCodeMajor(version);
+				const detectedVersion = yield* version();
+				if (detectedVersion === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error('Could not detect an opencode version'),
+					});
+				}
+				const major = parseOpenCodeMajor(detectedVersion);
 				if (major !== undefined) {
 					if (major >= 2) {
 						const catalog = yield* acpAgent.listSessionCatalog();
@@ -531,30 +518,70 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 					}
 				}
 				return yield* new AcpSessionError({
-					cause: new Error(`Unsupported opencode version: ${version}`),
+					cause: new Error(`Unsupported opencode version: ${detectedVersion}`),
 				});
 			});
 
-		const listModels = () =>
+		const fetchModels = () =>
 			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
+		const fetchAgentTargets = () =>
+			listSessionCatalog().pipe(
+				Effect.map((catalog) =>
+					catalog.modes.map((mode) => ({
+						id: mode.id,
+						label: mode.name,
+						...(mode.description === undefined
+							? {}
+							: { description: mode.description }),
+					})),
+				),
+			);
 
 		const requireSteerSupport = () =>
 			Effect.gen(function* () {
-				const version = yield* resolveVersion();
-				const major = parseOpenCodeMajor(version);
-				if (major === undefined || major < 2) {
-					return yield* new OpenCodeSteerNotSupportedError({ version });
+				const detectedVersion = yield* version();
+				if (detectedVersion === undefined) {
+					return yield* new AcpSessionError({
+						cause: new Error('Could not detect an opencode version'),
+					});
 				}
-				return version;
+				const major = parseOpenCodeMajor(detectedVersion);
+				if (major === undefined || major < 2) {
+					return yield* new OpenCodeSteerNotSupportedError({
+						version: detectedVersion,
+					});
+				}
+				return detectedVersion;
 			});
 
 		const steer = (input: { sessionId: string; text: string }) =>
 			Effect.gen(function* () {
-				yield* requireSteerSupport();
-				return yield* serviceClient.steer(binary, input);
+				yield* requireSteerSupport().pipe(
+					Effect.mapError(
+						(error) =>
+							new HarnessSteerError({
+								code:
+									error instanceof OpenCodeSteerNotSupportedError
+										? 'UNSUPPORTED_VERSION'
+										: 'VERSION_CHECK_FAILED',
+								message: error.message,
+								cause: error,
+							}),
+					),
+				);
+				return yield* serviceClient.steer(binary, input).pipe(
+					Effect.mapError(
+						(error) =>
+							new HarnessSteerError({
+								code: 'DELIVERY_FAILED',
+								message: error.message,
+								cause: error,
+							}),
+					),
+				);
 			});
 
-		const listModelEfforts = (model: string) =>
+		const fetchModelEfforts = (model: string) =>
 			Effect.scoped(
 				Effect.gen(function* () {
 					const connection = yield* createAcpConnection(
@@ -587,13 +614,33 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 						: new AcpSessionError({ cause }),
 				),
 			);
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const agentTargetCache = yield* ModelsCache.make(() => fetchAgentTargets());
+		const effortCache = yield* ModelsCache.makeKeyed((model) =>
+			fetchModelEfforts(model),
+		);
+		const listModels = () => modelCache.get();
+		const listAgentTargets = () => agentTargetCache.get();
+		const listModelEfforts = (model: string) => effortCache.get(model);
+		const invalidate = () =>
+			Effect.gen(function* () {
+				yield* modelCache.invalidate();
+				yield* agentTargetCache.invalidate();
+				yield* effortCache.invalidate();
+			});
 
 		return {
+			backend: 'opencode',
 			runTurn,
 			forkSession,
 			listModels,
 			listSessionCatalog,
 			listModelEfforts,
+			listAgentTargets,
+			resolveBinary: resolveOpenCodeBinary,
+			version,
+			invalidate,
+			check,
 			requireSteerSupport,
 			steer,
 		} satisfies OpenCodeService;
@@ -601,7 +648,6 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 }) {
 	static readonly layer = Layer.effect(OpenCode, OpenCode.make).pipe(
 		Layer.provide(openCodeAcpLayer),
-		Layer.provide(HarnessVersion.layer),
 		Layer.provide(OpenCodeServiceClient.layer),
 		Layer.provide(Settings.layer),
 	);

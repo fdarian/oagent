@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
+	type AgentTypePreset,
 	type AliasPreset,
 	cancelTool,
 	formatAgentTypes,
@@ -41,7 +42,7 @@ function channelStartDescription(source: string) {
 	return `\
 Delegate a task to the coding agent, running as a subprocess via the oagent engine. \
 Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
-agent is the coding agent. Supports two backends: OpenCode and Cursor. Returns \
+agent is the coding agent. Supports the configured ACP backends. Returns \
 immediately with {jobId}. You do NOT need to poll or wait: when the job finishes, \
 its result is pushed into this session as a <channel source="${source}" job_id="..." \
 status="..."> event. Continue with other work — you will be notified. The pushed \
@@ -182,7 +183,7 @@ async function waitAndNotify(
 
 async function fetchStartDescriptionData(client: EngineClient): Promise<{
 	aliases: AliasPreset[];
-	agentTypes: string[];
+	agentTypes: AgentTypePreset[];
 }> {
 	const responses = await Promise.all([
 		client.aliases.list(),
@@ -200,7 +201,14 @@ async function fetchStartDescriptionData(client: EngineClient): Promise<{
 					: { description: row.description }),
 			}),
 		),
-		agentTypes: responses[1].map((agent) => agent.name),
+		agentTypes: responses[1].map(
+			(agent): AgentTypePreset => ({
+				name: agent.name,
+				...(agent.description === undefined
+					? {}
+					: { description: agent.description }),
+			}),
+		),
 	};
 }
 
