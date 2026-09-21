@@ -13,6 +13,7 @@ import { Settings } from './settings.ts';
 const CLAUDE_BINARY = 'claude-agent-acp';
 
 const CLAUDE_EFFORTS = [
+	{ value: 'default', label: 'Default' },
 	{ value: 'low', label: 'Low' },
 	{ value: 'medium', label: 'Medium' },
 	{ value: 'high', label: 'High' },

@@ -253,13 +253,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-					backend: v.picklist([
-						'opencode',
-						'cursor',
-						'grok',
-						'codex',
-						'claude',
-					]),
+					backend: backendSchema,
 					model_id: v.pipe(v.string(), v.nonEmpty()),
 					reasoning_effort: reasoningEffortSchema,
 					description: v.optional(v.string()),

@@ -39,10 +39,9 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { type Backend, isBackend } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
-
-type Backend = 'opencode' | 'cursor' | 'grok' | 'codex' | 'claude';
 
 type CodexReasoningEffort =
 	| 'minimal'
@@ -68,24 +67,6 @@ const CODEX_REASONING_EFFORT_OPTIONS: ReadonlyArray<ReasoningEffortOption> = [
 	{ value: 'max', label: 'Max' },
 	{ value: 'ultra', label: 'Ultra' },
 ];
-
-const CLAUDE_EFFORT_OPTIONS: ReadonlyArray<ReasoningEffortOption> = [
-	{ value: 'default', label: 'Default' },
-	{ value: 'low', label: 'Low' },
-	{ value: 'medium', label: 'Medium' },
-	{ value: 'high', label: 'High' },
-	{ value: 'max', label: 'Max' },
-];
-
-function isBackend(value: string): value is Backend {
-	return (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex' ||
-		value === 'claude'
-	);
-}
 
 function isCodexReasoningEffort(value: string): value is CodexReasoningEffort {
 	return (
@@ -276,15 +257,15 @@ function AliasForm(props: AliasFormProps) {
 		onSubmit: (submission) => {
 			const value = submission.value;
 			setServerModelError(undefined);
+			const supportsReasoningEffort =
+				value.backend === 'opencode' ||
+				value.backend === 'claude' ||
+				(value.backend === 'codex' &&
+					isCodexReasoningEffort(value.reasoning_effort));
 			const reasoningEffort =
-				value.backend === 'codex' &&
-				isCodexReasoningEffort(value.reasoning_effort)
+				supportsReasoningEffort && value.reasoning_effort !== 'default'
 					? value.reasoning_effort
-					: value.backend === 'opencode' && value.reasoning_effort !== 'default'
-						? value.reasoning_effort
-						: value.backend === 'claude' && value.reasoning_effort !== 'default'
-							? value.reasoning_effort
-							: undefined;
+					: undefined;
 			saveMutation.mutate({
 				name: value.name.trim(),
 				backend: value.backend,
@@ -304,17 +285,16 @@ function AliasForm(props: AliasFormProps) {
 	const effortsQuery = useQuery({
 		queryKey: ['model-efforts', backend, modelId],
 		queryFn: () => orpc.models.efforts({ backend, model_id: modelId.trim() }),
-		enabled: backend === 'opencode' && modelId.trim() !== '',
+		enabled:
+			(backend === 'opencode' || backend === 'claude') && modelId.trim() !== '',
 		staleTime: 5 * 60 * 1000,
 	});
 	const effortOptions =
 		backend === 'codex'
 			? CODEX_REASONING_EFFORT_OPTIONS
-			: backend === 'claude'
-				? CLAUDE_EFFORT_OPTIONS
-				: effortsQuery.data === undefined
-					? []
-					: effortsQuery.data;
+			: effortsQuery.data === undefined
+				? []
+				: effortsQuery.data;
 
 	return (
 		<form
