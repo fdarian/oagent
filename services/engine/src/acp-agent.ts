@@ -9,17 +9,14 @@ import {
 	type SessionConfigSelectOption,
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import {
-	Context,
-	Duration,
-	Effect,
-	Layer,
-	RcRef,
-	Schema,
-	Semaphore,
-} from 'effect';
+import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
 import type { Scope } from 'effect/Scope';
-import { eventDedupeKey } from './event-key.ts';
+import {
+	type AcpTurnEnvironment,
+	AcpTurnFailed,
+	type AcpTurnRecovery,
+	createAcpTurnRecovery,
+} from './acp-turn-recovery.ts';
 import type { Backend, HarnessCheckResult } from './harness.ts';
 
 type AcpEnv =
@@ -34,14 +31,8 @@ export type AcpAgentConfig = {
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 };
 
-export type AcpTurnRecovery = {
-	isSessionBusy: (
-		sessionId: string,
-	) => Effect.Effect<boolean, AcpTurnFailed, never>;
-	stallTimeoutMs?: number;
-	pollIntervalMs?: number;
-	maxRetries?: number;
-};
+export type { AcpTurnRecovery } from './acp-turn-recovery.ts';
+export { AcpTurnFailed } from './acp-turn-recovery.ts';
 
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
@@ -51,15 +42,6 @@ export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 		return String(this.cause);
 	}
 }
-
-export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
-	'AcpTurnFailed',
-	{
-		code: Schema.optional(Schema.String),
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
 
 type AcpConnection = {
 	conn: ClientSideConnection;
@@ -84,19 +66,6 @@ type AcpConnection = {
 	close: () => void;
 };
 
-type AcpTurnEnvironment = Pick<
-	AcpConnection,
-	'conn' | 'registerListener' | 'extNotificationHandlers'
-> &
-	Partial<Pick<AcpConnection, 'processExited' | 'close'>> & {
-		createConnection?: () => Effect.Effect<
-			AcpConnection,
-			AcpSessionError,
-			Scope
-		>;
-		onReconnect?: () => Effect.Effect<void, never, never>;
-	};
-
 export class AcpForkNotSupportedError extends Schema.TaggedError<AcpForkNotSupportedError>()(
 	'AcpForkNotSupportedError',
 	{},
@@ -114,12 +83,6 @@ function getRpcMessage(cause: unknown): string | undefined {
 		if (typeof data.message === 'string') return data.message;
 	}
 	return typeof error.message === 'string' ? error.message : undefined;
-}
-
-function formatSessionLoadError(sessionId: string, cause: unknown): string {
-	const rpcMessage = getRpcMessage(cause);
-	const detail = rpcMessage === undefined ? '' : `: ${rpcMessage}`;
-	return `Could not load OpenCode session "${sessionId}"${detail}. It may no longer exist or belong to a different backend; start without sessionId.`;
 }
 
 function isSelectGroup(
@@ -460,142 +423,29 @@ export function runAcpTurn(
 ) {
 	return Effect.scoped(
 		Effect.gen(function* () {
-			const turnState = {
-				buffer: '',
-				eventCount: 0,
-				lastEventAt: Date.now(),
+			const turnState = { buffer: '' };
+			const recoveryController = yield* createAcpTurnRecovery({
+				env,
+				cwd: input.cwd,
 				initialSessionLoad: input.sessionId !== undefined,
-				baselineEventKeys: new Set<string>(),
-				replaying: false,
-				replayEvents: [] as Array<SessionUpdate>,
-				messageText: new Map<string, string>(),
-				promptDispatched: false,
-				reconnected: false,
-				recoveryAttempts: 0,
-			};
-			const connectionState: {
-				current: AcpTurnEnvironment;
-				unregister: () => void;
-			} = {
-				current: env,
-				unregister: () => {},
-			};
-			const connections: Array<AcpTurnEnvironment> = [];
-			const appendEvent = (update: SessionUpdate): void => {
-				turnState.eventCount += 1;
-				turnState.lastEventAt = Date.now();
-				if (
-					(update.sessionUpdate === 'user_message_chunk' ||
-						update.sessionUpdate === 'agent_message_chunk' ||
-						update.sessionUpdate === 'agent_thought_chunk') &&
-					update.content.type === 'text' &&
-					typeof update.messageId === 'string'
-				) {
-					const previous = turnState.messageText.get(update.messageId);
-					if (previous === undefined) {
-						turnState.messageText.set(update.messageId, update.content.text);
-					} else {
-						turnState.messageText.set(
-							update.messageId,
-							previous + update.content.text,
-						);
+				recovery: input.recovery,
+				onEvent: (update) => {
+					if (input.onEvent !== undefined) input.onEvent(update);
+					if (
+						update.sessionUpdate === 'agent_message_chunk' &&
+						update.content.type === 'text'
+					) {
+						turnState.buffer += update.content.text;
 					}
-				}
-				if (input.onEvent !== undefined) {
-					input.onEvent(update);
-				}
-				if (
-					update.sessionUpdate === 'agent_message_chunk' &&
-					update.content.type === 'text'
-				) {
-					turnState.buffer += update.content.text;
-				}
-			};
-			const appendReplayEvent = (update: SessionUpdate): void => {
-				if (turnState.baselineEventKeys.has(eventDedupeKey(update))) return;
-				if (
-					(update.sessionUpdate === 'user_message_chunk' ||
-						update.sessionUpdate === 'agent_message_chunk' ||
-						update.sessionUpdate === 'agent_thought_chunk') &&
-					update.content.type === 'text' &&
-					typeof update.messageId === 'string'
-				) {
-					const previous = turnState.messageText.get(update.messageId);
-					if (previous !== undefined) {
-						if (update.content.text.startsWith(previous)) {
-							const suffix = update.content.text.slice(previous.length);
-							if (suffix.length === 0) return;
-							appendEvent({
-								...update,
-								content: { ...update.content, text: suffix },
-							} as SessionUpdate);
-							return;
-						}
-						if (previous.startsWith(update.content.text)) return;
-					}
-				}
-				appendEvent(update);
-			};
-			const onEvent = (update: SessionUpdate): void => {
-				const key = eventDedupeKey(update);
-				if (turnState.initialSessionLoad) {
-					turnState.baselineEventKeys.add(key);
-					return;
-				}
-				if (turnState.replaying) {
-					turnState.replayEvents.push(update);
-					return;
-				}
-				if (turnState.baselineEventKeys.has(key)) return;
-				appendEvent(update);
-			};
-			const attach = (
-				connection: AcpTurnEnvironment,
-				sessionId: string,
-				includeExtensions = true,
-			): void => {
-				connectionState.unregister();
-				connectionState.current = connection;
-				const unregister = connection.registerListener(sessionId, onEvent);
-				if (includeExtensions && input.onExtensionEvent !== undefined) {
-					connection.extNotificationHandlers.set(
-						sessionId,
-						input.onExtensionEvent,
-					);
-				}
-				connectionState.unregister = () => {
-					unregister();
-					if (includeExtensions && input.onExtensionEvent !== undefined) {
-						connection.extNotificationHandlers.delete(sessionId);
-					}
-				};
-			};
-			const cleanupConnections = Effect.sync(() => {
-				connectionState.unregister();
-				for (const connection of connections) {
-					connection.close?.();
-				}
+				},
+				onExtensionEvent: input.onExtensionEvent,
 			});
 
 			const turn = Effect.gen(function* () {
 				const sessionResult: AcpTurnSessionResult = yield* (() => {
 					if (input.sessionId !== undefined) {
 						const sid = input.sessionId;
-						attach(env, sid, false);
-						return Effect.tryPromise({
-							try: () =>
-								env.conn.loadSession({
-									sessionId: sid,
-									cwd: input.cwd,
-									mcpServers: [],
-								}),
-							catch: (cause) =>
-								new AcpTurnFailed({
-									code: 'SESSION_LOAD_FAILED',
-									message: formatSessionLoadError(sid, cause),
-									cause,
-								}),
-						}).pipe(
+						return recoveryController.loadSession(sid).pipe(
 							Effect.map((res) => ({
 								sessionId: sid,
 								availableModels: extractSessionModelIds(
@@ -606,12 +456,6 @@ export function runAcpTurn(
 								),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
-							Effect.tap(() =>
-								Effect.sync(() => {
-									attach(env, sid);
-									turnState.initialSessionLoad = false;
-								}),
-							),
 						);
 					}
 					return Effect.tryPromise({
@@ -632,7 +476,7 @@ export function runAcpTurn(
 						)
 						.pipe(
 							Effect.tap((res) =>
-								Effect.sync(() => attach(env, res.sessionId)),
+								Effect.sync(() => recoveryController.attach(res.sessionId)),
 							),
 						);
 				})();
@@ -644,165 +488,6 @@ export function runAcpTurn(
 				if (input.beforePrompt !== undefined) {
 					yield* input.beforePrompt(sessionResult.sessionId);
 				}
-
-				const recovery = input.recovery;
-				const createConnection = env.createConnection;
-				const recoverySemaphore = yield* Semaphore.make(1);
-				const maxRecoveryRetries = recovery?.maxRetries ?? 3;
-				const recoveryPollInterval = recovery?.pollIntervalMs ?? 2_000;
-				const recoveryStallTimeout = recovery?.stallTimeoutMs ?? 15_000;
-				const recoveryRetryDelay = 1_000;
-				const recoverySettleTimeout =
-					Math.max(recoveryStallTimeout, recoveryPollInterval) *
-					(maxRecoveryRetries + 1);
-
-				const recoveryFailure = (
-					message: string,
-					cause: unknown,
-				): AcpTurnFailed =>
-					new AcpTurnFailed({
-						code: 'ACP_RECOVERY_FAILED',
-						message,
-						cause,
-					});
-
-				const reconnectOnce = (
-					reason: string,
-					expected?: AcpTurnEnvironment,
-				): Effect.Effect<void, AcpTurnFailed, Scope> => {
-					if (recovery === undefined || createConnection === undefined) {
-						return Effect.fail(
-							recoveryFailure(
-								`ACP connection for session ${sessionResult.sessionId} cannot be recovered because no recovery strategy is configured.`,
-								new Error('Missing ACP recovery strategy'),
-							),
-						);
-					}
-					return recoverySemaphore.withPermit(
-						Effect.gen(function* () {
-							if (
-								expected !== undefined &&
-								connectionState.current !== expected
-							) {
-								return;
-							}
-							if (turnState.recoveryAttempts >= maxRecoveryRetries) {
-								return yield* recoveryFailure(
-									`Could not restore the ACP connection for session ${sessionResult.sessionId} after ${maxRecoveryRetries} attempts; the job is stopping instead of remaining running.`,
-									new Error('ACP recovery retry limit reached'),
-								);
-							}
-
-							turnState.recoveryAttempts += 1;
-							const attempt = turnState.recoveryAttempts;
-							yield* Effect.logInfo(
-								`ACP reconnect attempt ${attempt}/${maxRecoveryRetries} for session ${sessionResult.sessionId} (${reason})`,
-							);
-							const previous = connectionState.current;
-							if (env.onReconnect !== undefined) {
-								yield* env.onReconnect();
-							}
-							const next = yield* createConnection().pipe(
-								Effect.mapError((cause) =>
-									recoveryFailure(
-										`Could not create a replacement ACP connection for session ${sessionResult.sessionId}.`,
-										cause,
-									),
-								),
-							);
-							connections.push(next);
-							const beforeEvents = turnState.eventCount;
-							turnState.replaying = true;
-							attach(next, sessionResult.sessionId);
-							const load = Effect.tryPromise({
-								try: () =>
-									next.conn.loadSession({
-										sessionId: sessionResult.sessionId,
-										cwd: input.cwd,
-										mcpServers: [],
-									}),
-								catch: (cause) =>
-									recoveryFailure(
-										`Could not reload OpenCode session ${sessionResult.sessionId} after reconnecting.`,
-										cause,
-									),
-							});
-							yield* load.pipe(
-								Effect.tap(() =>
-									Effect.sync(() => {
-										turnState.replaying = false;
-										for (const replayEvent of turnState.replayEvents) {
-											appendReplayEvent(replayEvent);
-										}
-										turnState.replayEvents.length = 0;
-									}),
-								),
-								Effect.tapError(() =>
-									Effect.sync(() => {
-										turnState.replaying = false;
-										turnState.replayEvents.length = 0;
-										next.close?.();
-										attach(previous, sessionResult.sessionId);
-									}),
-								),
-							);
-							turnState.lastEventAt = Date.now();
-							turnState.reconnected = true;
-							yield* Effect.logInfo(
-								`Back-filled ${turnState.eventCount - beforeEvents} ACP events for session ${sessionResult.sessionId} after reconnect`,
-							);
-						}),
-					);
-				};
-				const reconnect = (
-					reason: string,
-					expected?: AcpTurnEnvironment,
-				): Effect.Effect<void, AcpTurnFailed, Scope> => {
-					if (expected === undefined && turnState.reconnected) {
-						return Effect.void;
-					}
-					return reconnectOnce(reason, expected).pipe(
-						Effect.catch((error) => {
-							if (turnState.recoveryAttempts >= maxRecoveryRetries) {
-								return Effect.fail(error);
-							}
-							return Effect.sleep(recoveryRetryDelay).pipe(
-								Effect.flatMap(() => reconnect(reason, expected)),
-							);
-						}),
-					);
-				};
-
-				const waitForRecoveredCompletion = (): Effect.Effect<
-					Awaited<ReturnType<ClientSideConnection['prompt']>>,
-					AcpTurnFailed,
-					never
-				> => {
-					if (recovery === undefined) {
-						return Effect.fail(
-							recoveryFailure(
-								`The ACP prompt for session ${sessionResult.sessionId} ended without a recovery strategy.`,
-								new Error('Missing ACP recovery strategy'),
-							),
-						);
-					}
-					return Effect.gen(function* () {
-						const deadline = Date.now() + recoverySettleTimeout;
-						while (true) {
-							const busy = yield* recovery.isSessionBusy(
-								sessionResult.sessionId,
-							);
-							if (!busy) return { stopReason: 'end_turn' as const };
-							if (Date.now() >= deadline) {
-								return yield* recoveryFailure(
-									`OpenCode session ${sessionResult.sessionId} stayed busy after reconnecting; the job is stopping instead of remaining running.`,
-									new Error('Recovered ACP session did not become idle'),
-								);
-							}
-							yield* Effect.sleep(recoveryPollInterval);
-						}
-					});
-				};
 
 				const configOptions: ReadonlyArray<AcpConfigOption> =
 					input.skipModelSet === true
@@ -828,11 +513,13 @@ export function runAcpTurn(
 				const setConfigOption = (configOption: AcpConfigOption) =>
 					Effect.tryPromise({
 						try: () =>
-							connectionState.current.conn.setSessionConfigOption({
-								sessionId: sessionResult.sessionId,
-								configId: configOption.configId,
-								value: configOption.value,
-							}),
+							recoveryController
+								.currentConnection()
+								.conn.setSessionConfigOption({
+									sessionId: sessionResult.sessionId,
+									configId: configOption.configId,
+									value: configOption.value,
+								}),
 						catch: (cause) => {
 							const rpcMessage = getRpcMessage(cause);
 
@@ -877,117 +564,12 @@ export function runAcpTurn(
 					}
 				}
 
-				const invokePrompt = (
-					connection: AcpTurnEnvironment,
-				): Effect.Effect<
-					Awaited<ReturnType<ClientSideConnection['prompt']>>,
-					AcpTurnFailed,
-					never
-				> =>
-					Effect.tryPromise({
-						try: async (signal) => {
-							const onAbort = () => {
-								void connection.conn.cancel({
-									sessionId: sessionResult.sessionId,
-								});
-							};
-							signal.addEventListener('abort', onAbort, {
-								once: true,
-							});
-							try {
-								const prompt = connection.conn.prompt({
-									sessionId: sessionResult.sessionId,
-									prompt: [{ type: 'text', text: input.prompt }],
-								});
-								turnState.promptDispatched = true;
-								turnState.lastEventAt = Date.now();
-								const onPromptDispatch = input.onPromptDispatch;
-								if (onPromptDispatch !== undefined) onPromptDispatch();
-								return await prompt;
-							} finally {
-								signal.removeEventListener('abort', onAbort);
-							}
-						},
-						catch: (cause) =>
-							new AcpTurnFailed({
-								code: 'PROMPT_REJECTED',
-								message: 'prompt rejected',
-								cause,
-							}),
-					});
-
-				const prompt = invokePrompt(connectionState.current).pipe(
-					Effect.catch((error) => {
-						if (
-							!turnState.promptDispatched ||
-							recovery === undefined ||
-							createConnection === undefined
-						) {
-							return Effect.fail(error);
-						}
-						return Effect.gen(function* () {
-							if (!turnState.reconnected) {
-								yield* reconnect('prompt request failed');
-							}
-							return yield* waitForRecoveredCompletion();
-						});
-					}),
+				const response = yield* recoveryController.runPrompt(
+					input.prompt,
+					input.onPromptDispatch,
 				);
-
-				if (recovery === undefined || createConnection === undefined) {
-					const response = yield* prompt;
-					return { sessionResult, response };
-				}
-
-				const monitor = Effect.gen(function* () {
-					while (true) {
-						const observed = connectionState.current;
-						const processExited = observed.processExited;
-						const signal =
-							processExited === undefined
-								? yield* Effect.sleep(recoveryPollInterval).pipe(
-										Effect.as('poll' as const),
-									)
-								: yield* Effect.raceFirst(
-										Effect.tryPromise({
-											try: () => processExited,
-											catch: () => -1,
-										}).pipe(Effect.as('closed' as const)),
-										Effect.sleep(recoveryPollInterval).pipe(
-											Effect.as('poll' as const),
-										),
-									);
-						if (!turnState.promptDispatched) continue;
-
-						const closed = signal === 'closed';
-						const stalled =
-							Date.now() - turnState.lastEventAt >= recoveryStallTimeout;
-						if (!closed && !stalled) continue;
-
-						if (!closed) {
-							const busy = yield* recovery.isSessionBusy(
-								sessionResult.sessionId,
-							);
-							if (!busy) {
-								turnState.lastEventAt = Date.now();
-								continue;
-							}
-						}
-
-						yield* reconnect(
-							closed
-								? 'ACP process or transport closed'
-								: 'session stalled while busy',
-							observed,
-						);
-						const busy = yield* recovery.isSessionBusy(sessionResult.sessionId);
-						if (!busy) return { stopReason: 'end_turn' as const };
-					}
-				});
-
-				const response = yield* Effect.raceFirst(prompt, monitor);
 				return { sessionResult, response };
-			}).pipe(Effect.ensuring(cleanupConnections));
+			}).pipe(Effect.ensuring(recoveryController.cleanup));
 
 			const completed = yield* turn;
 			return {
