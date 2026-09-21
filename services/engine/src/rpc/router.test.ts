@@ -5,6 +5,27 @@ import type { Settings } from '../settings.ts';
 import { createHarnessEnvProcedures } from './router.ts';
 
 describe('settings.setHarnessEnv', () => {
+	test('accepts the Claude backend', async () => {
+		const settings: Pick<
+			Settings['Service'],
+			'getHarnessEnv' | 'setHarnessEnv'
+		> = {
+			getHarnessEnv: (backend) => {
+				expect(backend).toBe('claude');
+				return { CLAUDE_TEST: 'enabled' };
+			},
+			setHarnessEnv: () => {},
+		};
+		const procedures = await Effect.runPromise(
+			createHarnessEnvProcedures(settings),
+		);
+		const getHarnessEnv = createProcedureClient(procedures.getHarnessEnv);
+
+		await expect(getHarnessEnv({ backend: 'claude' })).resolves.toEqual({
+			env: [{ key: 'CLAUDE_TEST', value: 'enabled' }],
+		});
+	});
+
 	test('rejects duplicate keys before writing the record', async () => {
 		let writes = 0;
 		const settings: Pick<

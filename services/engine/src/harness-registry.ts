@@ -1,4 +1,5 @@
 import { Context, Effect, Layer } from 'effect';
+import { Claude } from './claude.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
@@ -13,17 +14,20 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 			const cursor = yield* Cursor;
 			const grok = yield* Grok;
 			const codex = yield* Codex;
+			const claude = yield* Claude;
 			const byBackend: Record<Backend, Harness> = {
 				opencode,
 				cursor,
 				grok,
 				codex,
+				claude,
 			};
 			const all: ReadonlyArray<Harness> = [
 				byBackend.opencode,
 				byBackend.cursor,
 				byBackend.grok,
 				byBackend.codex,
+				byBackend.claude,
 			];
 
 			const get = (backend: Backend): Harness => byBackend[backend];
@@ -42,5 +46,6 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 		Layer.provide(Cursor.layer),
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
+		Layer.provide(Claude.layer),
 	);
 }

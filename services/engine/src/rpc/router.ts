@@ -28,7 +28,13 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 	return value;
 }
 
-const backendSchema = v.picklist(['opencode', 'cursor', 'grok', 'codex']);
+const backendSchema = v.picklist([
+	'opencode',
+	'cursor',
+	'grok',
+	'codex',
+	'claude',
+]);
 const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
 const agentNameSchema = v.pipe(v.string(), v.nonEmpty());
 const agentTargetSchema = v.object({
@@ -247,7 +253,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-					backend: v.picklist(['opencode', 'cursor', 'grok', 'codex']),
+					backend: backendSchema,
 					model_id: v.pipe(v.string(), v.nonEmpty()),
 					reasoning_effort: reasoningEffortSchema,
 					description: v.optional(v.string()),

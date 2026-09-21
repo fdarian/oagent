@@ -11,6 +11,7 @@ export {
 	Agents,
 	AgentTypeNotFound,
 } from './agents.ts';
+export { Claude } from './claude.ts';
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
 export { Grok } from './grok.ts';

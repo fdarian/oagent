@@ -89,6 +89,25 @@ function extractModelIds(
 	return ids;
 }
 
+function extractSessionModelIds(
+	availableModels: ReadonlyArray<{ modelId: string }> | null | undefined,
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): ReadonlyArray<string> | undefined {
+	if (
+		availableModels !== undefined &&
+		availableModels !== null &&
+		availableModels.length > 0
+	) {
+		return availableModels.map((model) => model.modelId);
+	}
+
+	const modelOption = configOptions?.find((option) => option.id === 'model');
+	if (modelOption === undefined || modelOption.type !== 'select') {
+		return availableModels === undefined ? undefined : [];
+	}
+	return extractModelIds(modelOption.options).map((model) => model.id);
+}
+
 export type AcpModeOption = {
 	readonly id: string;
 	readonly name: string;
@@ -402,10 +421,12 @@ export function runAcpTurn(
 				}).pipe(
 					Effect.map((res) => ({
 						sessionId: sid,
-						availableModels:
+						availableModels: extractSessionModelIds(
 							res.models === undefined || res.models === null
 								? undefined
-								: res.models.availableModels.map((m) => m.modelId),
+								: res.models.availableModels,
+							res.configOptions,
+						),
 						availableModes: extractModeOptions(res.configOptions),
 					})),
 				);
@@ -416,10 +437,12 @@ export function runAcpTurn(
 			}).pipe(
 				Effect.map((res) => ({
 					sessionId: res.sessionId,
-					availableModels:
+					availableModels: extractSessionModelIds(
 						res.models === undefined || res.models === null
 							? undefined
-							: res.models.availableModels.map((m) => m.modelId),
+							: res.models.availableModels,
+						res.configOptions,
+					),
 					availableModes: extractModeOptions(res.configOptions),
 				})),
 			);
@@ -669,21 +692,15 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 					});
 
 					const availableModels =
-						res.models !== undefined && res.models !== null
-							? res.models.availableModels
-							: [];
-					const models = (() => {
-						if (availableModels.length > 0) {
-							return availableModels.map((model) => ({ id: model.modelId }));
-						}
-						const modelOption = res.configOptions?.find(
-							(option) => option.id === 'model',
-						);
-						if (modelOption === undefined || modelOption.type !== 'select') {
-							return [];
-						}
-						return extractModelIds(modelOption.options);
-					})();
+						res.models === undefined || res.models === null
+							? undefined
+							: res.models.availableModels;
+					const modelIds = extractSessionModelIds(
+						availableModels,
+						res.configOptions,
+					);
+					const models =
+						modelIds === undefined ? [] : modelIds.map((id) => ({ id }));
 
 					return {
 						models,
