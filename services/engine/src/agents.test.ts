@@ -17,6 +17,7 @@ function createAgentsLayer() {
 		CREATE TABLE agents (
 			id integer PRIMARY KEY AUTOINCREMENT NOT NULL,
 			name text NOT NULL,
+			description text,
 			created_at integer NOT NULL,
 			updated_at integer NOT NULL
 		);
@@ -49,12 +50,21 @@ describe('Agents', () => {
 				expect(
 					agents.save({
 						name: 'reviewer',
+						description: 'Reviews changes for correctness and clarity.',
 						targets: [{ backend: 'opencode', target: 'plan' }],
 					}),
 				).toEqual({
 					name: 'reviewer',
+					description: 'Reviews changes for correctness and clarity.',
 					targets: [{ backend: 'opencode', target: 'plan' }],
 				});
+				expect(agents.list()).toEqual([
+					{
+						name: 'reviewer',
+						description: 'Reviews changes for correctness and clarity.',
+						targets: [{ backend: 'opencode', target: 'plan' }],
+					},
+				]);
 				expect(yield* agents.resolve('reviewer', 'opencode')).toBe('plan');
 
 				agents.save({
@@ -64,6 +74,7 @@ describe('Agents', () => {
 				expect(agents.list()).toEqual([
 					{
 						name: 'reviewer',
+						description: undefined,
 						targets: [{ backend: 'opencode', target: 'build' }],
 					},
 				]);

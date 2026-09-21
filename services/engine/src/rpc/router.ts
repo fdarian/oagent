@@ -280,6 +280,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					name: agentNameSchema,
+					description: v.optional(v.nullable(v.string())),
 					targets: v.array(agentTargetSchema),
 				}),
 			)

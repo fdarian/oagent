@@ -11,6 +11,7 @@ export type AgentHarnessTarget = {
 
 export type AgentDefinition = {
 	readonly name: string;
+	readonly description?: string | null;
 	readonly targets: ReadonlyArray<AgentHarnessTarget>;
 };
 
@@ -91,7 +92,11 @@ export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 				if (targets === undefined) {
 					throw new Error(`Missing target collection for agent ${agentRow.id}`);
 				}
-				return { name: agentRow.name, targets };
+				return {
+					name: agentRow.name,
+					description: agentRow.description ?? undefined,
+					targets,
+				};
 			});
 		};
 
@@ -102,12 +107,16 @@ export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 					.insert(schema.agents)
 					.values({
 						name: input.name,
+						description: input.description ?? null,
 						created_at: now,
 						updated_at: now,
 					})
 					.onConflictDoUpdate({
 						target: schema.agents.name,
-						set: { updated_at: now },
+						set: {
+							description: input.description ?? null,
+							updated_at: now,
+						},
 					})
 					.returning({ id: schema.agents.id })
 					.get();
@@ -135,6 +144,7 @@ export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 
 			return {
 				name: input.name,
+				description: input.description ?? undefined,
 				targets: input.targets.map((target) => ({
 					backend: target.backend,
 					target: target.target,
