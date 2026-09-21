@@ -268,7 +268,7 @@ function AgentForm(props: AgentFormProps) {
 	const saveMutation = useMutation({
 		mutationFn: (input: {
 			name: string;
-			description?: string;
+			description: string | null;
 			targets: Array<AgentTarget>;
 		}) => orpc.agents.save(input),
 		onSuccess: () => {
@@ -298,7 +298,7 @@ function AgentForm(props: AgentFormProps) {
 			const description = values.description.trim();
 			saveMutation.mutate({
 				name: values.name.trim(),
-				description: description === '' ? undefined : description,
+				description: description === '' ? null : description,
 				targets: getFormTargets(values),
 			});
 		},

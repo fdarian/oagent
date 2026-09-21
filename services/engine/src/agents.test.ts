@@ -67,8 +67,15 @@ describe('Agents', () => {
 				]);
 				expect(yield* agents.resolve('reviewer', 'opencode')).toBe('plan');
 
-				agents.save({
+				expect(
+					agents.save({
+						name: 'reviewer',
+						description: null,
+						targets: [{ backend: 'opencode', target: 'build' }],
+					}),
+				).toEqual({
 					name: 'reviewer',
+					description: undefined,
 					targets: [{ backend: 'opencode', target: 'build' }],
 				});
 				expect(agents.list()).toEqual([
