@@ -1,8 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import {
-	type AliasPreset,
 	type AgentTypePreset,
+	type AliasPreset,
 	cancelTool,
 	formatAgentTypes,
 	formatPresets,
