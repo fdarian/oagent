@@ -25,6 +25,7 @@ export { cancelTool } from './mcp/tools/cancel.ts';
 export { resultTool } from './mcp/tools/result.ts';
 export {
 	type AliasPreset,
+	type AgentTypePreset,
 	formatAgentTypes,
 	formatPresets,
 	inputSchema as startInputSchema,

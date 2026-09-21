@@ -23,6 +23,11 @@ export type AliasPreset = {
 	description?: string | null;
 };
 
+export type AgentTypePreset = {
+	name: string;
+	description?: string | null;
+};
+
 /** Renders the preset/alias suffix shared by every `start` tool description. Empty when there are no aliases. */
 export function formatPresets(aliases: AliasPreset[]): string {
 	if (aliases.length === 0) {
@@ -53,14 +58,24 @@ Available presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form
 ${lines.join('\n')}`;
 }
 
-export function formatAgentTypes(agentTypes: ReadonlyArray<string>): string {
+export function formatAgentTypes(
+	agentTypes: ReadonlyArray<AgentTypePreset>,
+): string {
 	if (agentTypes.length === 0) {
 		return `
 
 Configured agent types: none.`;
 	}
 
-	const lines = agentTypes.map((name) => `  - \`${name}\``);
+	const lines = agentTypes.map((agentType) => {
+		const description =
+			agentType.description !== undefined &&
+			agentType.description !== null &&
+			agentType.description !== ''
+				? ` — ${agentType.description}`
+				: '';
+		return `  - \`${agentType.name}\`${description}`;
+	});
 	return `
 
 Configured agent types (use as \`agent_type\`):
@@ -69,7 +84,7 @@ ${lines.join('\n')}`;
 
 export function buildDescription(
 	aliases: AliasPreset[],
-	agentTypes: ReadonlyArray<string>,
+	agentTypes: ReadonlyArray<AgentTypePreset>,
 ): string {
 	return `${BASE_DESCRIPTION}${formatPresets(aliases)}${formatAgentTypes(agentTypes)}`;
 }
