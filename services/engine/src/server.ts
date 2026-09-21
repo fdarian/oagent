@@ -13,6 +13,7 @@ import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
+import { formatMcpInstructions } from './mcp/tools/start.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
 import { Settings } from './settings.ts';
@@ -44,6 +45,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
 		const services = yield* Effect.context<EngineServices>();
+		const getMcpInstructions = () =>
+			formatMcpInstructions(jobs.listAliases(), agents.list());
 		yield* Effect.forkDetach(
 			harnesses
 				.refresh()
@@ -56,11 +59,12 @@ export class Engine extends Context.Service<Engine>()('engine', {
 
 		return {
 			mcp: {
+				getInstructions: getMcpInstructions,
 				registerTools: (
 					server: McpServer,
 					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, agents, services, waitUrlBase),
+				) => registerTools(server, jobs, services, waitUrlBase),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -109,12 +113,14 @@ export class Engine extends Context.Service<Engine>()('engine', {
 
 							const mcpServer = new McpServer(
 								{ name: serverInfo.name, version: serverInfo.version },
-								{ capabilities: { tools: {} } },
+								{
+									capabilities: { tools: {} },
+									instructions: getMcpInstructions(),
+								},
 							);
 							registerTools(
 								mcpServer,
 								jobs,
-								agents,
 								services,
 								portlessPublicBase ?? url.origin,
 							);

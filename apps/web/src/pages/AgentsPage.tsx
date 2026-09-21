@@ -271,8 +271,15 @@ function AgentForm(props: AgentFormProps) {
 			description: string | null;
 			targets: Array<AgentTarget>;
 		}) => orpc.agents.save(input),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
+		onSuccess: async (savedAgent) => {
+			queryClient.setQueryData<ReadonlyArray<Agent>>(
+				queryKeys.agents(),
+				(agents) =>
+					agents?.map((agent) =>
+						agent.name === savedAgent.name ? savedAgent : agent,
+					),
+			);
+			await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
 			props.onSuccess();
 		},
 		onError: (error: Error) => {

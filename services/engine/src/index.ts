@@ -28,6 +28,7 @@ export {
 	type AgentTypePreset,
 	type AliasPreset,
 	formatAgentTypes,
+	formatMcpInstructions,
 	formatPresets,
 	inputSchema as startInputSchema,
 } from './mcp/tools/start.ts';

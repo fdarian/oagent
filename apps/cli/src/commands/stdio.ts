@@ -12,7 +12,10 @@ function runStdio(version: Version) {
 
 		const server = new McpServer(
 			{ name: 'oagent', version: version },
-			{ capabilities: { tools: {} } },
+			{
+				capabilities: { tools: {} },
+				instructions: engine.mcp.getInstructions(),
+			},
 		);
 		engine.mcp.registerTools(server, services, undefined);
 

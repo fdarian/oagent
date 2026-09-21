@@ -3,25 +3,19 @@ import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
 const description = `\
-Fetch the result of an agent job (started via \`start\`).
-
-It returns the final result as a discriminated union:
-- Success: \`{ status: "done", text, sessionId, stopReason }\` — the final aggregated assistant text plus the \`sessionId\` you can pass back into a subsequent \`start\` call to continue the same conversation
-- Error: \`{ status: "error", message, sessionId? }\` — the job terminated with an error; \
-  \`sessionId\` is included when the harness created a session before the error
-- Cancelled: \`{ status: "cancelled", sessionId? }\` — \`sessionId\` is included when the \
-  harness created a session before cancellation
-- Pending: \`{ status: "running", jobId }\` — the job is still running, wait by executing \`oagent jobs wait <jobId>\` as a background command`;
+Fetch the result of an agent job, waiting briefly if it is still running. If it \
+remains running, retry later or run \`oagent jobs wait <jobId>\` as a background \
+command.`;
 
 const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
 const WAIT_TIMEOUT_MAX_MS = 55_000;
 
 const inputSchema = {
-	jobId: z.string().describe('The jobId returned by start.'),
+	jobId: z.string().describe('The jobId returned by `start`.'),
 	timeoutMs: z
 		.number()
 		.optional()
-		.describe('Max milliseconds to block (default 50000, capped at 55000).'),
+		.describe('Maximum milliseconds to wait (default 50000, capped at 55000).'),
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;

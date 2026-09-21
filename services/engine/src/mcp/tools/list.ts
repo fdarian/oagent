@@ -3,10 +3,8 @@ import type { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
 
 const description = `\
-List all agent jobs spawned by the current MCP session.
-
-Returns a markdown summary of each job: id, status, prompt, and creation time.
-Only available in /mcp HTTP mode where a session id is tracked.`;
+List agent jobs started in the current MCP session, including their ids, statuses, \
+prompts, and creation times. Only available over the HTTP \`/mcp\` transport.`;
 
 const inputSchema = {};
 
