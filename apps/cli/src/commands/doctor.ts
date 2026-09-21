@@ -221,6 +221,9 @@ function normalizeCommand(command: string): string {
 	if (command.includes('cursor-agent') && command.includes(' acp')) {
 		return 'cursor-agent acp';
 	}
+	if (command.includes('claude-agent-acp')) {
+		return 'claude-agent-acp';
+	}
 	if (isOpencodeCommand(command)) {
 		return 'opencode acp';
 	}

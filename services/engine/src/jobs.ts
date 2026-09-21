@@ -3,21 +3,45 @@
 import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, gt, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
 import { Context, Effect, Fiber, Layer, Schema } from 'effect';
-import { Codex } from './codex.ts';
-import { Cursor } from './cursor.ts';
+import {
+	type AgentNotMappedForBackend,
+	Agents,
+	type AgentTypeNotFound,
+} from './agents.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { Grok } from './grok.ts';
-import type { Backend } from './model-catalog.ts';
-import { OpenCode } from './opencode.ts';
+import { type Backend, isBackend, parseBackend } from './harness.ts';
+import { HarnessRegistry } from './harness-registry.ts';
 import { Settings } from './settings.ts';
 
-class JobNotFound extends Schema.TaggedError<JobNotFound>()('JobNotFound', {
-	jobId: Schema.String,
-}) {}
+export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
+	'JobNotFound',
+	{
+		jobId: Schema.String,
+	},
+) {
+	override get message() {
+		return `Job not found: ${this.jobId}`;
+	}
+}
+
+export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
+	'JobSteerError',
+	{
+		code: Schema.Literals([
+			'NOT_RUNNING',
+			'UNSUPPORTED_BACKEND',
+			'UNSUPPORTED_VERSION',
+			'VERSION_CHECK_FAILED',
+			'SESSION_NOT_READY',
+			'DELIVERY_FAILED',
+		]),
+		message: Schema.String,
+	},
+) {}
 
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
@@ -32,10 +56,41 @@ export class ModelResolutionError extends Schema.TaggedError<ModelResolutionErro
 	},
 ) {}
 
+export class JobStartError extends Schema.TaggedError<JobStartError>()(
+	'JobStartError',
+	{
+		code: Schema.Literals(['SIDE_CHAT_TURN_IN_PROGRESS', 'PERSISTENCE_FAILED']),
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
+
 type JobOk = {
 	readonly sessionId: string;
 	readonly text: string;
 	readonly stopReason: string | undefined;
+};
+
+type JobReservation = {
+	readonly internalId: number;
+	readonly jobId: string;
+	readonly prompt: string;
+	readonly cwd: string;
+	readonly backend: Backend;
+	readonly model: string;
+	readonly reasoningEffort: string | undefined;
+	readonly agentTarget: string | undefined;
+	readonly sessionId: string | undefined;
+};
+
+type ReserveJobInput = {
+	prompt: string;
+	model?: string;
+	agentType?: string;
+	sessionId?: string;
+	mcpSessionId?: string;
+	sideChatId?: number;
+	cwd: string;
 };
 
 type WaitResult =
@@ -54,7 +109,7 @@ type WaitResult =
 	| { readonly status: 'cancelled'; readonly sessionId?: string };
 
 type EventPage = {
-	events: { event: SessionUpdate; sequence: number }[];
+	events: { event: SessionUpdate; sequence: number; createdAt: number }[];
 	nextCursor: number | null;
 };
 
@@ -71,32 +126,31 @@ export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
-function parseBackend(value: string): Backend {
-	if (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex'
-	) {
-		return value;
+function isRunningSideChatTurnConflict(cause: unknown): boolean {
+	if (cause === null || typeof cause !== 'object' || !('message' in cause)) {
+		return false;
 	}
-	throw new Error(`Invalid persisted job backend: ${value}`);
+	if (typeof cause.message !== 'string') return false;
+	return (
+		cause.message.includes('UNIQUE constraint failed') &&
+		(cause.message.includes('jobs.side_chat_id') ||
+			cause.message.includes('jobs_side_chat_running_uq'))
+	);
 }
 
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
-		const opencode = yield* OpenCode;
-		const cursor = yield* Cursor;
-		const grok = yield* Grok;
-		const codex = yield* Codex;
+		const harnessRegistry = yield* HarnessRegistry;
 		const settings = yield* Settings;
-		const { db } = yield* Db;
+		const agents = yield* Agents;
+		const dbService = yield* Db;
+		const db = dbService.db;
 
 		const resolveModel = (
 			model: string,
 		): Effect.Effect<
 			{
-				backend: string;
+				backend: Backend;
 				modelId: string;
 				reasoningEffort: string | undefined;
 			},
@@ -108,15 +162,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (colonIdx !== -1) {
 					const backend = model.slice(0, colonIdx);
 					const modelId = model.slice(colonIdx + 1);
-					if (
-						backend !== 'opencode' &&
-						backend !== 'cursor' &&
-						backend !== 'grok' &&
-						backend !== 'codex'
-					) {
+					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex.`,
+							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
 						});
 					}
 					return { backend, modelId, reasoningEffort: undefined };
@@ -133,6 +182,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_ALIAS',
 						message: `Model "${model}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
+					});
+				}
+				if (!isBackend(alias.backend)) {
+					return yield* new ModelResolutionError({
+						code: 'UNKNOWN_BACKEND',
+						message: `Model alias "${model}" references unknown backend "${alias.backend}".`,
 					});
 				}
 
@@ -263,6 +318,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			});
 		};
 
+		const publishEvent = (
+			internalJobId: number,
+			jobId: string,
+			event: SessionUpdate,
+		): void => {
+			const eventId = insertEvent(internalJobId, event);
+			const emitter = liveEmitters.get(jobId);
+			if (emitter !== undefined) {
+				emitter.emit('event', { event, sequence: eventId });
+			}
+		};
+
 		const readEventsPage = (
 			jobId: number,
 			sinceId: number,
@@ -345,7 +412,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cost_currency: row.usage_events?.cost_currency ?? null,
 					},
 				);
-				return { event, sequence: row.events.id };
+				return {
+					event,
+					sequence: row.events.id,
+					createdAt: row.events.created_at.getTime(),
+				};
 			});
 
 			const nextCursor = (() => {
@@ -358,16 +429,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return { events, nextCursor };
 		};
 
-		const start = (input: {
-			prompt: string;
-			model?: string;
-			sessionId?: string;
-			mcpSessionId?: string;
-			cwd: string;
-		}): Effect.Effect<{ jobId: string }, ModelResolutionError, never> =>
+		const reserve = (
+			input: ReserveJobInput,
+		): Effect.Effect<
+			JobReservation,
+			| ModelResolutionError
+			| AgentTypeNotFound
+			| AgentNotMappedForBackend
+			| JobStartError,
+			never
+		> =>
 			Effect.gen(function* () {
-				const uuid = randomUUIDv7();
-
 				const model = input.model;
 				if (model === undefined) {
 					return yield* new ModelResolutionError({
@@ -381,143 +453,276 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const backend = resolvedModel.backend;
 				const rest = resolvedModel.modelId;
 				const reasoningEffort = resolvedModel.reasoningEffort;
+				const agentTarget =
+					input.agentType === undefined
+						? undefined
+						: yield* agents.resolve(input.agentType, backend);
+				const uuid = randomUUIDv7();
 
-				const jobRow = db
-					.insert(schema.jobs)
-					.values({
-						uuid,
-						status: 'running',
-						prompt: input.prompt,
-						cwd: input.cwd,
-						model: rest,
-						backend,
-						session_id: input.sessionId,
-						mcp_session_id: input.mcpSessionId,
-					})
-					.returning({ id: schema.jobs.id })
-					.get();
+				const jobRow = yield* Effect.try({
+					try: () =>
+						db.transaction((tx) =>
+							tx
+								.insert(schema.jobs)
+								.values({
+									uuid,
+									status: 'running',
+									prompt: input.prompt,
+									cwd: input.cwd,
+									model: rest,
+									agent_type: input.agentType,
+									backend,
+									session_id: input.sessionId,
+									mcp_session_id: input.mcpSessionId,
+									side_chat_id: input.sideChatId,
+								})
+								.returning({ id: schema.jobs.id })
+								.get(),
+						),
+					catch: (cause) =>
+						input.sideChatId !== undefined &&
+						isRunningSideChatTurnConflict(cause)
+							? new JobStartError({
+									code: 'SIDE_CHAT_TURN_IN_PROGRESS',
+									message: 'This side chat already has a turn in progress.',
+									cause,
+								})
+							: new JobStartError({
+									code: 'PERSISTENCE_FAILED',
+									message: 'Could not persist the job.',
+									cause,
+								}),
+				});
 				if (jobRow === undefined) {
-					throw new Error('Failed to insert job');
+					return yield* new JobStartError({
+						code: 'PERSISTENCE_FAILED',
+						message: 'Could not persist the job.',
+						cause: new Error('Job insert returned no row'),
+					});
 				}
 				const internalId = jobRow.id;
 				jobsEmitter.emit('change', { type: 'created', jobId: uuid });
+				return {
+					internalId,
+					jobId: uuid,
+					prompt: input.prompt,
+					cwd: input.cwd,
+					backend,
+					model: rest,
+					reasoningEffort,
+					agentTarget,
+					sessionId: input.sessionId,
+				};
+			});
+
+		const failReserved = (
+			reservation: JobReservation,
+			error: unknown,
+		): Effect.Effect<void, JobStartError, never> =>
+			Effect.try({
+				try: () => {
+					const failed = db
+						.update(schema.jobs)
+						.set({
+							status: 'error',
+							error_message: formatJobError(error),
+							terminated_at: new Date(),
+						})
+						.where(
+							and(
+								eq(schema.jobs.id, reservation.internalId),
+								eq(schema.jobs.status, 'running'),
+							),
+						)
+						.returning({ id: schema.jobs.id })
+						.get();
+					if (failed !== undefined) {
+						jobsEmitter.emit('change', {
+							type: 'status',
+							jobId: reservation.jobId,
+							status: 'error',
+						});
+					}
+				},
+				catch: (cause) =>
+					new JobStartError({
+						code: 'PERSISTENCE_FAILED',
+						message: 'Could not record the job failure.',
+						cause,
+					}),
+			});
+
+		const runReserved = (input: {
+			reservation: JobReservation;
+			agentPrompt?: string;
+			sessionId?: string;
+			onPromptDispatch?: () => void;
+		}): Effect.Effect<{ jobId: string }, JobStartError, never> => {
+			const sessionId =
+				input.sessionId === undefined
+					? input.reservation.sessionId
+					: input.sessionId;
+			const agentPrompt =
+				input.agentPrompt === undefined
+					? input.reservation.prompt
+					: input.agentPrompt;
+
+			return Effect.gen(function* () {
+				if (
+					sessionId !== undefined &&
+					sessionId !== input.reservation.sessionId
+				) {
+					yield* Effect.try({
+						try: () =>
+							db
+								.update(schema.jobs)
+								.set({ session_id: sessionId })
+								.where(
+									and(
+										eq(schema.jobs.id, input.reservation.internalId),
+										eq(schema.jobs.status, 'running'),
+									),
+								)
+								.returning({ id: schema.jobs.id })
+								.get(),
+						catch: (cause) =>
+							new JobStartError({
+								code: 'PERSISTENCE_FAILED',
+								message: 'Could not prepare the reserved job.',
+								cause,
+							}),
+					}).pipe(
+						Effect.flatMap((updated) =>
+							updated === undefined
+								? new JobStartError({
+										code: 'PERSISTENCE_FAILED',
+										message: 'Reserved job is no longer running.',
+										cause: new Error('Reserved job is no longer running'),
+									})
+								: Effect.void,
+						),
+					);
+				}
 
 				const emitter = new EventEmitter();
 				emitter.setMaxListeners(0);
-				liveEmitters.set(uuid, emitter);
+				liveEmitters.set(input.reservation.jobId, emitter);
 
 				const onEvent = (event: SessionUpdate): void => {
-					const eventId = insertEvent(internalId, event);
-					emitter.emit('event', { event, sequence: eventId });
+					publishEvent(
+						input.reservation.internalId,
+						input.reservation.jobId,
+						event,
+					);
 				};
 
 				const closeResources = Effect.sync(() => {
-					liveEmitters.delete(uuid);
-					liveFibers.delete(uuid);
+					liveEmitters.delete(input.reservation.jobId);
+					liveFibers.delete(input.reservation.jobId);
 					emitter.emit(TERMINAL_EVENT);
 				});
 
 				const onSessionId = (sessionId: string): void => {
 					db.update(schema.jobs)
 						.set({ session_id: sessionId })
-						.where(eq(schema.jobs.id, internalId))
+						.where(eq(schema.jobs.id, input.reservation.internalId))
 						.run();
-					jobsEmitter.emit('change', { type: 'updated', jobId: uuid });
+					jobsEmitter.emit('change', {
+						type: 'updated',
+						jobId: input.reservation.jobId,
+					});
 				};
 
-				const runTurnEffect = (() => {
-					if (backend === 'opencode') {
-						return opencode.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							reasoningEffort,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					if (backend === 'grok') {
-						return grok.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					if (backend === 'codex') {
-						return codex.runTurn({
-							prompt: input.prompt,
-							model: rest,
-							reasoningEffort,
-							sessionId: input.sessionId,
-							cwd: input.cwd,
-							onSessionId,
-							onEvent,
-						});
-					}
-					return cursor.runTurn({
-						prompt: input.prompt,
-						model: rest,
-						sessionId: input.sessionId,
-						cwd: input.cwd,
+				const runTurnEffect = harnessRegistry
+					.get(input.reservation.backend)
+					.runTurn({
+						prompt: agentPrompt,
+						model: input.reservation.model,
+						reasoningEffort: input.reservation.reasoningEffort,
+						mode: input.reservation.agentTarget,
+						sessionId,
+						cwd: input.reservation.cwd,
 						onSessionId,
 						onEvent,
-						onExtensionEvent: (method, params) => {
-							onEvent({
-								sessionUpdate: 'cursor_extension',
-								_meta: { method, params },
-							} as unknown as SessionUpdate);
-						},
+						onPromptDispatch: input.onPromptDispatch,
 					});
-				})();
 
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
-							Effect.sync(() => {
-								db.update(schema.jobs)
-									.set({
-										status: 'done',
-										session_id: result.sessionId,
-										text: result.text,
-										stop_reason: result.stopReason ?? null,
-										terminated_at: new Date(),
-									})
-									.where(eq(schema.jobs.id, internalId))
-									.run();
-								jobsEmitter.emit('change', {
-									type: 'status',
-									jobId: uuid,
-									status: 'done',
-								});
+							Effect.try({
+								try: () => {
+									const completed = db
+										.update(schema.jobs)
+										.set({
+											status: 'done',
+											session_id: result.sessionId,
+											text: result.text,
+											stop_reason: result.stopReason ?? null,
+											terminated_at: new Date(),
+										})
+										.where(
+											and(
+												eq(schema.jobs.id, input.reservation.internalId),
+												eq(schema.jobs.status, 'running'),
+											),
+										)
+										.returning({ id: schema.jobs.id })
+										.get();
+									if (completed !== undefined) {
+										jobsEmitter.emit('change', {
+											type: 'status',
+											jobId: input.reservation.jobId,
+											status: 'done',
+										});
+									}
+								},
+								catch: (cause) =>
+									new JobStartError({
+										code: 'PERSISTENCE_FAILED',
+										message: 'Could not record the completed job.',
+										cause,
+									}),
 							}),
 						),
-						Effect.tapError((error) =>
-							Effect.sync(() => {
-								db.update(schema.jobs)
-									.set({
-										status: 'error',
-										error_message: formatJobError(error),
-										terminated_at: new Date(),
-									})
-									.where(eq(schema.jobs.id, internalId))
-									.run();
-								jobsEmitter.emit('change', {
-									type: 'status',
-									jobId: uuid,
-									status: 'error',
-								});
-							}),
-						),
+						Effect.tapError((error) => failReserved(input.reservation, error)),
 						Effect.ensuring(closeResources),
 					),
+					// The handoff can be masked, but the detached turn must stay interruptible.
+					{ uninterruptible: false },
 				);
 
-				liveFibers.set(uuid, fiber);
-				return { jobId: uuid };
+				liveFibers.set(input.reservation.jobId, fiber);
+				return { jobId: input.reservation.jobId };
+			}).pipe(
+				Effect.catch((error) =>
+					failReserved(input.reservation, error).pipe(
+						Effect.flatMap(() => error),
+					),
+				),
+			);
+		};
+
+		const start = (
+			input: ReserveJobInput & {
+				agentPrompt?: string;
+				onPromptDispatch?: () => void;
+			},
+		): Effect.Effect<
+			{ jobId: string },
+			| ModelResolutionError
+			| AgentTypeNotFound
+			| AgentNotMappedForBackend
+			| JobStartError,
+			never
+		> =>
+			Effect.gen(function* () {
+				const reservation = yield* reserve(input);
+				return yield* runReserved({
+					reservation,
+					agentPrompt: input.agentPrompt,
+					onPromptDispatch: input.onPromptDispatch,
+				});
 			});
 
 		const cancel = (input: {
@@ -553,6 +758,64 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (fiber !== undefined) {
 					yield* Fiber.interrupt(fiber);
 				}
+			});
+
+		const steer = (
+			jobId: string,
+			text: string,
+		): Effect.Effect<void, JobNotFound | JobSteerError, never> =>
+			Effect.gen(function* () {
+				const job = db
+					.select()
+					.from(schema.jobs)
+					.where(eq(schema.jobs.uuid, jobId))
+					.limit(1)
+					.get();
+
+				if (job === undefined) {
+					return yield* new JobNotFound({ jobId });
+				}
+
+				if (job.status !== 'running') {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} cannot be steered because it is ${job.status}; only running jobs can be steered.`,
+					});
+				}
+
+				const backend = parseBackend(job.backend);
+				const harness = harnessRegistry.get(backend);
+				const steer = harness.steer;
+				if (steer === undefined) {
+					return yield* new JobSteerError({
+						code: 'UNSUPPORTED_BACKEND',
+						message: `Steering is not supported for backend "${backend}".`,
+					});
+				}
+
+				if (job.session_id === null) {
+					return yield* new JobSteerError({
+						code: 'SESSION_NOT_READY',
+						message: `Job ${jobId} cannot be steered yet because its OpenCode session ID has not been recorded. Try again after the session starts.`,
+					});
+				}
+
+				const result = yield* steer({ sessionId: job.session_id, text }).pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code: error.code,
+								message: error.message,
+							}),
+					),
+				);
+
+				publishEvent(job.id, jobId, {
+					sessionUpdate: 'user_message_chunk',
+					messageId: result.messageId,
+					content: { type: 'text', text: result.text },
+					_meta: { 'oagent/steer': true },
+				});
 			});
 
 		const wait = (input: {
@@ -623,6 +886,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			cwd: string;
 			backend: Backend;
 			model?: string;
+			agentType?: string;
 			sessionId?: string;
 			mcpSessionId?: string;
 		};
@@ -638,6 +902,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			cwd: row.cwd,
 			backend: parseBackend(row.backend),
 			model: row.model ?? undefined,
+			agentType: row.agent_type ?? undefined,
 			sessionId: row.session_id === null ? undefined : row.session_id,
 			mcpSessionId: row.mcp_session_id ?? undefined,
 		});
@@ -646,6 +911,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			const rows = db
 				.select()
 				.from(schema.jobs)
+				.where(isNull(schema.jobs.side_chat_id))
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
 					desc(schema.jobs.created_at),
@@ -659,7 +925,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			const rows = db
 				.select()
 				.from(schema.jobs)
-				.where(eq(schema.jobs.mcp_session_id, mcpSessionId))
+				.where(
+					and(
+						eq(schema.jobs.mcp_session_id, mcpSessionId),
+						isNull(schema.jobs.side_chat_id),
+					),
+				)
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
 					desc(schema.jobs.created_at),
@@ -669,22 +940,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return rows.map(toJobSummary);
 		};
 
-		const getDetail = (
-			jobId: string,
-		):
-			| {
-					id: string;
-					status: 'running' | 'done' | 'error' | 'cancelled';
-					createdAt: number;
-					terminatedAt?: number;
-					prompt: string;
-					cwd: string;
-					backend: Backend;
-					model?: string;
-					sessionId?: string;
-					recentEvents: SessionUpdate[];
-			  }
-			| undefined => {
+		const getJobMetadata = (jobId: string): JobSummary | undefined => {
 			const job = db
 				.select()
 				.from(schema.jobs)
@@ -693,28 +949,21 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				.get();
 			if (job === undefined) return undefined;
 
-			const allEvents: SessionUpdate[] = [];
-			let cursor = 0;
-			while (true) {
-				const page = readEventsPage(job.id, cursor, 100);
-				for (const item of page.events) {
-					allEvents.push(item.event);
-				}
-				if (page.nextCursor === null) break;
-				cursor = page.nextCursor;
-			}
-			return {
-				id: job.uuid,
-				status: job.status,
-				createdAt: job.created_at.getTime(),
-				terminatedAt: job.terminated_at?.getTime(),
-				prompt: job.prompt,
-				cwd: job.cwd,
-				backend: parseBackend(job.backend),
-				model: job.model ?? undefined,
-				sessionId: job.session_id === null ? undefined : job.session_id,
-				recentEvents: allEvents,
-			};
+			return toJobSummary(job);
+		};
+
+		const getRootJobMetadata = (jobId: string): JobSummary | undefined => {
+			const job = db
+				.select()
+				.from(schema.jobs)
+				.where(
+					and(eq(schema.jobs.uuid, jobId), isNull(schema.jobs.side_chat_id)),
+				)
+				.limit(1)
+				.get();
+			if (job === undefined) return undefined;
+
+			return toJobSummary(job);
 		};
 
 		const subscribe = (
@@ -843,11 +1092,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		return {
 			start,
+			reserve,
+			runReserved,
+			failReserved,
 			cancel,
+			steer,
 			wait,
 			list,
 			listByMcpSession,
-			getDetail,
+			getJobMetadata,
+			getRootJobMetadata,
 			subscribe,
 			subscribeJobs,
 			listAliases,
@@ -868,11 +1122,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	}),
 }) {
 	static readonly layer = Layer.effect(Jobs, Jobs.make).pipe(
-		Layer.provide(OpenCode.layer),
-		Layer.provide(Cursor.layer),
-		Layer.provide(Grok.layer),
-		Layer.provide(Codex.layer),
+		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Settings.layer),
+		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),
 	);
 }

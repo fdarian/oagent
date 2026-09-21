@@ -29,6 +29,8 @@ export type TimelineToolPart = {
 
 export type TimelinePart =
 	| { kind: 'text'; id: string; text: string; createdAt: number }
+	| { kind: 'steer'; id: string; text: string; createdAt: number }
+	| { kind: 'user'; id: string; text: string; createdAt: number }
 	| {
 			kind: 'reasoning';
 			id: string;
@@ -106,6 +108,14 @@ type OpenText = {
 	messageId?: string | null;
 };
 
+type OpenSteer = {
+	kind: 'steer';
+	id: string;
+	text: string;
+	createdAt: number;
+	messageId?: string | null;
+};
+
 type OpenReasoning = {
 	kind: 'reasoning';
 	id: string;
@@ -114,6 +124,18 @@ type OpenReasoning = {
 	createdAt: number;
 	messageId?: string | null;
 };
+
+type UserMessageChunk = Extract<
+	SessionUpdate,
+	{ sessionUpdate: 'user_message_chunk' }
+>;
+
+function isSteerMessageChunk(event: SessionUpdate): event is UserMessageChunk {
+	return (
+		event.sessionUpdate === 'user_message_chunk' &&
+		event._meta?.['oagent/steer'] === true
+	);
+}
 
 function shouldContinueAccumulating(
 	openPart: { messageId?: string | null } | null,
@@ -135,6 +157,7 @@ function shouldContinueAccumulating(
 type TimelineReduceState = {
 	parts: TimelinePart[];
 	openText: OpenText | null;
+	openSteer: OpenSteer | null;
 	openReasoning: OpenReasoning | null;
 	toolIndices: Map<string, number>;
 	idCounter: number;
@@ -166,6 +189,7 @@ function createInitialTimelineState(): TimelineReduceState {
 	return {
 		parts: [],
 		openText: null,
+		openSteer: null,
 		openReasoning: null,
 		toolIndices: new Map(),
 		idCounter: 0,
@@ -195,6 +219,23 @@ function flushOpenText(state: TimelineReduceState): TimelineReduceState {
 			},
 		],
 		openText: null,
+	};
+}
+
+function flushOpenSteer(state: TimelineReduceState): TimelineReduceState {
+	if (state.openSteer === null) return state;
+	return {
+		...state,
+		parts: [
+			...state.parts,
+			{
+				kind: 'steer',
+				id: state.openSteer.id,
+				text: state.openSteer.text,
+				createdAt: state.openSteer.createdAt,
+			},
+		],
+		openSteer: null,
 	};
 }
 
@@ -236,19 +277,21 @@ function applyTimelineEvent(
 	event: SessionUpdate,
 	createdAt: number,
 ): TimelineReduceState {
+	const isSteerChunk = isSteerMessageChunk(event);
 	const isAccumulatingChunk =
 		event.sessionUpdate === 'agent_message_chunk' ||
-		event.sessionUpdate === 'agent_thought_chunk';
-	const isFlushOnlyChunk = event.sessionUpdate === 'user_message_chunk';
+		event.sessionUpdate === 'agent_thought_chunk' ||
+		isSteerChunk;
 
 	let nextState = state;
 
 	if (!isAccumulatingChunk) {
 		nextState = flushOpenText(nextState);
+		nextState = flushOpenSteer(nextState);
 		nextState = flushOpenReasoning(nextState, createdAt);
 	}
 
-	if (isFlushOnlyChunk) {
+	if (event.sessionUpdate === 'user_message_chunk' && !isSteerChunk) {
 		return nextState;
 	}
 
@@ -260,6 +303,7 @@ function applyTimelineEvent(
 
 		// Flush reasoning if open (different kind of chunk)
 		nextState = flushOpenReasoning(nextState, createdAt);
+		nextState = flushOpenSteer(nextState);
 
 		const shouldContinue = shouldContinueAccumulating(
 			nextState.openText,
@@ -318,6 +362,7 @@ function applyTimelineEvent(
 
 		// Flush text if open (different kind of chunk)
 		nextState = flushOpenText(nextState);
+		nextState = flushOpenSteer(nextState);
 
 		const shouldContinue = shouldContinueAccumulating(
 			nextState.openReasoning,
@@ -363,6 +408,64 @@ function applyTimelineEvent(
 					text: nextState.openReasoning.text,
 					isStreaming: nextState.openReasoning.isStreaming,
 					createdAt: nextState.openReasoning.createdAt,
+					messageId: chunkMessageId,
+				},
+			};
+		}
+
+		return nextState;
+	}
+
+	if (isSteerChunk) {
+		const chunkMessageId = event.messageId;
+		const contentBlock = event.content;
+		const chunkText =
+			contentBlock.type === 'text' ? contentBlock.text : undefined;
+
+		nextState = flushOpenText(nextState);
+		nextState = flushOpenReasoning(nextState, createdAt);
+
+		const shouldContinue = shouldContinueAccumulating(
+			nextState.openSteer,
+			chunkMessageId,
+		);
+		if (!shouldContinue && nextState.openSteer !== null) {
+			nextState = flushOpenSteer(nextState);
+		}
+
+		if (chunkText !== undefined) {
+			if (nextState.openSteer === null) {
+				nextState = {
+					...nextState,
+					openSteer: {
+						kind: 'steer',
+						id: makeId('steer', nextState.idCounter),
+						text: chunkText,
+						createdAt,
+						messageId: chunkMessageId,
+					},
+					idCounter: nextState.idCounter + 1,
+				};
+			} else {
+				nextState = {
+					...nextState,
+					openSteer: {
+						kind: 'steer',
+						id: nextState.openSteer.id,
+						text: nextState.openSteer.text + chunkText,
+						createdAt: nextState.openSteer.createdAt,
+						messageId: chunkMessageId,
+					},
+				};
+			}
+		} else if (nextState.openSteer !== null) {
+			nextState = {
+				...nextState,
+				openSteer: {
+					kind: 'steer',
+					id: nextState.openSteer.id,
+					text: nextState.openSteer.text,
+					createdAt: nextState.openSteer.createdAt,
 					messageId: chunkMessageId,
 				},
 			};
@@ -945,15 +1048,22 @@ function toTimelineDisplay(
 					text: state.openText.text,
 					createdAt: state.openText.createdAt,
 				}
-			: state.openReasoning !== null
+			: state.openSteer !== null
 				? {
-						kind: 'reasoning',
-						id: state.openReasoning.id,
-						text: state.openReasoning.text,
-						isStreaming: true,
-						createdAt: state.openReasoning.createdAt,
+						kind: 'steer',
+						id: state.openSteer.id,
+						text: state.openSteer.text,
+						createdAt: state.openSteer.createdAt,
 					}
-				: null;
+				: state.openReasoning !== null
+					? {
+							kind: 'reasoning',
+							id: state.openReasoning.id,
+							text: state.openReasoning.text,
+							isStreaming: true,
+							createdAt: state.openReasoning.createdAt,
+						}
+					: null;
 
 	return {
 		parts: state.parts,
@@ -990,7 +1100,8 @@ function finalizeTimeline(
 	childDescription?: string,
 ): TimelineDisplay {
 	const withText = flushOpenText(state);
-	const finalized = flushOpenReasoning(withText, createdAt);
+	const withSteer = flushOpenSteer(withText);
+	const finalized = flushOpenReasoning(withSteer, createdAt);
 	return {
 		parts: finalized.parts,
 		streamingTail: null,
@@ -998,14 +1109,16 @@ function finalizeTimeline(
 	};
 }
 
-export function finalizeState(state: ReduceState): AdapterResult {
-	const endedAt = Date.now();
-	const timeline = finalizeTimeline(state.timeline, endedAt);
+export function finalizeState(
+	state: ReduceState,
+	finalizedAt: number = Date.now(),
+): AdapterResult {
+	const timeline = finalizeTimeline(state.timeline, finalizedAt);
 	const children = new Map<string, ChildTimeline>();
 	for (const child of state.children.values()) {
 		const terminalChild =
 			child.status === 'running'
-				? { ...child, status: 'failed' as const, endedAt }
+				? { ...child, status: 'failed' as const, endedAt: finalizedAt }
 				: child;
 		children.set(
 			child.id,
@@ -1013,7 +1126,7 @@ export function finalizeState(state: ReduceState): AdapterResult {
 				terminalChild,
 				finalizeTimeline(
 					child.timeline,
-					endedAt,
+					finalizedAt,
 					child.title,
 					child.description,
 				),
@@ -1061,4 +1174,17 @@ export function reduceEvents(events: SessionUpdate[]): AdapterResult {
 	}
 
 	return finalizeState(state);
+}
+
+export function reduceTimedEvents(
+	events: Array<{ event: SessionUpdate; createdAt: number }>,
+	finalizedAt: number,
+): AdapterResult {
+	let state = createInitialState();
+
+	for (const item of events) {
+		state = applyEvent(state, item.event, item.createdAt);
+	}
+
+	return finalizeState(state, finalizedAt);
 }

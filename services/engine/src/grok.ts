@@ -1,15 +1,22 @@
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
-import { Context, Effect, Layer } from 'effect';
+import { Context, Effect, Layer, Ref, Semaphore } from 'effect';
 import {
-	type AcpAgent,
 	type AcpAgentConfig,
 	AcpSessionError,
+	checkAcpConnection,
 	createAcpConnection,
+	probeAcpConnection,
 	runAcpTurn,
 } from './acp-agent.ts';
+import type { Harness } from './harness.ts';
+import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
 const GROK_BINARY = 'grok';
+
+type VersionState = {
+	loaded: boolean;
+	value: string | undefined;
+};
 
 export function getGrokBinary(): string {
 	return process.env.OAGENT_GROK_BIN ?? GROK_BINARY;
@@ -40,8 +47,29 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 	make: Effect.gen(function* () {
 		const settings = yield* Settings;
 		const binary = resolveGrokBinary() ?? getGrokBinary();
+		const createConfig = () =>
+			createGrokAcpConfig(undefined, () => settings.getHarnessEnv('grok'));
+		const check = () => checkAcpConnection('grok', createConfig());
+		const versionRef = yield* Ref.make<VersionState>({
+			loaded: false,
+			value: undefined,
+		});
+		const versionSemaphore = yield* Semaphore.make(1);
+		const version = () =>
+			versionSemaphore.withPermit(
+				Effect.gen(function* () {
+					const memoized = yield* Ref.get(versionRef);
+					if (memoized.loaded) return memoized.value;
+					const info = yield* probeAcpConnection(createConfig());
+					yield* Ref.set(versionRef, {
+						loaded: true,
+						value: info.agentVersion,
+					});
+					return info.agentVersion;
+				}),
+			);
 
-		const listModels = () =>
+		const fetchModels = () =>
 			Effect.tryPromise({
 				try: async () => {
 					const proc = Bun.spawn([binary, 'models'], {
@@ -87,15 +115,12 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 				},
 				catch: (cause) => new AcpSessionError({ cause }),
 			});
+		const modelCache = yield* ModelsCache.make(() => fetchModels());
+		const listModels = () => modelCache.get();
+		const listModelEfforts = () => Effect.succeed([]);
+		const invalidate = () => modelCache.invalidate();
 
-		const runTurn = (input: {
-			prompt: string;
-			model?: string;
-			sessionId?: string;
-			cwd: string;
-			onSessionId?: (sessionId: string) => void;
-			onEvent?: (event: SessionUpdate) => void;
-		}) =>
+		const runTurn = (input: Parameters<typeof runAcpTurn>[1]) =>
 			Effect.scoped(
 				Effect.gen(function* () {
 					const connEnv = yield* createAcpConnection(
@@ -106,11 +131,25 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 					// WORKAROUND: grok cannot change the model once a session has been created
 					// (unlike opencode/cursor which switch model per-turn over ACP), so the model
 					// must be fixed at process launch via -m. This requires a fresh subprocess per turn.
-					return yield* runAcpTurn(connEnv, { ...input, skipModelSet: true });
+					return yield* runAcpTurn(connEnv, {
+						...input,
+						reasoningEffort: undefined,
+						skipModelSet: true,
+					});
 				}),
 			);
 
-		return { runTurn, listModels } satisfies AcpAgent['Service'];
+		return {
+			backend: 'grok',
+			runTurn,
+			listModels,
+			listModelEfforts,
+			listAgentTargets: () => Effect.succeed([]),
+			resolveBinary: resolveGrokBinary,
+			version,
+			invalidate,
+			check,
+		} satisfies Harness;
 	}),
 }) {
 	static readonly layer = Layer.effect(Grok, Grok.make).pipe(

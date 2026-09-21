@@ -1,6 +1,18 @@
-import { CheckIcon, CopyIcon, MaximizeIcon, XCircleIcon } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import {
+	CheckIcon,
+	CopyIcon,
+	EllipsisIcon,
+	MaximizeIcon,
+	XCircleIcon,
+} from 'lucide-react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
 	Popover,
 	PopoverContent,
@@ -9,6 +21,7 @@ import {
 import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { cn } from '@/lib/utils';
+import { ActionRow } from './ui/action-row';
 
 export type JobHeaderProps = {
 	id: string;
@@ -17,12 +30,20 @@ export type JobHeaderProps = {
 	cwd: string;
 	backend: Backend;
 	model?: string;
+	agentType?: string;
 	sessionId?: string;
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
 	onExpandPrompt?: () => void;
+	onNewSideChat?: () => void;
+	onOpenSideChats?: () => void;
+	isCreatingSideChat?: boolean;
+	moreTriggerRef?: RefObject<HTMLButtonElement | null>;
 };
+
+const moreMenuItemClassName =
+	'bg-popover text-popover-foreground hover:bg-secondary hover:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground';
 
 type HarnessSessionPopoverProps = {
 	backend: Backend;
@@ -222,6 +243,15 @@ export function JobHeader(props: JobHeaderProps) {
 							{props.model !== undefined && props.model !== '' && (
 								<span className="truncate">{props.model}</span>
 							)}
+							{props.agentType !== undefined && props.agentType !== '' && (
+								<Badge
+									variant="outline"
+									className="max-w-full truncate rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground"
+									title={props.agentType}
+								>
+									{props.agentType}
+								</Badge>
+							)}
 							<HarnessSessionPopover
 								backend={props.backend}
 								sessionId={props.sessionId}
@@ -229,7 +259,7 @@ export function JobHeader(props: JobHeaderProps) {
 						</span>
 					</div>
 				</div>
-				<div className="flex flex-wrap items-center justify-end gap-10">
+				<ActionRow size="md">
 					<div
 						className={cn(
 							'flex items-center gap-[6px] border px-2 py-1 text-caption',
@@ -253,6 +283,40 @@ export function JobHeader(props: JobHeaderProps) {
 							Cancel
 						</button>
 					)}
+					{(props.onNewSideChat !== undefined ||
+						props.onOpenSideChats !== undefined) && (
+						<DropdownMenu>
+							<DropdownMenuTrigger asChild>
+								<button
+									ref={props.moreTriggerRef}
+									type="button"
+									className="flex items-center gap-1 border border-border px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
+								>
+									<EllipsisIcon className="h-3 w-3" />
+									More
+								</button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end">
+								{props.onOpenSideChats !== undefined && (
+									<DropdownMenuItem
+										className={moreMenuItemClassName}
+										onSelect={props.onOpenSideChats}
+									>
+										Open side chats
+									</DropdownMenuItem>
+								)}
+								{props.onNewSideChat !== undefined && (
+									<DropdownMenuItem
+										className={moreMenuItemClassName}
+										disabled={props.isCreatingSideChat}
+										onSelect={props.onNewSideChat}
+									>
+										New side chat
+									</DropdownMenuItem>
+								)}
+							</DropdownMenuContent>
+						</DropdownMenu>
+					)}
 					<button
 						type="button"
 						onClick={handleCopyId}
@@ -261,7 +325,7 @@ export function JobHeader(props: JobHeaderProps) {
 						<CopyIcon className="h-3 w-3" />
 						{copied ? 'Copied' : 'ID'}
 					</button>
-				</div>
+				</ActionRow>
 			</div>
 		</div>
 	);

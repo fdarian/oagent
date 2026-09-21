@@ -15,6 +15,7 @@ import { cn } from '@/lib/utils';
 import { JobTimelineError } from './job-timeline-error';
 import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
+import { JobTimelineSteer } from './job-timeline-steer';
 import { JobTimelineTool } from './job-timeline-tool';
 
 export type JobTimelineProps = {
@@ -23,6 +24,7 @@ export type JobTimelineProps = {
 	cwd: string;
 	header?: ReactNode;
 	isLoading?: boolean;
+	contentClassName?: string;
 	childSessions?: ReadonlyMap<string, ChildTimeline>;
 	currentChild?: ChildTimeline;
 	onChildSelect?: (sessionId: string) => void;
@@ -184,6 +186,9 @@ function renderPart(
 	switch (part.kind) {
 		case 'text':
 			return <JobTimelineMessage part={part} />;
+		case 'steer':
+		case 'user':
+			return <JobTimelineSteer part={part} />;
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
 		case 'tool':
@@ -241,7 +246,12 @@ export function JobTimeline(props: JobTimelineProps) {
 					)}
 				>
 					{(virtualItem) => (
-						<div className={cn(props.isChildTimeline ? 'pl-22' : 'px-33')}>
+						<div
+							className={cn(
+								props.isChildTimeline ? 'pl-22' : 'px-33',
+								props.contentClassName,
+							)}
+						>
 							<div className="mx-auto max-w-[900px]">
 								{renderPart(
 									partAt(virtualItem.index),

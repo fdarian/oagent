@@ -20,7 +20,12 @@ export type AliasPreset = {
 	backend: string;
 	model_id: string;
 	reasoning_effort?: string | null;
-	description: string | null;
+	description?: string | null;
+};
+
+export type AgentTypePreset = {
+	name: string;
+	description?: string | null;
 };
 
 /** Renders the preset/alias suffix shared by every `start` tool description. Empty when there are no aliases. */
@@ -39,7 +44,9 @@ export function formatPresets(aliases: AliasPreset[]): string {
 				? `[${a.reasoning_effort}]`
 				: '';
 		const desc =
-			a.description !== null && a.description !== ''
+			a.description !== undefined &&
+			a.description !== null &&
+			a.description !== ''
 				? ` — ${a.description}`
 				: '';
 		return `  - \`${padded}\` → ${a.backend}:${a.model_id}${reasoningSuffix}${desc}`;
@@ -51,8 +58,35 @@ Available presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form
 ${lines.join('\n')}`;
 }
 
-export function buildDescription(aliases: AliasPreset[]): string {
-	return `${BASE_DESCRIPTION}${formatPresets(aliases)}`;
+export function formatAgentTypes(
+	agentTypes: ReadonlyArray<AgentTypePreset>,
+): string {
+	if (agentTypes.length === 0) {
+		return `
+
+Configured agent types: none.`;
+	}
+
+	const lines = agentTypes.map((agentType) => {
+		const description =
+			agentType.description !== undefined &&
+			agentType.description !== null &&
+			agentType.description !== ''
+				? ` — ${agentType.description}`
+				: '';
+		return `  - \`${agentType.name}\`${description}`;
+	});
+	return `
+
+Configured agent types (use as \`agent_type\`):
+${lines.join('\n')}`;
+}
+
+export function buildDescription(
+	aliases: AliasPreset[],
+	agentTypes: ReadonlyArray<AgentTypePreset>,
+): string {
+	return `${BASE_DESCRIPTION}${formatPresets(aliases)}${formatAgentTypes(agentTypes)}`;
 }
 
 export const inputSchema = {
@@ -65,6 +99,12 @@ export const inputSchema = {
 		.optional()
 		.describe(
 			'Model id in either: `<backend>:<modelId>` format or an `alias`. If the user has not specified a model, ask them which model and backend to use.',
+		),
+	agent_type: z
+		.string()
+		.optional()
+		.describe(
+			'Configured agent type to run. Available agent types are listed in this tool description.',
 		),
 	sessionId: z
 		.string()
@@ -81,13 +121,25 @@ export const inputSchema = {
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'start' | 'wait'>;
+
+function errorResponse(code: string, message: string) {
+	return {
+		content: [
+			{
+				type: 'text' as const,
+				text: JSON.stringify({ error: { code, message } }),
+			},
+		],
+	};
+}
 
 export const startTool = {
 	inputSchema,
 	handle(
 		args: Args,
 		ctx: {
-			jobs: Jobs['Service'];
+			jobs: StartJobs;
 			waitUrlBase: string | undefined;
 			mcpSessionId: string | undefined;
 		},
@@ -103,6 +155,7 @@ export const startTool = {
 				prompt: args.prompt,
 				cwd: args.cwd,
 				model: args.model,
+				agentType: args.agent_type,
 				sessionId: args.sessionId,
 				mcpSessionId: ctx.mcpSessionId,
 			})
@@ -134,16 +187,13 @@ export const startTool = {
 					content: [{ type: 'text' as const, text: JSON.stringify(response) }],
 				})),
 				Effect.catchTag('ModelResolutionError', (err) =>
-					Effect.succeed({
-						content: [
-							{
-								type: 'text' as const,
-								text: JSON.stringify({
-									error: { code: err.code, message: err.message },
-								}),
-							},
-						],
-					}),
+					Effect.succeed(errorResponse(err.code, err.message)),
+				),
+				Effect.catchTag('AgentTypeNotFound', (err) =>
+					Effect.succeed(errorResponse(err._tag, err.message)),
+				),
+				Effect.catchTag('AgentNotMappedForBackend', (err) =>
+					Effect.succeed(errorResponse(err._tag, err.message)),
 				),
 			);
 	},

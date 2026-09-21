@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Backend } from './model-catalog.ts';
+import type { Backend } from './harness.ts';
 
 const CODEX_HOME_KEY = 'codex_home';
 const HARNESS_ENV_KEY_PREFIX = 'harness_env:';
