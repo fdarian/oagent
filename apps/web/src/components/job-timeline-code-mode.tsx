@@ -97,10 +97,13 @@ function Source(props: { code: string; spans: SyntaxSpan[] | null }) {
 			: sourceParts(props.code, props.spans);
 
 	return (
-		<pre className="m-0 whitespace-pre p-3 text-xs leading-relaxed">
-			<code className="font-mono text-xs">
+		<pre className="m-0 wrap-anywhere whitespace-pre-wrap p-3 text-xs leading-relaxed">
+			<code className="block wrap-anywhere whitespace-pre-wrap font-mono text-xs">
 				{parts.map((part) => (
-					<span key={part.key} className={part.className}>
+					<span
+						key={part.key}
+						className={`${part.className} wrap-anywhere whitespace-pre-wrap`}
+					>
 						{part.text}
 					</span>
 				))}
@@ -302,7 +305,7 @@ export function JobTimelineCodeMode(props: JobTimelineCodeModeProps) {
 	return (
 		<section
 			aria-label="Code Mode source and output preview"
-			className="max-h-[28rem] overflow-auto rounded-md border bg-background outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+			className="max-h-[28rem] overflow-x-hidden overflow-y-auto rounded-md border bg-background outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 			{...focusableScrollRegionProps}
 		>
 			<CodeModeSource code={props.code} />
