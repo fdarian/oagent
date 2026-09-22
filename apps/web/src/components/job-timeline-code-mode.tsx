@@ -266,7 +266,7 @@ function CodeModePreview(props: {
 	return (
 		<div className="space-y-3 border-border border-t bg-muted/30 p-3 text-muted-foreground">
 			{props.output !== undefined && props.output.length > 0 && (
-				<pre className="m-0 font-mono text-xs leading-relaxed whitespace-pre-wrap">
+				<pre className="m-0 wrap-anywhere font-mono text-xs leading-relaxed whitespace-pre-wrap">
 					{props.output}
 				</pre>
 			)}

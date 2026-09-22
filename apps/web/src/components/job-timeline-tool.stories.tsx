@@ -22,11 +22,14 @@ const codeModeOverflowSource = [
 			`const issue${index + 1} = await tools.github.get_issue({ repository: 'oagent/oagent', number: ${index + 1} });`,
 	),
 ].join('\n');
-const codeModeOverflowOutput = Array.from(
-	{ length: 48 },
-	(_, index) =>
-		`issue-${index + 1}: "Platform follow-up ${index + 1} needs review"`,
-).join('\n');
+const codeModeOverflowOutput = [
+	'next-page: https://api.github.com/repos/oagent/oagent/issues?state=open&labels=bug%2Cneeds-review&sort=updated&direction=desc&per_page=100&page=2&cursor=eyJwYWdlIjoyLCJsaW1pdCI6MTAwLCJzb3J0IjoidXBkYXRlZCJ9',
+	...Array.from(
+		{ length: 48 },
+		(_, index) =>
+			`issue-${index + 1}: "Platform follow-up ${index + 1} needs review"`,
+	),
+].join('\n');
 
 export const InputStreaming: Story = {
 	args: {
