@@ -7,6 +7,10 @@ import { CodeBlock } from '@/components/ai-elements/code-block';
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool';
 import { JobTimelineCodeMode } from '@/components/job-timeline-code-mode';
 import {
+	JobTimelineToolContentBlock,
+	toolContentKey,
+} from '@/components/job-timeline-tool-content';
+import {
 	Collapsible,
 	CollapsibleContent,
 	CollapsibleTrigger,
@@ -21,12 +25,6 @@ export type JobTimelineToolProps = {
 	part: ToolPart;
 	cwd: string;
 };
-
-function contentKey(content: ToolCallContent, fallbackIndex: number): string {
-	if (content.type === 'diff') return `diff-${content.path}`;
-	if (content.type === 'terminal') return `terminal-${content.terminalId}`;
-	return `content-${fallbackIndex}`;
-}
 
 function capitalize(s: string): string {
 	return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
@@ -184,7 +182,12 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 				running={isRunning}
 				error={isError}
 			>
-				<JobTimelineCodeMode code={part.rawInput.code} output={output} />
+				<JobTimelineCodeMode
+					code={part.rawInput.code}
+					content={part.content}
+					output={output}
+					rawOutput={part.rawOutput}
+				/>
 			</ToolRow>
 		);
 	}
@@ -272,7 +275,10 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 			<ToolContent>
 				{part.content.length > 0 ? (
 					part.content.map((c, i) => (
-						<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+						<JobTimelineToolContentBlock
+							key={toolContentKey(c, i)}
+							content={c}
+						/>
 					))
 				) : (
 					<GenericOutput output={extractEffectiveOutput(part)} />
@@ -630,7 +636,7 @@ function SkillRow(props: { part: ToolPart; running: boolean; error: boolean }) {
 	const children =
 		part.content.length > 0 ? (
 			part.content.map((c, i) => (
-				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+				<JobTimelineToolContentBlock key={toolContentKey(c, i)} content={c} />
 			))
 		) : output.length > 0 ? (
 			<GenericOutput output={output} />
@@ -681,7 +687,7 @@ function ReadOutput(props: { part: ToolPart; output: string }) {
 	return (
 		<>
 			{props.part.content.map((c, i) => (
-				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+				<JobTimelineToolContentBlock key={toolContentKey(c, i)} content={c} />
 			))}
 		</>
 	);
@@ -692,48 +698,6 @@ function GenericOutput(props: { output: string }) {
 	return (
 		<CodeBlock code={props.output} language={detectLanguage(props.output)} />
 	);
-}
-
-function ToolCallContentBlock(props: { content: ToolCallContent }) {
-	const content = props.content;
-	if (content.type === 'content') {
-		if (content.content.type === 'text') {
-			return (
-				<CodeBlock
-					code={content.content.text}
-					language={detectLanguage(content.content.text)}
-				/>
-			);
-		}
-		return (
-			<div className="text-xs text-muted-foreground">
-				[{content.content.type}]
-			</div>
-		);
-	}
-	if (content.type === 'diff') {
-		return (
-			<div className="space-y-1">
-				<div className="text-xs font-mono text-muted-foreground">
-					{content.path}
-				</div>
-				{content.oldText !== undefined && content.oldText !== null && (
-					<pre className="text-xs text-destructive whitespace-pre-wrap">
-						{content.oldText}
-					</pre>
-				)}
-				<pre className="text-xs whitespace-pre-wrap">{content.newText}</pre>
-			</div>
-		);
-	}
-	if (content.type === 'terminal') {
-		return (
-			<div className="text-xs text-muted-foreground">
-				[terminal {content.terminalId}]
-			</div>
-		);
-	}
-	return null;
 }
 
 function ToolLocations(props: { locations: ToolCallLocation[] }) {

@@ -8,6 +8,19 @@ const meta: Meta<typeof JobTimelineTool> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
+const codeModePreviewImage =
+	'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=';
+const codeModeOverflowSource = Array.from(
+	{ length: 48 },
+	(_, index) =>
+		`const issue${index + 1} = await tools.github.get_issue({ repository: 'oagent/oagent', number: ${index + 1} });`,
+).join('\n');
+const codeModeOverflowOutput = Array.from(
+	{ length: 48 },
+	(_, index) =>
+		`issue-${index + 1}: "Platform follow-up ${index + 1} needs review"`,
+).join('\n');
+
 export const InputStreaming: Story = {
 	args: {
 		part: {
@@ -161,10 +174,18 @@ export const CodeModeCompleted: Story = {
 						text: '{\n  "repositories": [\n    "oagent",\n    "opencode"\n  ]\n}',
 					},
 				},
+				{
+					type: 'content',
+					content: {
+						type: 'image',
+						mimeType: 'image/png',
+						data: codeModePreviewImage,
+					},
+				},
 			],
 			locations: [],
 			rawInput: {
-				code: `const repositories = await github.search_repositories({
+				code: `const repositories = await tools.github.search_repositories({
 	query: 'language:typescript stars:>1000',
 });
 
@@ -179,6 +200,14 @@ return repositories
 			},
 			rawOutput: {
 				output: '{\n  "repositories": [\n    "oagent",\n    "opencode"\n  ]\n}',
+				attachments: [
+					{
+						type: 'file',
+						mime: 'image/png',
+						url: `data:image/png;base64,${codeModePreviewImage}`,
+						filename: 'repositories.png',
+					},
+				],
 				metadata: {
 					toolCalls: [
 						{
@@ -209,7 +238,7 @@ export const CodeModeRunning: Story = {
 			content: [],
 			locations: [],
 			rawInput: {
-				code: `const issues = await linear.list_issues({
+				code: `const issues = await tools.linear.list_issues({
 	team: 'platform',
 	state: 'In Progress',
 });
@@ -243,7 +272,7 @@ export const CodeModeFailed: Story = {
 			],
 			locations: [],
 			rawInput: {
-				code: `const issue = await github.get_issue({
+				code: `const issue = await tools.github.get_issue({
 		repository: 'oagent/oagent',
 		number: 404,
 });
@@ -265,6 +294,46 @@ return issue.title;`,
 			},
 			createdAt: Date.now() - 2500,
 			durationMs: 900,
+		},
+	},
+};
+
+export const CodeModeOverflow: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		part: {
+			kind: 'tool',
+			id: 'tool-code-mode-overflow',
+			toolCallId: 'tc-code-mode-overflow',
+			toolName: 'execute',
+			title: 'execute',
+			toolKind: 'other',
+			state: 'output-available',
+			content: [
+				{
+					type: 'content',
+					content: { type: 'text', text: codeModeOverflowOutput },
+				},
+			],
+			locations: [],
+			rawInput: { code: codeModeOverflowSource },
+			rawOutput: {
+				output: codeModeOverflowOutput,
+				metadata: {
+					toolCalls: [
+						{
+							tool: 'github.get_issue',
+							status: 'completed',
+							input: {
+								repository: 'oagent/oagent',
+								number: 1,
+							},
+						},
+					],
+				},
+			},
+			createdAt: Date.now() - 6500,
+			durationMs: 3800,
 		},
 	},
 };
