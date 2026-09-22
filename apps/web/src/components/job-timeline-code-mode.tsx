@@ -153,17 +153,59 @@ type ImageToolContent = Extract<
 	{ type: 'image' }
 >;
 
+type ParsedImageDataUrl = {
+	mediaType: string;
+	base64: boolean;
+	payload: string;
+};
+
+function parseImageDataUrl(value: string): ParsedImageDataUrl | undefined {
+	if (!value.startsWith('data:')) return undefined;
+	const comma = value.indexOf(',');
+	if (comma < 0) return undefined;
+
+	const metadata = value.slice(5, comma).split(';');
+	const mediaTypePart = metadata.shift();
+	if (mediaTypePart === undefined || mediaTypePart.trim().length === 0) {
+		return undefined;
+	}
+	const normalizedParameters = metadata
+		.map((parameter) => parameter.trim().toLowerCase())
+		.filter((parameter) => parameter.length > 0);
+	return {
+		mediaType: mediaTypePart.trim().toLowerCase(),
+		base64: normalizedParameters.includes('base64'),
+		payload: value.slice(comma + 1).trim(),
+	};
+}
+
+function normalizedMediaType(value: string): string {
+	const semicolon = value.indexOf(';');
+	return (semicolon < 0 ? value : value.slice(0, semicolon))
+		.trim()
+		.toLowerCase();
+}
+
 function isSameImageMedia(
 	content: ImageToolContent,
 	attachment: JobTimelineToolAttachment,
 ): boolean {
 	if (attachment.url === undefined) return false;
-	const dataUrl = `data:${content.mimeType};base64,${content.data}`;
+	if (
+		content.uri !== undefined &&
+		content.uri !== null &&
+		attachment.url === content.uri
+	) {
+		return true;
+	}
+
+	const parsedAttachment = parseImageDataUrl(attachment.url);
+	if (parsedAttachment === undefined || !parsedAttachment.base64) {
+		return false;
+	}
 	return (
-		attachment.url === dataUrl ||
-		(content.uri !== undefined &&
-			content.uri !== null &&
-			attachment.url === content.uri)
+		parsedAttachment.mediaType === normalizedMediaType(content.mimeType) &&
+		parsedAttachment.payload === content.data.trim()
 	);
 }
 

@@ -310,7 +310,7 @@ return report;`,
 					{
 						type: 'file',
 						mime: 'image/svg+xml',
-						url: `data:image/svg+xml;base64,${codeModePreviewImage}`,
+						url: `data:image/svg+xml;charset=utf-8;base64,${codeModePreviewImage}`,
 						filename: 'repository-health-duplicate.svg',
 					},
 					{
