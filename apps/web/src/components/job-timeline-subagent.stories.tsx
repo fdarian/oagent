@@ -19,8 +19,9 @@ export const Running: Story = {
 		const fixture = createSubagentFixture({
 			id: 'running-child',
 			status: 'running',
-			title: 'Inspect the event model',
-			agentName: 'explore',
+			title: 'Say hi',
+			description: 'Say hi',
+			agentName: 'general',
 		});
 		return {
 			part: fixture.parent,
@@ -35,7 +36,8 @@ export const Completed: Story = {
 		const fixture = createSubagentFixture({
 			id: 'completed-child',
 			status: 'completed',
-			title: 'Summarize the implementation',
+			title: 'Say hi',
+			description: 'Say hi',
 			agentName: 'general',
 		});
 		return {

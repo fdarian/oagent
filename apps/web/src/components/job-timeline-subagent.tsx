@@ -1,4 +1,5 @@
-import { BotIcon, ChevronRightIcon } from 'lucide-react';
+import { ExternalLinkIcon } from 'lucide-react';
+import type { CSSProperties } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
 	type ChildSessionStatus,
@@ -7,6 +8,13 @@ import {
 	type TimelineToolPart,
 } from '@/lib/event-adapter';
 import { cn } from '@/lib/utils';
+import './job-timeline-subagent.css';
+
+const progressDots = Array.from({ length: 25 }, (_, index) => ({
+	index,
+	x: 1.5 + (index % 5) * 3,
+	y: 1.5 + Math.floor(index / 5) * 3,
+}));
 
 export type SubagentStatusBadgeProps = {
 	status: ChildSessionStatus;
@@ -48,8 +56,108 @@ function statusFromPart(part: TimelineToolPart): ChildSessionStatus {
 	return 'running';
 }
 
-function countLabel(count: number): string {
-	return `${count} ${count === 1 ? 'step' : 'steps'}`;
+function capitalize(value: string): string {
+	if (value.length === 0) return value;
+	return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function agentLabel(
+	agentName: string | undefined,
+	part: TimelineToolPart,
+): string {
+	if (agentName !== undefined && agentName.length > 0) {
+		return capitalize(agentName);
+	}
+	const partTitle = part.title.toLowerCase();
+	if (
+		partTitle !== 'subagent' &&
+		partTitle !== 'task' &&
+		part.title.length > 0
+	) {
+		return capitalize(part.title);
+	}
+	return 'General';
+}
+
+function descriptionFor(
+	description: string | undefined,
+	child: ChildTimeline | undefined,
+	part: TimelineToolPart,
+): string | undefined {
+	if (description !== undefined && description.length > 0) return description;
+	if (child?.description !== undefined && child.description.length > 0) {
+		return child.description;
+	}
+	if (child?.title !== undefined && child.title.length > 0) return child.title;
+	const partTitle = part.title.toLowerCase();
+	if (partTitle === 'subagent' || partTitle === 'task') return undefined;
+	return part.title.length > 0 ? part.title : undefined;
+}
+
+function agentColor(agentName: string | undefined): string {
+	switch (agentName?.toLowerCase()) {
+		case 'build':
+			return '#2c47c8';
+		case 'explore':
+			return '#ac8833';
+		case 'plan':
+			return '#c83d8b';
+		case 'review':
+			return '#198b43';
+		case 'writer':
+			return '#623be2';
+		default:
+			return '#007b80';
+	}
+}
+
+function SubagentIcon() {
+	return (
+		<svg
+			aria-hidden="true"
+			className="job-timeline-subagent__icon"
+			fill="none"
+			viewBox="0 0 16 16"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			<path
+				d="M4.5 5C4.5 4.72386 4.72386 4.5 5 4.5H11C11.2761 4.5 11.5 4.72386 11.5 5V11C11.5 11.2761 11.2761 11.5 11 11.5H5C4.72386 11.5 4.5 11.2761 4.5 11V5Z"
+				fill="currentColor"
+			/>
+			<path
+				d="M13.5 2C13.7761 2 14 2.22386 14 2.5V13.5C14 13.7761 13.7761 14 13.5 14H2.5C2.22386 14 2 13.7761 2 13.5V2.5C2 2.22386 2.22386 2 2.5 2H13.5ZM3 13H13V3H3V13Z"
+				fill="currentColor"
+			/>
+		</svg>
+	);
+}
+
+function SubagentProgressIndicator() {
+	return (
+		<svg
+			aria-hidden="true"
+			className="job-timeline-subagent__progress"
+			fill="none"
+			viewBox="0 0 16 16"
+			xmlns="http://www.w3.org/2000/svg"
+		>
+			{progressDots.map((dot) => (
+				<rect
+					data-dot={dot.index}
+					key={dot.index}
+					height="2"
+					style={
+						{
+							animationDelay: `${-dot.index * 45}ms`,
+						} satisfies CSSProperties
+					}
+					width="2"
+					x={dot.x}
+					y={dot.y}
+				/>
+			))}
+		</svg>
+	);
 }
 
 export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
@@ -58,12 +166,11 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 	const canOpen = child !== undefined && props.onSelect !== undefined;
 	const status =
 		child === undefined ? statusFromPart(props.part) : child.status;
-	const description =
-		details.description === undefined ? props.part.title : details.description;
-	const stepCount =
-		child === undefined
-			? undefined
-			: child.parts.length + (child.streamingTail === null ? 0 : 1);
+	const running = status === 'running';
+	const label = agentLabel(details.agentName, props.part);
+	const description = descriptionFor(details.description, child, props.part);
+	const accessibleDescription =
+		description === undefined ? label : `${label}: ${description}`;
 
 	const handleClick = () => {
 		if (child === undefined || props.onSelect === undefined) return;
@@ -75,39 +182,59 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 			type="button"
 			disabled={!canOpen}
 			onClick={handleClick}
+			data-component="task-tool-card"
 			aria-label={
 				canOpen
-					? `Open subagent timeline: ${description}`
-					: `Subagent timeline is not available yet: ${description}`
+					? `Open subagent timeline: ${accessibleDescription}`
+					: `Subagent timeline is not available yet: ${accessibleDescription}`
 			}
 			className={cn(
-				'group/subagent mb-3 flex w-full items-center gap-15 border-primary border-l-2 px-15 py-10 text-left transition-colors',
+				'group/subagent job-timeline-subagent',
 				canOpen
-					? 'hover:bg-primary/5 focus-visible:bg-primary/5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
+					? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 					: 'cursor-default',
 			)}
 		>
-			<BotIcon className="size-4 shrink-0 text-primary" />
-			<div className="min-w-0 flex-1">
-				<div className="flex min-w-0 items-baseline gap-10">
-					{details.agentName !== undefined && (
-						<span className="shrink-0 font-medium text-sm">
-							{details.agentName}
+			<span
+				className="job-timeline-subagent__surface"
+				data-component="task-tool-surface"
+				style={{ color: agentColor(details.agentName) }}
+			>
+				{running ? (
+					<span data-component="task-tool-spinner">
+						<SubagentProgressIndicator />
+					</span>
+				) : (
+					<span data-component="task-tool-icon">
+						<SubagentIcon />
+					</span>
+				)}
+				<span className="job-timeline-subagent__info">
+					<span
+						className="job-timeline-subagent__title"
+						data-component="task-tool-title"
+						data-running={running ? 'true' : 'false'}
+					>
+						{label}
+					</span>
+					{description !== undefined && (
+						<span
+							className="job-timeline-subagent__description"
+							data-slot="basic-tool-tool-subtitle"
+						>
+							{description}
 						</span>
 					)}
-					<span className="truncate text-sm text-muted-foreground">
-						{description}
-					</span>
-				</div>
-				<div className="mt-1 text-caption text-muted-foreground">
-					{stepCount === undefined
-						? 'Waiting for child activity'
-						: countLabel(stepCount)}
-				</div>
-			</div>
-			<SubagentStatusBadge status={status} />
+				</span>
+			</span>
 			{canOpen && (
-				<ChevronRightIcon className="size-4 shrink-0 text-primary transition-transform group-active/subagent:translate-x-0.5" />
+				<span
+					className="job-timeline-subagent__action"
+					data-component="task-tool-action"
+					aria-hidden="true"
+				>
+					<ExternalLinkIcon className="size-4" />
+				</span>
 			)}
 		</button>
 	);

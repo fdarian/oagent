@@ -459,9 +459,28 @@ export const SubagentParent: Story = {
 	args: (() => {
 		const fixture = createSubagentFixture({
 			id: 'timeline-parent-child',
+			status: 'completed',
+			title: 'Say hi',
+			description: 'Say hi',
+			agentName: 'general',
+		});
+		return {
+			parts: fixture.display.parts,
+			streamingTail: fixture.display.streamingTail,
+			childSessions: fixture.display.children,
+			onChildSelect: fn<(sessionId: string) => void>(),
+		};
+	})(),
+};
+
+export const SubagentParentRunning: Story = {
+	args: (() => {
+		const fixture = createSubagentFixture({
+			id: 'timeline-parent-child-running',
 			status: 'running',
-			title: 'Inspect the event model',
-			agentName: 'explore',
+			title: 'Say hi',
+			description: 'Say hi',
+			agentName: 'general',
 		});
 		return {
 			parts: fixture.display.parts,
