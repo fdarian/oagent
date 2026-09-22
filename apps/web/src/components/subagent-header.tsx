@@ -4,6 +4,7 @@ import type { ChildTimeline } from '@/lib/event-adapter';
 import { formatElapsed } from '@/lib/format';
 import { useClock } from '@/lib/use-clock';
 import { SubagentStatusBadge } from './job-timeline-subagent';
+import { Badge } from './ui/badge';
 
 export type SubagentHeaderProps = {
 	child: ChildTimeline;
@@ -39,8 +40,8 @@ export function SubagentHeader(props: SubagentHeaderProps) {
 	);
 
 	return (
-		<div className="border-primary border-b bg-primary/10 px-33 py-15">
-			<div className="mx-auto flex max-w-[900px] items-center gap-15">
+		<div className="border-b border-primary pl-[calc(var(--spacing-33)_-_--spacing(7))] pr-33 py-15">
+			<div className="mx-auto flex max-w-[900px] items-center gap-2">
 				<Button
 					type="button"
 					variant="ghost"
@@ -92,14 +93,18 @@ export function SubagentHeader(props: SubagentHeaderProps) {
 					)}
 
 					<div className="flex min-w-0 items-baseline gap-2">
-						{props.child.agentName !== undefined && (
-							<span className="shrink-0 font-medium text-sm">
-								{props.child.agentName}
-							</span>
-						)}
 						<span className="min-w-0 truncate text-body font-light">
 							{childDescription(props.child)}
 						</span>
+						{props.child.agentName !== undefined && (
+							<Badge
+								variant="outline"
+								className="max-w-full truncate rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground"
+								title={props.child.agentName}
+							>
+								{props.child.agentName}
+							</Badge>
+						)}
 					</div>
 				</div>
 

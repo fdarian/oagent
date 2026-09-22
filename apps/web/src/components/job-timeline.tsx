@@ -239,19 +239,9 @@ export function JobTimeline(props: JobTimelineProps) {
 					{props.isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
-				<ConversationContent
-					header={props.header}
-					className={cn(
-						props.isChildTimeline && 'mx-33 w-auto border-primary border-l-2',
-					)}
-				>
+				<ConversationContent header={props.header}>
 					{(virtualItem) => (
-						<div
-							className={cn(
-								props.isChildTimeline ? 'pl-22' : 'px-33',
-								props.contentClassName,
-							)}
-						>
+						<div className={cn('px-33', props.contentClassName)}>
 							<div className="mx-auto max-w-[900px]">
 								{renderPart(
 									partAt(virtualItem.index),
