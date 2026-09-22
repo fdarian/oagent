@@ -5,6 +5,7 @@ import { ChevronRightIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { CodeBlock } from '@/components/ai-elements/code-block';
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool';
+import { JobTimelineCodeMode } from '@/components/job-timeline-code-mode';
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -37,6 +38,19 @@ function readStringProp(value: unknown, key: string): string | undefined {
 	return typeof prop === 'string' ? prop : undefined;
 }
 
+type CodeModeToolPart = ToolPart & { rawInput: { code: string } };
+
+function isCodeModeExecute(part: ToolPart): part is CodeModeToolPart {
+	// ACP maps the unrecognized "execute" tool name to "other", so its identity
+	// must stay separate from the shell kind.
+	const isExecuteIdentity =
+		part.toolName.trim().toLowerCase() === 'execute' ||
+		part.title.trim().toLowerCase() === 'execute';
+	return (
+		isExecuteIdentity && readStringProp(part.rawInput, 'code') !== undefined
+	);
+}
+
 function extractText(content: ToolCallContent[]): string {
 	return content
 		.map((c) =>
@@ -59,6 +73,15 @@ function extractEffectiveOutput(part: ToolPart): string {
 	const text = extractText(part.content);
 	if (text.length > 0) return text;
 	return extractRawOutputText(part.rawOutput);
+}
+
+function extractCodeModeOutput(part: ToolPart): string | undefined {
+	const content = extractEffectiveOutput(part);
+	if (content.length > 0) return content;
+	return (
+		readStringProp(part.rawOutput, 'output') ??
+		readStringProp(part.rawOutput, 'error')
+	);
 }
 
 function relativePath(absPath: string, cwd: string): string {
@@ -151,6 +174,20 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 	const isRunning =
 		part.state === 'input-available' || part.state === 'input-streaming';
 	const isError = part.state === 'output-error';
+
+	if (isCodeModeExecute(part)) {
+		const output = extractCodeModeOutput(part);
+		return (
+			<ToolRow
+				label="Execute"
+				descriptor="Code Mode"
+				running={isRunning}
+				error={isError}
+			>
+				<JobTimelineCodeMode code={part.rawInput.code} output={output} />
+			</ToolRow>
+		);
+	}
 
 	if (part.toolKind === 'execute') {
 		const descriptor = shellDescriptor(part);

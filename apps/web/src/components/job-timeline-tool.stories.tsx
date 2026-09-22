@@ -141,3 +141,130 @@ export const Skill: Story = {
 		},
 	},
 };
+
+export const CodeModeCompleted: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		part: {
+			kind: 'tool',
+			id: 'tool-code-mode-completed',
+			toolCallId: 'tc-code-mode-completed',
+			toolName: 'execute',
+			title: 'execute',
+			toolKind: 'other',
+			state: 'output-available',
+			content: [
+				{
+					type: 'content',
+					content: {
+						type: 'text',
+						text: '{\n  "repositories": [\n    "oagent",\n    "opencode"\n  ]\n}',
+					},
+				},
+			],
+			locations: [],
+			rawInput: {
+				code: `const repositories = await github.search_repositories({
+	query: 'language:typescript stars:>1000',
+});
+
+return repositories
+	.filter((repository) => repository.archived !== true)
+	.map((repository) => ({
+		name: repository.name,
+		stars: repository.stargazers_count,
+	}))
+	.sort((left, right) => right.stars - left.stars)
+	.slice(0, 10);`,
+			},
+			rawOutput: {
+				output: '{\n  "repositories": [\n    "oagent",\n    "opencode"\n  ]\n}',
+				metadata: {
+					toolCalls: [
+						{
+							tool: 'github.search_repositories',
+							status: 'completed',
+							input: { query: 'language:typescript stars:>1000' },
+						},
+					],
+				},
+			},
+			createdAt: Date.now() - 8000,
+			durationMs: 4200,
+		},
+	},
+};
+
+export const CodeModeRunning: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		part: {
+			kind: 'tool',
+			id: 'tool-code-mode-running',
+			toolCallId: 'tc-code-mode-running',
+			toolName: 'execute',
+			title: 'execute',
+			toolKind: 'other',
+			state: 'input-available',
+			content: [],
+			locations: [],
+			rawInput: {
+				code: `const issues = await linear.list_issues({
+	team: 'platform',
+	state: 'In Progress',
+});
+
+return issues.map((issue) => issue.identifier);`,
+			},
+			createdAt: Date.now() - 1600,
+		},
+	},
+};
+
+export const CodeModeFailed: Story = {
+	args: {
+		cwd: '/Users/dev/project',
+		part: {
+			kind: 'tool',
+			id: 'tool-code-mode-failed',
+			toolCallId: 'tc-code-mode-failed',
+			toolName: 'execute',
+			title: 'execute',
+			toolKind: 'other',
+			state: 'output-error',
+			content: [
+				{
+					type: 'content',
+					content: {
+						type: 'text',
+						text: 'Tool github.get_issue failed: issue not found',
+					},
+				},
+			],
+			locations: [],
+			rawInput: {
+				code: `const issue = await github.get_issue({
+		repository: 'oagent/oagent',
+		number: 404,
+});
+
+return issue.title;`,
+			},
+			rawOutput: {
+				error: 'Tool github.get_issue failed: issue not found',
+				metadata: {
+					error: true,
+					toolCalls: [
+						{
+							tool: 'github.get_issue',
+							status: 'error',
+							input: { repository: 'oagent/oagent', number: 404 },
+						},
+					],
+				},
+			},
+			createdAt: Date.now() - 2500,
+			durationMs: 900,
+		},
+	},
+};
