@@ -154,14 +154,24 @@ function hasImageContent(content: ToolCallContent[]): boolean {
 	);
 }
 
-function attachmentKey(attachment: JobTimelineToolAttachment): string {
-	const values = [
-		attachment.url,
-		attachment.filename,
-		attachment.mime,
-		attachment.type,
-	].filter((value): value is string => value !== undefined);
-	return values.length > 0 ? values.join(':') : 'attachment';
+function keyedAttachments(attachments: JobTimelineToolAttachment[]) {
+	const occurrences = new Map<string, number>();
+	return attachments.map((attachment) => {
+		const identity = JSON.stringify([
+			attachment.url,
+			attachment.filename,
+			attachment.mime,
+			attachment.type,
+		]);
+		const previousOccurrence = occurrences.get(identity);
+		const occurrence =
+			previousOccurrence === undefined ? 0 : previousOccurrence;
+		occurrences.set(identity, occurrence + 1);
+		return {
+			attachment,
+			key: `attachment-${identity}-${occurrence}`,
+		};
+	});
 }
 
 function CodeModePreview(props: {
@@ -173,9 +183,11 @@ function CodeModePreview(props: {
 		(item) => item.type !== 'content' || item.content.type !== 'text',
 	);
 	const hasContentImage = hasImageContent(props.content);
-	const attachments = readToolAttachments(props.rawOutput).filter(
-		(attachment) =>
-			attachment.mime?.startsWith('image/') !== true || !hasContentImage,
+	const attachments = keyedAttachments(
+		readToolAttachments(props.rawOutput).filter(
+			(attachment) =>
+				attachment.mime?.startsWith('image/') !== true || !hasContentImage,
+		),
 	);
 	const hasPreview =
 		(props.output !== undefined && props.output.length > 0) ||
@@ -202,10 +214,10 @@ function CodeModePreview(props: {
 			)}
 			{attachments.length > 0 && (
 				<div className="space-y-3">
-					{attachments.map((attachment) => (
+					{attachments.map((entry) => (
 						<JobTimelineToolAttachmentBlock
-							key={attachmentKey(attachment)}
-							attachment={attachment}
+							key={entry.key}
+							attachment={entry.attachment}
 						/>
 					))}
 				</div>

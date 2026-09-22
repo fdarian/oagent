@@ -1,5 +1,6 @@
 import type { ToolCallContent } from '@oagent/engine';
 import { CodeBlock } from '@/components/ai-elements/code-block';
+import { readToolStringProp } from '@/components/job-timeline-tool-helpers';
 import { detectLanguage } from '@/lib/detect-language';
 
 export type JobTimelineToolAttachment = {
@@ -18,12 +19,6 @@ export function toolContentKey(
 	return `content-${fallbackIndex}`;
 }
 
-function readStringProp(value: unknown, key: string): string | undefined {
-	if (typeof value !== 'object' || value === null) return undefined;
-	const prop = (value as Record<string, unknown>)[key];
-	return typeof prop === 'string' ? prop : undefined;
-}
-
 export function readToolAttachments(
 	rawOutput: unknown,
 ): JobTimelineToolAttachment[] {
@@ -33,10 +28,10 @@ export function readToolAttachments(
 	return attachments.flatMap((attachment) => {
 		if (typeof attachment !== 'object' || attachment === null) return [];
 		const item: JobTimelineToolAttachment = {
-			url: readStringProp(attachment, 'url'),
-			mime: readStringProp(attachment, 'mime'),
-			filename: readStringProp(attachment, 'filename'),
-			type: readStringProp(attachment, 'type'),
+			url: readToolStringProp(attachment, 'url'),
+			mime: readToolStringProp(attachment, 'mime'),
+			filename: readToolStringProp(attachment, 'filename'),
+			type: readToolStringProp(attachment, 'type'),
 		};
 		if (
 			item.url === undefined &&
@@ -88,6 +83,37 @@ export function JobTimelineToolAttachmentBlock(props: {
 					className="max-h-48 max-w-full rounded-md border object-contain"
 					src={attachment.url}
 				/>
+				<figcaption className="text-xs text-muted-foreground">
+					{label}
+				</figcaption>
+			</figure>
+		);
+	}
+	if (
+		attachment.mime?.startsWith('audio/') === true &&
+		attachment.url !== undefined
+	) {
+		return (
+			<figure className="space-y-1">
+				{/* biome-ignore lint/a11y/useMediaCaption: ACP audio does not include caption metadata; the labelled controls and download fallback remain available. */}
+				<audio
+					aria-label={`Audio attachment: ${label}`}
+					className="w-full"
+					controls
+					preload="metadata"
+				>
+					<source src={attachment.url} type={attachment.mime} />
+				</audio>
+				<div className="text-xs text-muted-foreground">
+					<a
+						className="underline underline-offset-2"
+						download={attachment.filename}
+						href={attachment.url}
+						rel="noreferrer"
+					>
+						Download {label}
+					</a>
+				</div>
 				<figcaption className="text-xs text-muted-foreground">
 					{label}
 				</figcaption>
