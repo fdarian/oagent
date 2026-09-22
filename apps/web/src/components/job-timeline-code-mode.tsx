@@ -148,9 +148,34 @@ function CodeModeSource(props: { code: string }) {
 	return <Source code={props.code} spans={spans} />;
 }
 
-function hasImageContent(content: ToolCallContent[]): boolean {
+type ImageToolContent = Extract<
+	Extract<ToolCallContent, { type: 'content' }>['content'],
+	{ type: 'image' }
+>;
+
+function isSameImageMedia(
+	content: ImageToolContent,
+	attachment: JobTimelineToolAttachment,
+): boolean {
+	if (attachment.url === undefined) return false;
+	const dataUrl = `data:${content.mimeType};base64,${content.data}`;
+	return (
+		attachment.url === dataUrl ||
+		(content.uri !== undefined &&
+			content.uri !== null &&
+			attachment.url === content.uri)
+	);
+}
+
+function matchesImageContent(
+	attachment: JobTimelineToolAttachment,
+	content: ToolCallContent[],
+): boolean {
 	return content.some(
-		(item) => item.type === 'content' && item.content.type === 'image',
+		(item) =>
+			item.type === 'content' &&
+			item.content.type === 'image' &&
+			isSameImageMedia(item.content, attachment),
 	);
 }
 
@@ -182,11 +207,9 @@ function CodeModePreview(props: {
 	const content = props.content.filter(
 		(item) => item.type !== 'content' || item.content.type !== 'text',
 	);
-	const hasContentImage = hasImageContent(props.content);
 	const attachments = keyedAttachments(
 		readToolAttachments(props.rawOutput).filter(
-			(attachment) =>
-				attachment.mime?.startsWith('image/') !== true || !hasContentImage,
+			(attachment) => !matchesImageContent(attachment, props.content),
 		),
 	);
 	const hasPreview =
