@@ -189,7 +189,7 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 					: `Subagent timeline is not available yet: ${accessibleDescription}`
 			}
 			className={cn(
-				'group/subagent job-timeline-subagent',
+				'group/subagent job-timeline-subagent mb-4 -translate-x-3',
 				canOpen
 					? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 					: 'cursor-default',
