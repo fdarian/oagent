@@ -102,11 +102,12 @@ type ModelComboboxProps = {
 
 function ModelCombobox(props: ModelComboboxProps) {
 	const [open, setOpen] = useState(false);
-	const modelsQuery = useQuery({
-		queryKey: ['models', props.backend],
-		queryFn: () => orpc.models.list({ backend: props.backend }),
-		staleTime: 5 * 60 * 1000,
-	});
+	const modelsQuery = useQuery(
+		orpc.models.list.queryOptions({
+			input: { backend: props.backend },
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
 
 	const models = modelsQuery.data ?? [];
 
@@ -229,22 +230,17 @@ function AliasForm(props: AliasFormProps) {
 		string | undefined
 	>();
 
-	const saveMutation = useMutation({
-		mutationFn: (input: {
-			name: string;
-			backend: Backend;
-			model_id: string;
-			reasoning_effort?: string;
-			description?: string;
-		}) => orpc.aliases.save(input),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['aliases'] });
-			props.onSuccess();
-		},
-		onError: (error: Error) => {
-			setServerModelError(error.message);
-		},
-	});
+	const saveMutation = useMutation(
+		orpc.aliases.save.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({ queryKey: orpc.aliases.list.key() });
+				props.onSuccess();
+			},
+			onError: (error: Error) => {
+				setServerModelError(error.message);
+			},
+		}),
+	);
 
 	const form = useForm({
 		defaultValues: {
@@ -282,13 +278,15 @@ function AliasForm(props: AliasFormProps) {
 	const canSubmit = useStore(form.store, (state) => state.canSubmit);
 	const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
 	const modelId = useStore(form.store, (state) => state.values.model_id);
-	const effortsQuery = useQuery({
-		queryKey: ['model-efforts', backend, modelId],
-		queryFn: () => orpc.models.efforts({ backend, model_id: modelId.trim() }),
-		enabled:
-			(backend === 'opencode' || backend === 'claude') && modelId.trim() !== '',
-		staleTime: 5 * 60 * 1000,
-	});
+	const effortsQuery = useQuery(
+		orpc.models.efforts.queryOptions({
+			input: { backend, model_id: modelId.trim() },
+			enabled:
+				(backend === 'opencode' || backend === 'claude') &&
+				modelId.trim() !== '',
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
 	const effortOptions =
 		backend === 'codex'
 			? CODEX_REASONING_EFFORT_OPTIONS
@@ -538,30 +536,28 @@ export function AliasesPage() {
 	const [deleteTarget, setDeleteTarget] = useState<Alias | undefined>();
 	const [deleteError, setDeleteError] = useState<string | undefined>();
 
-	const listQuery = useQuery({
-		queryKey: ['aliases'],
-		queryFn: () => orpc.aliases.list(),
-	});
+	const listQuery = useQuery(orpc.aliases.list.queryOptions());
 
-	const deleteMutation = useMutation({
-		mutationFn: (name: string) => orpc.aliases.delete({ name }),
-		onSuccess: (result) => {
-			if (
-				typeof result === 'object' &&
-				result !== null &&
-				'ok' in result &&
-				result.ok === true
-			) {
-				queryClient.invalidateQueries({ queryKey: ['aliases'] });
-				setDeleteTarget(undefined);
-			} else {
-				setDeleteError('Alias not found');
-			}
-		},
-		onError: (error: Error) => {
-			setDeleteError(error.message);
-		},
-	});
+	const deleteMutation = useMutation(
+		orpc.aliases.delete.mutationOptions({
+			onSuccess: (result) => {
+				if (
+					typeof result === 'object' &&
+					result !== null &&
+					'ok' in result &&
+					result.ok === true
+				) {
+					queryClient.invalidateQueries({ queryKey: orpc.aliases.list.key() });
+					setDeleteTarget(undefined);
+				} else {
+					setDeleteError('Alias not found');
+				}
+			},
+			onError: (error: Error) => {
+				setDeleteError(error.message);
+			},
+		}),
+	);
 
 	function openCreate() {
 		setEditingAlias(undefined);
@@ -580,7 +576,7 @@ export function AliasesPage() {
 
 	function handleDelete() {
 		if (deleteTarget === undefined) return;
-		deleteMutation.mutate(deleteTarget.name);
+		deleteMutation.mutate({ name: deleteTarget.name });
 	}
 
 	const aliases = (listQuery.data ?? []).filter((alias): alias is Alias =>

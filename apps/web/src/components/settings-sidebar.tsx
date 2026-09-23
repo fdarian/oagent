@@ -8,7 +8,6 @@ import {
 	isBackend,
 } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -27,12 +26,13 @@ const inactiveNavItemClass =
 export function SettingsSidebar() {
 	const queryClient = useQueryClient();
 	const harnessesQuery = useQuery(harnessesQueryOptions());
-	const refreshMutation = useMutation({
-		mutationFn: () => orpc.harnesses.refresh(),
-		onSuccess: (harnesses) => {
-			queryClient.setQueryData(queryKeys.harnesses(), harnesses);
-		},
-	});
+	const refreshMutation = useMutation(
+		orpc.harnesses.refresh.mutationOptions({
+			onSuccess: (harnesses) => {
+				queryClient.setQueryData(orpc.harnesses.list.queryKey(), harnesses);
+			},
+		}),
+	);
 
 	const detectedHarnesses = (harnessesQuery.data ?? []).filter((harness) =>
 		isBackend(harness.backend),

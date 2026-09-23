@@ -9,10 +9,7 @@ export function TimeoutSettingsPage() {
 	const queryClient = useQueryClient();
 	const [minutes, setMinutes] = useState(30);
 
-	const timeoutQuery = useQuery({
-		queryKey: ['settings', 'startTimeout'],
-		queryFn: () => orpc.settings.getStartTimeout(),
-	});
+	const timeoutQuery = useQuery(orpc.settings.getStartTimeout.queryOptions());
 
 	useEffect(() => {
 		if (timeoutQuery.data !== undefined) {
@@ -20,13 +17,15 @@ export function TimeoutSettingsPage() {
 		}
 	}, [timeoutQuery.data]);
 
-	const saveMutation = useMutation({
-		mutationFn: (input: { minutes: number }) =>
-			orpc.settings.setStartTimeout(input),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['settings', 'startTimeout'] });
-		},
-	});
+	const saveMutation = useMutation(
+		orpc.settings.setStartTimeout.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: orpc.settings.getStartTimeout.key(),
+				});
+			},
+		}),
+	);
 
 	const parsedMinutes = Number.parseInt(String(minutes), 10);
 	const canSave =
