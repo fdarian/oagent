@@ -725,6 +725,47 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			);
 		};
 
+		const findSessionWorktree = (
+			sessionId: string,
+			excludeInternalId: number,
+		): { path: string; branch: string | undefined } | undefined => {
+			const prior = db
+				.select()
+				.from(schema.jobs)
+				.where(eq(schema.jobs.session_id, sessionId))
+				.orderBy(desc(schema.jobs.id))
+				.all()
+				.find(
+					(row) => row.id !== excludeInternalId && row.worktree_path !== null,
+				);
+			if (prior === undefined || prior.worktree_path === null) return undefined;
+			return {
+				path: prior.worktree_path,
+				branch: prior.worktree_branch ?? undefined,
+			};
+		};
+
+		const resolveJobWorktree = (
+			input: ReserveJobInput,
+			reservation: JobReservation,
+		): Effect.Effect<
+			{ path: string; branch: string | undefined } | undefined,
+			WorktreeError
+		> =>
+			Effect.gen(function* () {
+				const prior =
+					input.sessionId === undefined
+						? undefined
+						: findSessionWorktree(input.sessionId, reservation.internalId);
+				if (prior !== undefined) return prior;
+				if (input.worktree === undefined) return undefined;
+
+				const branch =
+					input.worktree.branch ?? `oagent/${reservation.jobId.slice(-8)}`;
+				const path = yield* worktrees.create(input.cwd, branch);
+				return { path, branch };
+			});
+
 		const start = (
 			input: ReserveJobInput & {
 				agentPrompt?: string;
@@ -742,46 +783,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			Effect.gen(function* () {
 				const reservation = yield* reserve(input);
 				return yield* Effect.gen(function* () {
-					const prior =
-						input.sessionId === undefined
-							? undefined
-							: db
-									.select()
-									.from(schema.jobs)
-									.where(eq(schema.jobs.session_id, input.sessionId))
-									.orderBy(desc(schema.jobs.id))
-									.all()
-									.find(
-										(row) =>
-											row.id !== reservation.internalId &&
-											row.worktree_path !== null,
-									);
-					const worktreeBranch =
-						prior !== undefined
-							? (prior.worktree_branch ?? undefined)
-							: input.worktree === undefined
-								? undefined
-								: (input.worktree.branch ??
-									`oagent/${reservation.jobId.slice(-8)}`);
-					const worktreePath =
-						prior !== undefined
-							? (prior.worktree_path ?? undefined)
-							: input.worktree === undefined
-								? undefined
-								: yield* worktrees.create(
-										input.cwd,
-										input.worktree.branch ??
-											`oagent/${reservation.jobId.slice(-8)}`,
-									);
-					if (worktreePath !== undefined) {
+					const worktree = yield* resolveJobWorktree(input, reservation);
+					if (worktree !== undefined) {
 						yield* Effect.try({
 							try: () =>
 								db
 									.update(schema.jobs)
 									.set({
-										cwd: worktreePath,
-										worktree_path: worktreePath,
-										worktree_branch: worktreeBranch,
+										cwd: worktree.path,
+										worktree_path: worktree.path,
+										worktree_branch: worktree.branch,
 									})
 									.where(eq(schema.jobs.id, reservation.internalId))
 									.run(),
@@ -796,12 +807,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					const started = yield* runReserved({
 						reservation: {
 							...reservation,
-							cwd: worktreePath === undefined ? input.cwd : worktreePath,
+							cwd: worktree === undefined ? reservation.cwd : worktree.path,
 						},
 						agentPrompt: input.agentPrompt,
 						onPromptDispatch: input.onPromptDispatch,
 					});
-					return { ...started, worktreePath, worktreeBranch };
+					return {
+						...started,
+						worktreePath: worktree?.path,
+						worktreeBranch: worktree?.branch,
+					};
 				}).pipe(
 					Effect.catch((error) =>
 						failReserved(reservation, error).pipe(
