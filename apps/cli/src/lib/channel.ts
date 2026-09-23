@@ -5,11 +5,15 @@ import {
 	type AliasPreset,
 	cancelTool,
 	formatAgentTypes,
+	formatCancellation,
 	formatPresets,
-	resultTool,
+	formatSessionError,
+	formatToolError,
+	formatTurnResult,
+	readTool,
+	sendMessageTool,
 	startInputSchema,
 	startWorktreeInputSchema,
-	steerTool,
 } from '@oagent/engine';
 import { Effect } from 'effect';
 import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
@@ -19,57 +23,32 @@ type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
 
 /** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
 const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
-const RESULT_TIMEOUT_DEFAULT_MS = 50_000;
+const READ_TIMEOUT_DEFAULT_MS = 50_000;
 /**
- * Max wait for the result tool's single jobs.wait call. Cap is a deliberate poll-style
+ * Max wait for a read tool call. Cap is a deliberate poll-style
  * responsiveness choice — returns {status:"running"} so the caller can re-poll or do
  * other work. NOT a harness limit: Claude Code's MCP tool-call timeout defaults to
  * ~27.7h (see getStartTimeoutMs in services/engine/src/jobs.ts).
  */
-const RESULT_TIMEOUT_MAX_MS = 55_000;
+const READ_TIMEOUT_MAX_MS = 55_000;
 
 function channelInstructions(source: string) {
-	return `\
-Job completions from delegated coding-agent tasks arrive as \
-<channel source="${source}" job_id="..." status="..." session_id="...">. The body is \
-the agent's final output (or an error / cancellation note). These are one-way \
-notifications for jobs you started with the start tool — read the result and \
-continue your task; no reply is expected. When status is "done", you may pass the \
-session_id attribute back as sessionId to a subsequent start call to continue the \
-same conversation.`;
+	return `Background coding-agent turns finish with a <channel source="${source}" job_id="..." status="..." session_id="..."> notification. Its body is the final assistant message (or an error / cancellation note). Continue your task; no reply is expected. Pass session_id to send_message to continue that session.`;
 }
 
 function channelStartDescription(source: string) {
-	return `\
-Delegate a task to the coding agent, running as a subprocess via the oagent engine. \
-Semantically equivalent to Claude Code's built-in Agent tool, but the underlying \
-agent is the coding agent. Supports the configured ACP backends. Returns \
-immediately with {jobId}. You do NOT need to poll or wait: when the job finishes, \
-its result is pushed into this session as a <channel source="${source}" job_id="..." \
-status="..."> event. Continue with other work — you will be notified. The pushed \
-event body is the agent's final output; when status is "done" the session_id \
-attribute can be passed back as sessionId to a later start call to continue the same \
-conversation. If you ever suspect a notification was missed, the result tool fetches \
-the same outcome on demand. The cwd parameter is required: an absolute path to the \
-directory the agent should operate in — typically the parent agent's project root.`;
+	return `Start a coding-agent session or fork an existing session/job. Pass its session ID to send_message to continue. Foreground calls wait for the result; set background to return immediately and receive a <channel source="${source}" job_id="..." status="..." session_id="..."> notification when the turn finishes. If it returns a running status, call read with the session ID or run oagent jobs wait <jobId> in the background. cwd is an absolute working directory, optional when forkId is set.`;
 }
 
-function channelResultDescription(source: string) {
-	return `\
-Fetch the result of an agent job started via start. You normally do NOT need this: \
-completion is pushed into the session as a <channel source="${source}"> event. Use it \
-only as a fallback when you suspect a notification was missed. Blocks up to timeoutMs \
-(default 50000, capped at 55000 so the tool returns promptly for re-polling). Returns a \
-discriminated union: { status: "running" } — call again to keep waiting; \
-{ status: "done", text, sessionId, stopReason }; { status: "error", message }; \
-{ status: "cancelled" }.`;
+function channelReadDescription() {
+	return 'Read the latest turn in a session, waiting briefly if it is still running. If it remains running, call again later or run oagent jobs wait <jobId> as a background command.';
 }
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
 }
 
-function jsonContent(value: unknown) {
-	return { content: [{ type: 'text' as const, text: JSON.stringify(value) }] };
+function textContent(text: string) {
+	return { content: [{ type: 'text' as const, text }] };
 }
 
 /** Pushes a single `<channel source="oagent" ...>` event into the Claude Code session. */
@@ -84,12 +63,12 @@ function pushChannelEvent(
 	});
 }
 
-function channelEventFor(jobId: string, result: WaitResult) {
+function channelEventFor(jobId: string, sessionId: string, result: WaitResult) {
 	if (result.status === 'done') {
 		const meta: Record<string, string> = {
 			job_id: jobId,
 			status: 'done',
-			session_id: result.sessionId,
+			session_id: sessionId,
 		};
 		if (result.stopReason !== undefined) {
 			meta.stop_reason = result.stopReason;
@@ -99,12 +78,12 @@ function channelEventFor(jobId: string, result: WaitResult) {
 	if (result.status === 'error') {
 		return {
 			content: `Agent job failed: ${result.message}`,
-			meta: { job_id: jobId, status: 'error' },
+			meta: { job_id: jobId, session_id: sessionId, status: 'error' },
 		};
 	}
 	return {
 		content: 'Agent job was cancelled.',
-		meta: { job_id: jobId, status: 'cancelled' },
+		meta: { job_id: jobId, session_id: sessionId, status: 'cancelled' },
 	};
 }
 
@@ -117,6 +96,7 @@ async function waitAndNotify(
 	server: McpServer,
 	client: EngineClient,
 	engineUrl: string,
+	sessionId: string,
 	jobId: string,
 ) {
 	const ac = new AbortController();
@@ -166,7 +146,7 @@ async function waitAndNotify(
 					jobId,
 					timeoutMs: TERMINAL_FETCH_TIMEOUT_MS,
 				});
-				const event = channelEventFor(jobId, result);
+				const event = channelEventFor(jobId, sessionId, result);
 				await pushChannelEvent(server, event.content, event.meta);
 				return;
 			}
@@ -177,7 +157,7 @@ async function waitAndNotify(
 		await pushChannelEvent(
 			server,
 			`Agent job ${jobId} failed while awaiting its result: ${errorMessage(cause)}`,
-			{ job_id: jobId, status: 'error' },
+			{ job_id: jobId, session_id: sessionId, status: 'error' },
 		).catch(() => {});
 	}
 }
@@ -230,69 +210,157 @@ function registerChannelTools(
 			description: channelStartDescription(mcpName),
 			inputSchema: startInputSchema,
 		},
-		async (args) => {
+		async (args, extra) => {
 			try {
-				const started = await client.jobs.start({
+				const startTimeout = await client.settings.getStartTimeout();
+				const started = await client.sessions.start({
 					prompt: args.prompt,
 					cwd: args.cwd,
 					model: args.model,
 					agent_type: args.agent_type,
-					sessionId: args.sessionId,
+					forkId: args.forkId,
+					mcpSessionId: extra.sessionId,
 					worktree: 'worktree' in args && args.worktree === true,
 				});
-				const jobId = started.jobId;
-				const worktree =
-					started.worktreePath === undefined
-						? {}
-						: {
-								worktreePath: started.worktreePath,
-								worktreeBranch: started.worktreeBranch,
-							};
-
 				if (args.background === true) {
-					void waitAndNotify(server, client, engineUrl, jobId);
-					return jsonContent({ status: 'running', jobId, ...worktree });
+					void waitAndNotify(
+						server,
+						client,
+						engineUrl,
+						started.sessionId,
+						started.jobId,
+					);
+					return textContent(
+						formatTurnResult({
+							sessionId: started.sessionId,
+							jobId: started.jobId,
+							result: { status: 'running' },
+							worktreePath: started.worktreePath,
+							worktreeBranch: started.worktreeBranch,
+						}),
+					);
 				}
-
-				const startTimeout = await client.settings.getStartTimeout();
-				const result = await client.jobs.wait({
-					jobId,
+				const result = await client.sessions.read({
+					sessionId: started.sessionId,
 					timeoutMs: startTimeout.minutes * 60_000,
 				});
-
 				if (result.status === 'running') {
-					void waitAndNotify(server, client, engineUrl, jobId);
-					return jsonContent({ status: 'running', jobId, ...worktree });
+					void waitAndNotify(
+						server,
+						client,
+						engineUrl,
+						started.sessionId,
+						started.jobId,
+					);
 				}
-
-				return jsonContent({ ...result, ...worktree });
+				return textContent(
+					formatTurnResult({
+						sessionId: started.sessionId,
+						jobId: started.jobId,
+						result,
+						worktreePath: started.worktreePath,
+						worktreeBranch: started.worktreeBranch,
+					}),
+				);
 			} catch (cause) {
-				return jsonContent({
-					status: 'error',
-					message: errorMessage(cause),
-				});
+				return textContent(formatToolError(errorMessage(cause)));
 			}
 		},
 	);
 
 	server.registerTool(
-		'result',
+		'send_message',
 		{
-			description: channelResultDescription(mcpName),
-			inputSchema: resultTool.inputSchema,
+			description: sendMessageTool.description,
+			inputSchema: sendMessageTool.inputSchema,
 		},
 		async (args) => {
 			try {
-				const result = await client.jobs.wait({
-					jobId: args.jobId,
+				const startTimeout = await client.settings.getStartTimeout();
+				const started = await client.sessions.sendMessage({
+					sessionId: args.sessionId,
+					prompt: args.prompt,
+				});
+				if (started.delivery === 'steered') {
+					return textContent(
+						formatTurnResult({
+							sessionId: started.sessionId,
+							jobId: started.jobId,
+							result: { status: 'running' },
+							steered: true,
+						}),
+					);
+				}
+				if (args.background === true) {
+					void waitAndNotify(
+						server,
+						client,
+						engineUrl,
+						started.sessionId,
+						started.jobId,
+					);
+					return textContent(
+						formatTurnResult({
+							sessionId: started.sessionId,
+							jobId: started.jobId,
+							result: { status: 'running' },
+						}),
+					);
+				}
+				const result = await client.sessions.read({
+					sessionId: started.sessionId,
+					timeoutMs: startTimeout.minutes * 60_000,
+				});
+				if (result.status === 'running') {
+					void waitAndNotify(
+						server,
+						client,
+						engineUrl,
+						started.sessionId,
+						started.jobId,
+					);
+				}
+				return textContent(
+					formatTurnResult({
+						sessionId: started.sessionId,
+						jobId: started.jobId,
+						result,
+					}),
+				);
+			} catch (cause) {
+				return textContent(
+					formatSessionError(args.sessionId, errorMessage(cause)),
+				);
+			}
+		},
+	);
+
+	server.registerTool(
+		'read',
+		{
+			description: channelReadDescription(),
+			inputSchema: readTool.inputSchema,
+		},
+		async (args) => {
+			try {
+				const result = await client.sessions.read({
+					sessionId: args.sessionId,
 					timeoutMs: Math.min(
-						args.timeoutMs ?? RESULT_TIMEOUT_DEFAULT_MS,
-						RESULT_TIMEOUT_MAX_MS,
+						args.timeoutMs ?? READ_TIMEOUT_DEFAULT_MS,
+						READ_TIMEOUT_MAX_MS,
 					),
 				});
-				return jsonContent(result);
+				return textContent(
+					formatTurnResult({
+						sessionId: args.sessionId,
+						jobId: result.jobId,
+						result,
+					}),
+				);
 			} catch (cause) {
-				return jsonContent({ status: 'error', message: errorMessage(cause) });
+				return textContent(
+					formatSessionError(args.sessionId, errorMessage(cause)),
+				);
 			}
 		},
 	);
@@ -305,20 +373,26 @@ function registerChannelTools(
 		},
 		async (args) => {
 			try {
-				return jsonContent(await client.jobs.cancel({ jobId: args.jobId }));
-			} catch {
-				return jsonContent({ ok: false });
+				const result = await client.sessions.cancel({
+					sessionId: args.sessionId,
+				});
+				return textContent(
+					result.ok
+						? formatCancellation({
+								sessionId: args.sessionId,
+								status: result.status,
+							})
+						: formatSessionError(
+								args.sessionId,
+								`Session not found: ${args.sessionId}`,
+							),
+				);
+			} catch (cause) {
+				return textContent(
+					formatSessionError(args.sessionId, errorMessage(cause)),
+				);
 			}
 		},
-	);
-
-	server.registerTool(
-		'steer',
-		{
-			description: steerTool.description,
-			inputSchema: steerTool.inputSchema,
-		},
-		async (args) => jsonContent(await client.jobs.steer(args)),
 	);
 
 	return startTool;

@@ -1,15 +1,15 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
 import type { AgentDefinition } from '../../agents.ts';
+import { formatToolError, formatTurnResult } from '../../format/turn-result.ts';
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
 import type { Sessions } from '../../sessions.ts';
 
 const BASE_DESCRIPTION = `\
-Launch or continue a coding-agent session and return its result. If it returns \
-\`{ status: "running", jobId }\`, run \`oagent jobs wait <jobId>\` as a \
-background command or use the \`result\` tool; pass a returned \`sessionId\` to \
-a later call to resume the session.`;
+Start a coding-agent session or fork an existing session/job. Pass its returned \
+session ID to \`send_message\` to continue. If it returns a running status, call \
+\`read\` with the session ID or run \`oagent jobs wait <jobId>\` in the background.`;
 
 export type AliasPreset = {
 	name: string;
@@ -136,7 +136,10 @@ export function buildDescription(): string {
 
 export const inputSchema = {
 	prompt: z.string().describe('Task instructions for the agent.'),
-	cwd: z.string().describe('Absolute working directory for the agent.'),
+	cwd: z
+		.string()
+		.optional()
+		.describe('Absolute working directory; optional when forkId is set.'),
 	model: z
 		.string()
 		.optional()
@@ -147,12 +150,10 @@ export const inputSchema = {
 		.string()
 		.optional()
 		.describe('Optional configured agent type from the server instructions.'),
-	sessionId: z
+	forkId: z
 		.string()
 		.optional()
-		.describe(
-			'Session ID from a previous `start` result to resume that session.',
-		),
+		.describe('Session ID or job ID whose state should be forked.'),
 	background: z
 		.boolean()
 		.optional()
@@ -171,17 +172,10 @@ export const worktreeInputSchema = {
 
 type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
 type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
-type StartSessions = Pick<Sessions['Service'], 'sendMessage' | 'start'>;
+type StartSessions = Pick<Sessions['Service'], 'start'>;
 
-function errorResponse(code: string, message: string) {
-	return {
-		content: [
-			{
-				type: 'text' as const,
-				text: JSON.stringify({ error: { code, message } }),
-			},
-		],
-	};
+function textResponse(text: string) {
+	return { content: [{ type: 'text' as const, text }] };
 }
 
 export const startTool = {
@@ -191,103 +185,66 @@ export const startTool = {
 		ctx: {
 			jobs: StartJobs;
 			sessions: StartSessions;
-			waitUrlBase: string | undefined;
 			mcpSessionId: string | undefined;
 		},
 	) {
-		const runningResponse = (jobId: string) => ({
-			status: 'running' as const,
-			jobId,
-		});
 		const timeoutMs = ctx.jobs.getStartTimeoutMs();
-
-		const started: Effect.Effect<
-			{
-				sessionId: string;
-				jobId: string;
-				delivery: 'started' | 'steered';
-				worktreePath?: string;
-				worktreeBranch?: string;
-			},
-			Error,
-			never
-		> =
-			args.sessionId === undefined
-				? ctx.sessions
-						.start({
-							prompt: args.prompt,
-							cwd: args.cwd,
-							model: args.model,
-							agentType: args.agent_type,
-							mcpSessionId: ctx.mcpSessionId,
-							worktree: args.worktree,
-						})
-						.pipe(
-							Effect.map((result) => ({
-								...result,
-								delivery: 'started' as const,
-							})),
-						)
-				: ctx.sessions.sendMessage({
-						sessionId: args.sessionId,
-						prompt: args.prompt,
-					});
-		return started.pipe(
-			Effect.tap((result) =>
-				Effect.logInfo(
-					`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: result.sessionId })}`,
+		return ctx.sessions
+			.start({
+				prompt: args.prompt,
+				cwd: args.cwd,
+				model: args.model,
+				agentType: args.agent_type,
+				forkId: args.forkId,
+				mcpSessionId: ctx.mcpSessionId,
+				worktree: args.worktree,
+			})
+			.pipe(
+				Effect.tap((result) =>
+					Effect.logInfo(
+						`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: result.sessionId })}`,
+					),
 				),
-			),
-			Effect.flatMap((result) => {
-				const worktree =
-					result.worktreePath === undefined
-						? {}
-						: {
-								worktreePath: result.worktreePath,
-								worktreeBranch: result.worktreeBranch,
-							};
-				if (result.delivery === 'steered' || args.background === true) {
-					return Effect.succeed({
-						...runningResponse(result.jobId),
-						sessionId: result.sessionId,
-						...(result.delivery === 'steered'
-							? {
-									message:
-										'Message queued for delivery at the next step boundary.',
-								}
-							: {}),
-						...worktree,
-					});
-				}
-				return ctx.jobs
-					.wait({
-						jobId: result.jobId,
-						timeoutMs,
-					})
-					.pipe(
-						Effect.map((wait) =>
-							wait.status === 'running'
-								? {
-										...runningResponse(result.jobId),
-										sessionId: result.sessionId,
-										...worktree,
-									}
-								: { ...wait, sessionId: result.sessionId, ...worktree },
+				Effect.flatMap((started) => {
+					if (args.background === true) {
+						return Effect.succeed(
+							textResponse(
+								formatTurnResult({
+									sessionId: started.sessionId,
+									jobId: started.jobId,
+									result: { status: 'running' },
+									worktreePath: started.worktreePath,
+									worktreeBranch: started.worktreeBranch,
+								}),
+							),
+						);
+					}
+					return ctx.jobs.wait({ jobId: started.jobId, timeoutMs }).pipe(
+						Effect.map((result) =>
+							textResponse(
+								formatTurnResult({
+									sessionId: started.sessionId,
+									jobId: started.jobId,
+									result,
+									worktreePath: started.worktreePath,
+									worktreeBranch: started.worktreeBranch,
+								}),
+							),
 						),
-						Effect.catchTag('JobNotFound', (err) =>
-							Effect.succeed({
-								status: 'error' as const,
-								message: `Job not found: ${err.jobId}`,
-							}),
+						Effect.catchTag('JobNotFound', (error) =>
+							Effect.succeed(textResponse(formatToolError(error.message))),
 						),
 					);
-			}),
-			Effect.map((response) => ({
-				content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-			})),
-			Effect.catch((error) =>
-				Effect.succeed(errorResponse(error.name, error.message)),
-			),
-		);
+				}),
+				Effect.catch((error) =>
+					Effect.succeed(
+						textResponse(
+							formatToolError(
+								error instanceof Error ? error.message : String(error),
+							),
+						),
+					),
+				),
+			);
 	},
 };

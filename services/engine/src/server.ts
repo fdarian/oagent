@@ -63,19 +63,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		return {
 			mcp: {
 				getInstructions: getMcpInstructions,
-				registerTools: (
-					server: McpServer,
-					services: Context.Context<never>,
-					waitUrlBase: string | undefined,
-				) =>
-					registerTools(
-						server,
-						jobs,
-						sessionService,
-						settings,
-						services,
-						waitUrlBase,
-					),
+				registerTools: (server: McpServer, services: Context.Context<never>) =>
+					registerTools(server, jobs, sessionService, settings, services),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -94,8 +83,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							server: McpServer;
 						}
 					>();
-
-					let portlessPublicBase: string | undefined;
 
 					const fetchHandler = async (request: Request) => {
 						const url = new URL(request.url);
@@ -135,7 +122,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 								sessionService,
 								settings,
 								services,
-								portlessPublicBase ?? url.origin,
 							);
 
 							await mcpServer.connect(transport);
@@ -266,7 +252,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 								catch: (cause) => new PortlessRegistrationError({ cause }),
 							});
 							if (exitCode === 0) {
-								portlessPublicBase = PORTLESS_PUBLIC_BASE;
 								process.on('exit', () => {
 									Bun.spawnSync([
 										portlessBin,

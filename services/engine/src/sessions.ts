@@ -428,10 +428,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						message: `Session ${session.uuid} has no jobs to read.`,
 					});
 				}
-				return yield* jobs.wait({
+				const result = yield* jobs.wait({
 					jobId: job.uuid,
 					timeoutMs: input.timeoutMs,
 				});
+				return { ...result, jobId: job.uuid };
 			});
 
 		const cancel = (input: { sessionId: string }) =>
@@ -442,7 +443,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.where(eq(schema.sessions.uuid, input.sessionId))
 					.limit(1)
 					.get();
-				if (session === undefined) return false;
+				if (session === undefined) return { ok: false as const };
 				const running = db
 					.select({ uuid: schema.jobs.uuid })
 					.from(schema.jobs)
@@ -456,8 +457,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.get();
 				if (running !== undefined) {
 					yield* jobs.cancel({ jobId: running.uuid });
+					return { ok: true as const, status: 'cancelled' as const };
 				}
-				return true;
+				return { ok: true as const, status: 'idle' as const };
 			});
 
 		const list = (input: { mcpSessionId: string }) =>

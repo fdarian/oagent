@@ -299,7 +299,7 @@ const router = procedure.router({
 			.input(v.object({ sessionId: v.string() }))
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				return { ok: yield* sessions.cancel(options.input) };
+				return yield* sessions.cancel(options.input);
 			}),
 		list: procedure
 			.input(v.object({ mcpSessionId: v.string() }))

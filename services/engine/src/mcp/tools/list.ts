@@ -1,35 +1,38 @@
 import { Effect } from 'effect';
 import type { z } from 'zod';
-import type { Jobs } from '../../jobs.ts';
+import type { Sessions } from '../../sessions.ts';
 
 const description = `\
-List agent jobs started in the current MCP session, including their ids, statuses, \
-prompts, and creation times. Only available over the HTTP \`/mcp\` transport.`;
+List sessions started in the current MCP session, including their latest job \
+status, prompt, and creation time. Only available over the HTTP \`/mcp\` transport.`;
 
 const inputSchema = {};
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type SessionSummary = {
+	id: string;
+	jobId: string;
+	status: 'running' | 'done' | 'error' | 'cancelled';
+	prompt: string;
+	createdAt: number;
+};
+type SessionList = Pick<Sessions['Service'], 'list'>;
 
-function formatJobs(
-	jobs: ReturnType<Jobs['Service']['listByMcpSession']>,
-): string {
-	if (jobs.length === 0) {
-		return 'No jobs in this session yet.';
+function formatSessions(sessions: ReadonlyArray<SessionSummary>): string {
+	if (sessions.length === 0) {
+		return 'No sessions in this MCP session yet.';
 	}
-
 	const lines = [
-		`# Session jobs (${jobs.length})`,
+		`# Sessions (${sessions.length})`,
 		'',
-		...jobs.map((job) => {
-			const oneLine = job.prompt.replace(/\n/g, ' ');
+		...sessions.map((session) => {
+			const oneLine = session.prompt.replace(/\n/g, ' ');
 			const promptSummary =
 				oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
-			const created = new Date(job.createdAt).toISOString();
-			const model = job.model !== undefined ? ` · ${job.model}` : '';
-			return `- **${job.id}** [${job.status}] ${created}${model}\n  ${promptSummary}`;
+			const created = new Date(session.createdAt).toISOString();
+			return `- **${session.id}** [${session.status}] ${created} · latest job \`${session.jobId}\`\n  ${promptSummary}`;
 		}),
 	];
-
 	return lines.join('\n');
 }
 
@@ -38,7 +41,7 @@ export const listTool = {
 	inputSchema,
 	handle(
 		_args: Args,
-		ctx: { jobs: Jobs['Service']; mcpSessionId: string | undefined },
+		ctx: { sessions: SessionList; mcpSessionId: string | undefined },
 	) {
 		const sessionId = ctx.mcpSessionId;
 		if (sessionId === undefined) {
@@ -48,11 +51,10 @@ export const listTool = {
 				),
 			);
 		}
-		return Effect.sync(() => {
-			const jobs = ctx.jobs.listByMcpSession(sessionId);
-			return {
-				content: [{ type: 'text' as const, text: formatJobs(jobs) }],
-			};
-		});
+		return ctx.sessions.list({ mcpSessionId: sessionId }).pipe(
+			Effect.map((sessions) => ({
+				content: [{ type: 'text' as const, text: formatSessions(sessions) }],
+			})),
+		);
 	},
 };

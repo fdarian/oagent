@@ -1,3 +1,4 @@
+import { formatToolError, formatTurnResult } from '@oagent/engine';
 import { encode } from '@toon-format/toon';
 import { Effect } from 'effect';
 import { Argument, Command, Flag } from 'effect/unstable/cli';
@@ -121,20 +122,33 @@ function runWait(params: {
 	jobId: string;
 	engineUrl: string;
 	timeoutMs: number;
+	json: boolean;
 }) {
 	return Effect.tryPromise(async () => {
 		const client = createEngineClient(params.engineUrl);
+		const job = await client.jobs.get({ jobId: params.jobId });
+		if (job === undefined) throw new Error(`Job not found: ${params.jobId}`);
 		const result = await pollWait(client, params.jobId, params.timeoutMs);
-		process.stdout.write(`${JSON.stringify(result)}\n`);
+		const output = params.json
+			? JSON.stringify(result)
+			: formatTurnResult({
+					sessionId: job.sessionId,
+					jobId: params.jobId,
+					result,
+					worktreePath: job.worktreePath,
+					worktreeBranch: job.worktreeBranch,
+				});
+		process.stdout.write(`${output}\n`);
 	}).pipe(
 		Effect.catch((cause) =>
 			Effect.sync(() => {
 				const message = errorMessage(cause).includes('Job not found')
 					? `Job not found: ${params.jobId}`
 					: errorMessage(cause);
-				process.stderr.write(
-					`${JSON.stringify({ status: 'error', message })}\n`,
-				);
+				const output = params.json
+					? JSON.stringify({ status: 'error', message })
+					: formatToolError(message);
+				process.stderr.write(`${output}\n`);
 				process.exitCode = 1;
 			}),
 		),
@@ -228,12 +242,23 @@ export const jobsCmd = (_version: Version) => {
 					'Overall wait budget in ms before giving up and returning {status:"running"} (default: 10800000 = 3h; a safe upper bound, most agent jobs run 30s–1hr).',
 				),
 			),
+			json: Flag.Boolean('json').pipe(
+				Flag.withDefault(false),
+				Flag.withDescription(
+					'Print the current JSON result instead of markdown.',
+				),
+			),
 		},
-		({ jobId, engineUrl, timeoutMs }) =>
-			runWait({ jobId, engineUrl, timeoutMs }),
+		(options) =>
+			runWait({
+				jobId: options.jobId,
+				engineUrl: options.engineUrl,
+				timeoutMs: options.timeoutMs,
+				json: options.json,
+			}),
 	).pipe(
 		Command.withDescription(
-			'Wait for a job to reach a terminal state, polling the engine directly, and print the result JSON to stdout.',
+			'Wait for a job to reach a terminal state, polling the engine directly, and print its result as markdown (or JSON with --json).',
 		),
 	);
 
