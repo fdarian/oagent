@@ -422,6 +422,17 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 						mode: mode.mode,
 						cwd: input.cwd,
 					}),
+				beforePrompt: (sessionId) =>
+					serviceClient.disableQuestion(binary, sessionId).pipe(
+						Effect.mapError(
+							(cause) =>
+								new AcpTurnFailed({
+									code: 'SESSION_PERMISSION',
+									message: `Failed to disable questions for OpenCode session "${sessionId}": ${cause.message}`,
+									cause,
+								}),
+						),
+					),
 			});
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>

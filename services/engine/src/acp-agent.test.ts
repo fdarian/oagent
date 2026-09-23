@@ -102,12 +102,17 @@ describe('ACP pre-prompt ordering', () => {
 					configId: 'mode',
 					value: 'plan',
 				});
-				expect(order).toEqual(['new-session', 'persist-session']);
+				expect(order).toEqual(['new-session', 'persist-session', 'setup']);
 				order.push('set-mode');
 				return {} as SetConfigResult;
 			},
 			prompt: async (): Promise<PromptResult> => {
-				expect(order).toEqual(['new-session', 'persist-session', 'set-mode']);
+				expect(order).toEqual([
+					'new-session',
+					'persist-session',
+					'setup',
+					'set-mode',
+				]);
 				order.push('prompt');
 				return { stopReason: 'end_turn' } as PromptResult;
 			},
@@ -125,6 +130,11 @@ describe('ACP pre-prompt ordering', () => {
 					cwd: '/tmp',
 					mode: 'plan',
 					onSessionId: () => order.push('persist-session'),
+					beforePrompt: (sessionId) =>
+						Effect.sync(() => {
+							expect(sessionId).toBe('ses_test');
+							order.push('setup');
+						}),
 				},
 			),
 		);
@@ -133,6 +143,7 @@ describe('ACP pre-prompt ordering', () => {
 		expect(order).toEqual([
 			'new-session',
 			'persist-session',
+			'setup',
 			'set-mode',
 			'prompt',
 		]);
@@ -161,12 +172,17 @@ describe('ACP pre-prompt ordering', () => {
 					configId: 'mode',
 					value: 'build',
 				});
-				expect(order).toEqual(['load-session', 'persist-session']);
+				expect(order).toEqual(['load-session', 'persist-session', 'setup']);
 				order.push('set-mode');
 				return {} as SetConfigResult;
 			},
 			prompt: async (): Promise<PromptResult> => {
-				expect(order).toEqual(['load-session', 'persist-session', 'set-mode']);
+				expect(order).toEqual([
+					'load-session',
+					'persist-session',
+					'setup',
+					'set-mode',
+				]);
 				order.push('prompt');
 				return { stopReason: 'end_turn' } as PromptResult;
 			},
@@ -188,6 +204,11 @@ describe('ACP pre-prompt ordering', () => {
 						expect(sessionId).toBe('ses_existing');
 						order.push('persist-session');
 					},
+					beforePrompt: (sessionId) =>
+						Effect.sync(() => {
+							expect(sessionId).toBe('ses_existing');
+							order.push('setup');
+						}),
 				},
 			),
 		);
@@ -196,6 +217,7 @@ describe('ACP pre-prompt ordering', () => {
 		expect(order).toEqual([
 			'load-session',
 			'persist-session',
+			'setup',
 			'set-mode',
 			'prompt',
 		]);

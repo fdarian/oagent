@@ -18,6 +18,20 @@ const SteerResponse = Schema.Struct({
 	}),
 });
 
+const SessionResponse = Schema.Struct({
+	data: Schema.Struct({
+		permissions: Schema.optional(
+			Schema.Array(
+				Schema.Struct({
+					action: Schema.String,
+					resource: Schema.String,
+					effect: Schema.Literals(['allow', 'ask', 'deny']),
+				}),
+			),
+		),
+	}),
+});
+
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -54,6 +68,20 @@ export class OpenCodeSteerRequestError extends Schema.TaggedError<OpenCodeSteerR
 		const detail =
 			this.cause instanceof Error ? this.cause.message : String(this.cause);
 		return `Failed to steer OpenCode session "${this.sessionId}": ${detail}`;
+	}
+}
+
+export class OpenCodeSessionPermissionError extends Schema.TaggedError<OpenCodeSessionPermissionError>()(
+	'OpenCodeSessionPermissionError',
+	{
+		sessionId: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `Could not set permissions for OpenCode session "${this.sessionId}": ${detail}`;
 	}
 }
 
@@ -262,7 +290,70 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 					};
 				});
 
-			return { steer };
+			const disableQuestion = (
+				binaryPath: string,
+				sessionId: string,
+			): Effect.Effect<
+				void,
+				OpenCodeServiceDiscoveryError | OpenCodeSessionPermissionError
+			> =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL(
+						`/api/session/${encodeURIComponent(sessionId)}`,
+						service.url,
+					);
+					const permissionError = (cause: unknown) =>
+						new OpenCodeSessionPermissionError({ sessionId, cause });
+					const request = HttpClientRequest.get(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+					);
+					const response = yield* httpClient
+						.execute(request)
+						.pipe(Effect.mapError(permissionError));
+					if (response.status !== 200) {
+						return yield* permissionError(
+							new Error(`OpenCode service returned HTTP ${response.status}`),
+						);
+					}
+					const session = yield* HttpClientResponse.schemaBodyJson(
+						SessionResponse,
+					)(response).pipe(Effect.mapError(permissionError));
+					const lastQuestionRule = session.data.permissions
+						?.filter(
+							(rule) => rule.action === 'question' && rule.resource === '*',
+						)
+						.at(-1);
+					if (lastQuestionRule?.effect === 'deny') return;
+					const update = yield* HttpClientRequest.patch(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+						HttpClientRequest.bodyJson({
+							permissions: [
+								...(session.data.permissions === undefined
+									? []
+									: session.data.permissions),
+								{ action: 'question', resource: '*', effect: 'deny' },
+							],
+						}),
+						Effect.mapError(permissionError),
+					);
+					const updated = yield* httpClient
+						.execute(update)
+						.pipe(Effect.mapError(permissionError));
+					if (updated.status !== 204) {
+						return yield* permissionError(
+							new Error(`OpenCode service returned HTTP ${updated.status}`),
+						);
+					}
+				});
+
+			return { steer, disableQuestion };
 		}),
 	},
 ) {

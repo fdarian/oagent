@@ -391,6 +391,7 @@ export function runAcpTurn(
 			sessionId: string;
 			mode: string;
 		}) => Effect.Effect<void, AcpTurnFailed>;
+		beforePrompt?: (sessionId: string) => Effect.Effect<void, AcpTurnFailed>;
 		sessionId?: string;
 		cwd: string;
 		onSessionId?: (sessionId: string) => void;
@@ -483,6 +484,9 @@ export function runAcpTurn(
 		});
 
 		const response = yield* Effect.gen(function* () {
+			if (input.beforePrompt !== undefined) {
+				yield* input.beforePrompt(sessionResult.sessionId);
+			}
 			const configOptions: ReadonlyArray<AcpConfigOption> =
 				input.skipModelSet === true
 					? []
@@ -650,6 +654,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 				sessionId: string;
 				mode: string;
 			}) => Effect.Effect<void, AcpTurnFailed>;
+			beforePrompt?: (sessionId: string) => Effect.Effect<void, AcpTurnFailed>;
 			sessionId?: string;
 			cwd: string;
 			onSessionId?: (sessionId: string) => void;
