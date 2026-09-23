@@ -146,6 +146,7 @@ mock.module('@/lib/use-job-events', () => ({
 	useJobEvents: () => ({
 		parts: [],
 		streamingTail: null,
+		children: new Map(),
 		terminal: false,
 		isLoading: false,
 	}),

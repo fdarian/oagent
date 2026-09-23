@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
 	applyEvent,
+	type ChildTimeline,
 	createInitialState,
 	finalizeState,
 	type ReduceState,
@@ -13,6 +14,7 @@ export type JobEventsState = {
 	jobId?: string;
 	parts: TimelinePart[];
 	streamingTail: TimelinePart | null;
+	children: Map<string, ChildTimeline>;
 	lastStatus?: string;
 	terminal: boolean;
 	isLoading: boolean;
@@ -27,6 +29,7 @@ export function useJobEvents(
 	const [result, setResult] = useState<JobEventsState>({
 		parts: [],
 		streamingTail: null,
+		children: new Map(),
 		terminal: false,
 		isLoading: false,
 	});
@@ -39,6 +42,7 @@ export function useJobEvents(
 				jobId,
 				parts: [],
 				streamingTail: null,
+				children: new Map(),
 				terminal: false,
 				isLoading: false,
 			});
@@ -55,6 +59,7 @@ export function useJobEvents(
 				jobId,
 				parts: [],
 				streamingTail: null,
+				children: new Map(),
 				terminal: false,
 				isLoading: true,
 			});
@@ -79,6 +84,7 @@ export function useJobEvents(
 						jobId,
 						parts: final.parts,
 						streamingTail: null,
+						children: final.children,
 						lastStatus: final.lastStatus,
 						terminal: true,
 						isLoading: false,
@@ -91,6 +97,7 @@ export function useJobEvents(
 					jobId,
 					parts: display.parts,
 					streamingTail: display.streamingTail,
+					children: display.children,
 					lastStatus: display.lastStatus,
 					terminal: false,
 					isLoading: false,

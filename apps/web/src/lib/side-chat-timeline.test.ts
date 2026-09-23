@@ -98,6 +98,7 @@ describe('side-chat timeline', () => {
 				text: ' tail',
 				createdAt: 27,
 			},
+			children: new Map(),
 			terminal: false,
 			isLoading: false,
 		});

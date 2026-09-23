@@ -10,7 +10,8 @@ import { JobHeader } from '@/components/job-header';
 import { JobPromptView } from '@/components/job-prompt-view';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
-import { SideChatDrawer } from '@/components/side-chat-drawer';
+import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
+import { SubagentHeader } from '@/components/subagent-header';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
 import {
@@ -18,9 +19,9 @@ import {
 	type SideChatCreation,
 	sideChatCreateMutationFilter,
 	sideChatCreateMutationKey,
-} from '@/lib/side-chat-creation';
+} from '@/lib/side-chat-creation.ts';
 import { useJobEvents } from '@/lib/use-job-events';
-import { useSideChatTimeline } from '@/lib/use-side-chat-timeline';
+import { useSideChatTimeline } from '@/lib/use-side-chat-timeline.ts';
 
 function getErrorMessage(error: unknown): string {
 	if (error instanceof Error) return error.message;
@@ -47,6 +48,18 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const search = useSearch({ from: '/console/jobs/$jobId' });
 	const navigate = useNavigate({ from: '/jobs/$jobId' });
 	const [isPromptExpanded, setIsPromptExpanded] = useState(false);
+	const activeChildState = useState<
+		{ jobId: string; sessionId: string } | undefined
+	>(undefined);
+	const childSelection = activeChildState[0];
+	const setChildSelection = activeChildState[1];
+	const selectedJobQuery = useQuery({
+		queryKey: queryKeys.job(jobId),
+		queryFn: () => orpc.jobs.get({ jobId }),
+	});
+	const selectedJob = selectedJobQuery.data;
+	const events = useJobEvents(selectedJob?.id);
+	const queryClient = useQueryClient();
 	const [drawerState, setDrawerState] = useState({
 		sourceJobId: jobId,
 		drawerInstance: 0,
@@ -71,13 +84,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			isSideChatCreationActiveRef.current = false;
 		};
 	}, []);
-	const selectedJobQuery = useQuery({
-		queryKey: queryKeys.job(jobId),
-		queryFn: () => orpc.jobs.get({ jobId }),
-	});
-	const selectedJob = selectedJobQuery.data;
-	const events = useJobEvents(selectedJob?.id);
-	const queryClient = useQueryClient();
 	const sideChatsQuery = useQuery({
 		queryKey: queryKeys.sideChats(jobId),
 		queryFn: () => orpc.sideChats.list({ sourceJobId: jobId }),
@@ -121,7 +127,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		},
 		[jobId, search.sideChat],
 	);
-
 	const selectSideChat = useCallback(
 		(sideChatId: string | undefined) => {
 			if (!isSideChatCreationActiveRef.current) return;
@@ -134,7 +139,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		},
 		[beginDrawerInstance, jobId, navigate],
 	);
-
 	const handleDrawerOpenChange = useCallback(
 		(open: boolean) => {
 			if (!isSideChatCreationActiveRef.current) return;
@@ -306,6 +310,25 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		);
 	}
 
+	const activeChildSessionId =
+		childSelection === undefined || childSelection.jobId !== jobId
+			? undefined
+			: childSelection.sessionId;
+	const activeChild =
+		activeChildSessionId === undefined
+			? undefined
+			: events.children.get(activeChildSessionId);
+
+	const selectChild = (sessionId: string) => {
+		setChildSelection({ jobId, sessionId });
+	};
+
+	const navigateChild = (sessionId: string | undefined) => {
+		setChildSelection(
+			sessionId === undefined ? undefined : { jobId, sessionId },
+		);
+	};
+
 	if (selectedJob === undefined) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-22 text-muted-foreground">
@@ -327,8 +350,16 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		<>
 			<div className="flex flex-col gap-0">
 				<JobStatusStrip
-					status={events.lastStatus}
-					isRunning={selectedJob.status === 'running' && !events.terminal}
+					status={
+						activeChild === undefined
+							? events.lastStatus
+							: activeChild.lastStatus
+					}
+					isRunning={
+						selectedJob.status === 'running' &&
+						!events.terminal &&
+						(activeChild === undefined || activeChild.status === 'running')
+					}
 				/>
 			</div>
 			{isPromptExpanded ? (
@@ -339,43 +370,67 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			) : (
 				<div className="flex min-h-0 flex-1 flex-col">
 					<JobTimeline
-						parts={events.parts}
-						streamingTail={events.streamingTail}
+						key={
+							activeChildSessionId === undefined
+								? 'parent'
+								: activeChildSessionId
+						}
+						parts={activeChild === undefined ? events.parts : activeChild.parts}
+						streamingTail={
+							activeChild === undefined
+								? events.streamingTail
+								: activeChild.streamingTail
+						}
 						cwd={selectedJob.cwd}
+						childSessions={events.children}
+						currentChild={activeChild}
+						activeChildSessionId={activeChildSessionId}
+						onChildSelect={selectChild}
+						isChildTimeline={activeChild !== undefined}
 						isLoading={
 							events.isLoading &&
-							events.parts.length === 0 &&
-							events.streamingTail === null
+							(activeChild === undefined
+								? events.parts.length === 0 && events.streamingTail === null
+								: activeChild.parts.length === 0 &&
+									activeChild.streamingTail === null)
 						}
 						header={
-							<div className="px-33 py-22">
-								<div className="mx-auto max-w-[900px]">
-									<JobHeader
-										id={selectedJob.id}
-										status={status}
-										prompt={selectedJob.prompt}
-										cwd={selectedJob.cwd}
-										backend={selectedJob.backend}
-										model={selectedJob.model}
-										agentType={selectedJob.agentType}
-										sessionId={selectedJob.sessionId}
-										createdAt={selectedJob.createdAt}
-										terminatedAt={selectedJob.terminatedAt}
-										onCancel={() => {
-											cancelJob.mutate(selectedJob.id);
-										}}
-										onExpandPrompt={() => setIsPromptExpanded(true)}
-										onNewSideChat={handleNewSideChat}
-										isCreatingSideChat={isCreatingSideChat}
-										onOpenSideChats={
-											sideChats === undefined || sideChats.length === 0
-												? undefined
-												: handleOpenSideChats
-										}
-										moreTriggerRef={moreTriggerRef}
-									/>
+							activeChild === undefined ? (
+								<div className="px-33 py-22">
+									<div className="mx-auto max-w-[900px]">
+										<JobHeader
+											id={selectedJob.id}
+											status={status}
+											prompt={selectedJob.prompt}
+											cwd={selectedJob.cwd}
+											backend={selectedJob.backend}
+											model={selectedJob.model}
+											agentType={selectedJob.agentType}
+											sessionId={selectedJob.sessionId}
+											createdAt={selectedJob.createdAt}
+											terminatedAt={selectedJob.terminatedAt}
+											onCancel={() => {
+												cancelJob.mutate(selectedJob.id);
+											}}
+											onExpandPrompt={() => setIsPromptExpanded(true)}
+											onNewSideChat={handleNewSideChat}
+											isCreatingSideChat={isCreatingSideChat}
+											onOpenSideChats={
+												sideChats === undefined || sideChats.length === 0
+													? undefined
+													: handleOpenSideChats
+											}
+											moreTriggerRef={moreTriggerRef}
+										/>
+									</div>
 								</div>
-							</div>
+							) : (
+								<SubagentHeader
+									child={activeChild}
+									sessions={events.children}
+									onNavigate={navigateChild}
+								/>
+							)
 						}
 					/>
 				</div>

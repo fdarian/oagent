@@ -10,13 +10,14 @@ import {
 	CollapsibleContent,
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible';
-import type { TimelinePart } from '@/lib/event-adapter';
+import type { ChildTimeline, TimelinePart } from '@/lib/event-adapter';
 import { cn } from '@/lib/utils';
 import { JobTimelineError } from './job-timeline-error';
 import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
 import { JobTimelineSteer } from './job-timeline-steer';
 import { JobTimelineTool } from './job-timeline-tool';
+import { SubagentDock } from './subagent-dock';
 
 export type JobTimelineProps = {
 	parts: TimelinePart[];
@@ -25,6 +26,11 @@ export type JobTimelineProps = {
 	header?: ReactNode;
 	isLoading?: boolean;
 	contentClassName?: string;
+	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	currentChild?: ChildTimeline;
+	activeChildSessionId?: string;
+	onChildSelect?: (sessionId: string) => void;
+	isChildTimeline?: boolean;
 };
 
 type ReasoningPart = Extract<TimelinePart, { kind: 'reasoning' }>;
@@ -36,7 +42,15 @@ type ExplorationGroup = {
 	parts: ToolPart[];
 };
 
-type TimelineItem = TimelinePart | ExplorationGroup;
+type SubagentDockItem = {
+	kind: 'subagent-dock';
+	id: string;
+	sessions: ReadonlyMap<string, ChildTimeline>;
+	activeChildSessionId: string | undefined;
+	onSelect: (sessionId: string) => void;
+};
+
+type TimelineItem = TimelinePart | ExplorationGroup | SubagentDockItem;
 
 function collapseReasoningParts(parts: TimelinePart[]): TimelinePart[] {
 	const collapsed: TimelinePart[] = [];
@@ -138,7 +152,11 @@ function explorationSummary(parts: ToolPart[]): string {
 	return counts.join(', ');
 }
 
-function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
+function ExplorationGroup(props: {
+	group: ExplorationGroup;
+	cwd: string;
+	currentChild: ChildTimeline | undefined;
+}) {
 	return (
 		<Collapsible defaultOpen={false} className="group mb-3 w-full">
 			<CollapsibleTrigger className="flex w-full items-center gap-1.5 py-1 text-left">
@@ -150,16 +168,29 @@ function ExplorationGroup(props: { group: ExplorationGroup; cwd: string }) {
 			</CollapsibleTrigger>
 			<CollapsibleContent className="ml-1 border-border border-l pl-4 pt-1">
 				{props.group.parts.map((part) => (
-					<JobTimelineTool key={part.id} part={part} cwd={props.cwd} />
+					<JobTimelineTool
+						key={part.id}
+						part={part}
+						cwd={props.cwd}
+						currentChild={props.currentChild}
+					/>
 				))}
 			</CollapsibleContent>
 		</Collapsible>
 	);
 }
 
-function renderPart(part: TimelineItem, cwd: string) {
+function renderPart(
+	part: TimelineItem,
+	cwd: string,
+	childSessions: ReadonlyMap<string, ChildTimeline> | undefined,
+	currentChild: ChildTimeline | undefined,
+	onChildSelect: ((sessionId: string) => void) | undefined,
+) {
 	if (part.kind === 'exploration') {
-		return <ExplorationGroup group={part} cwd={cwd} />;
+		return (
+			<ExplorationGroup group={part} cwd={cwd} currentChild={currentChild} />
+		);
 	}
 
 	switch (part.kind) {
@@ -171,7 +202,15 @@ function renderPart(part: TimelineItem, cwd: string) {
 		case 'reasoning':
 			return <JobTimelineReasoning part={part} />;
 		case 'tool':
-			return <JobTimelineTool part={part} cwd={cwd} />;
+			return (
+				<JobTimelineTool
+					part={part}
+					cwd={cwd}
+					childSessions={childSessions}
+					currentChild={currentChild}
+					onChildSelect={onChildSelect}
+				/>
+			);
 		case 'error':
 			return <JobTimelineError part={part} />;
 		default:
@@ -187,37 +226,74 @@ export function JobTimeline(props: JobTimelineProps) {
 				: props.parts,
 		),
 	);
+	const runningChildren =
+		props.childSessions === undefined
+			? []
+			: Array.from(props.childSessions.values()).filter(
+					(child) => child.status === 'running',
+				);
+	const allItems: TimelineItem[] = [...allParts];
+	if (
+		runningChildren.length > 0 &&
+		props.childSessions !== undefined &&
+		props.onChildSelect !== undefined
+	) {
+		allItems.push({
+			kind: 'subagent-dock',
+			id: 'running-subagents',
+			sessions: props.childSessions,
+			activeChildSessionId: props.activeChildSessionId,
+			onSelect: props.onChildSelect,
+		});
+	}
 
-	function partAt(index: number): TimelineItem {
-		const part = allParts[index];
-		if (part === undefined) {
+	function itemAt(index: number): TimelineItem {
+		const item = allItems[index];
+		if (item === undefined) {
 			throw new Error(
-				`Timeline part at index ${index} is undefined (length: ${allParts.length})`,
+				`Timeline item at index ${index} is undefined (length: ${allItems.length})`,
 			);
 		}
-		return part;
+		return item;
 	}
 
 	return (
 		<Conversation
-			count={allParts.length}
-			getItemKey={(index) => partAt(index).id}
+			count={allItems.length}
+			getItemKey={(index) => itemAt(index).id}
 			estimateSize={() => 72}
 			className="min-h-0 flex-1"
 		>
-			{allParts.length === 0 ? (
+			{allItems.length === 0 ? (
 				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
 					{props.isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
 				<ConversationContent header={props.header}>
-					{(virtualItem) => (
-						<div className={cn('px-33', props.contentClassName)}>
-							<div className="mx-auto max-w-[900px]">
-								{renderPart(partAt(virtualItem.index), props.cwd)}
+					{(virtualItem) => {
+						const item = itemAt(virtualItem.index);
+						return (
+							<div className={cn('px-33', props.contentClassName)}>
+								<div className="mx-auto max-w-[900px]">
+									{item.kind === 'subagent-dock' ? (
+										<SubagentDock
+											sessions={item.sessions}
+											activeChildSessionId={item.activeChildSessionId}
+											onSelect={item.onSelect}
+										/>
+									) : (
+										renderPart(
+											item,
+											props.cwd,
+											props.childSessions,
+											props.currentChild,
+											props.onChildSelect,
+										)
+									)}
+								</div>
 							</div>
-						</div>
-					)}
+						);
+					}}
 				</ConversationContent>
 			)}
 			<ConversationScrollButton />

@@ -1,7 +1,12 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
+import { fn } from 'storybook/test';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { JobHeader } from './job-header';
+import { JobStatusStrip } from './job-status-strip';
 import { JobTimeline } from './job-timeline';
+import { createSubagentFixture } from './subagent-fixtures';
+import { SubagentHeader } from './subagent-header';
 
 const meta: Meta<typeof JobTimeline> = {
 	component: JobTimeline,
@@ -447,4 +452,150 @@ function StreamedFullMixed() {
 
 export const FullMixed: Story = {
 	render: () => <StreamedFullMixed />,
+};
+
+export const SubagentParent: Story = {
+	args: (() => {
+		const fixture = createSubagentFixture({
+			id: 'timeline-parent-child',
+			status: 'completed',
+			title: 'Say hi',
+			description: 'Say hi',
+			agentName: 'general',
+		});
+		return {
+			parts: fixture.display.parts,
+			streamingTail: fixture.display.streamingTail,
+			childSessions: fixture.display.children,
+			onChildSelect: fn<(sessionId: string) => void>(),
+		};
+	})(),
+};
+
+export const SubagentParentRunning: Story = {
+	args: (() => {
+		const fixture = createSubagentFixture({
+			id: 'timeline-parent-child-running',
+			status: 'running',
+			title: 'Say hi',
+			description: 'Say hi',
+			agentName: 'general',
+		});
+		return {
+			parts: fixture.display.parts,
+			streamingTail: fixture.display.streamingTail,
+			childSessions: fixture.display.children,
+			onChildSelect: fn<(sessionId: string) => void>(),
+		};
+	})(),
+};
+
+export const SubagentChild: Story = {
+	args: (() => {
+		const fixture = createSubagentFixture({
+			id: 'timeline-child',
+			status: 'running',
+			title: 'Inspect the event model',
+			agentName: 'explore',
+		});
+		if (fixture.child === undefined) throw new Error('Missing timeline child');
+		return {
+			parts: fixture.child.parts,
+			streamingTail: fixture.child.streamingTail,
+			childSessions: fixture.display.children,
+			currentChild: fixture.child,
+			isChildTimeline: true,
+			header: (
+				<SubagentHeader
+					child={fixture.child}
+					sessions={fixture.display.children}
+					onNavigate={fn<(sessionId: string | undefined) => void>()}
+				/>
+			),
+		};
+	})(),
+};
+
+const interactiveFixture = createSubagentFixture({
+	id: 'interactive-child',
+	status: 'running',
+	title: 'Inspect the event model',
+	description: 'Inspect the event model',
+	agentName: 'general',
+});
+
+function InteractiveSubagentTimeline() {
+	const [activeChildSessionId, setActiveChildSessionId] = useState<
+		string | undefined
+	>(undefined);
+	const activeChild =
+		activeChildSessionId === undefined
+			? undefined
+			: interactiveFixture.display.children.get(activeChildSessionId);
+	const handleChildSelect = (sessionId: string) => {
+		interactiveChildSelect(sessionId);
+		setActiveChildSessionId(sessionId);
+	};
+	const handleChildNavigate = (sessionId: string | undefined) => {
+		interactiveChildNavigate(sessionId);
+		setActiveChildSessionId(sessionId);
+	};
+	return (
+		<div className="flex h-screen w-screen flex-col bg-background">
+			<JobStatusStrip
+				status={
+					activeChild?.lastStatus ?? interactiveFixture.display.lastStatus
+				}
+				isRunning={
+					activeChild?.status === 'running' || activeChild === undefined
+				}
+			/>
+			<div className="flex min-h-0 flex-1 flex-col">
+				<JobTimeline
+					key={activeChild?.id ?? 'parent'}
+					parts={activeChild?.parts ?? interactiveFixture.display.parts}
+					streamingTail={
+						activeChild?.streamingTail ??
+						interactiveFixture.display.streamingTail
+					}
+					cwd="/Users/dev/project"
+					childSessions={interactiveFixture.display.children}
+					currentChild={activeChild}
+					activeChildSessionId={activeChildSessionId}
+					onChildSelect={handleChildSelect}
+					isChildTimeline={activeChild !== undefined}
+					header={
+						activeChild === undefined ? (
+							<div className="px-33 py-22">
+								<div className="mx-auto max-w-[900px]">
+									<JobHeader
+										id="job-subagent-story"
+										status="running"
+										prompt="Review the authentication middleware and delegate the event-model inspection."
+										cwd="/Users/dev/project"
+										backend="opencode"
+										model="opencode-go/kimi-k2.6"
+										createdAt={Date.now() - 12_000}
+									/>
+								</div>
+							</div>
+						) : (
+							<SubagentHeader
+								child={activeChild}
+								sessions={interactiveFixture.display.children}
+								onNavigate={handleChildNavigate}
+							/>
+						)
+					}
+				/>
+			</div>
+		</div>
+	);
+}
+
+const interactiveChildSelect = fn<(sessionId: string) => void>();
+const interactiveChildNavigate = fn<(sessionId: string | undefined) => void>();
+
+export const InteractiveSubagentNavigation: Story = {
+	render: () => <InteractiveSubagentTimeline />,
 };
