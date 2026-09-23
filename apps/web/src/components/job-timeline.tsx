@@ -17,7 +17,7 @@ import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
 import { JobTimelineSteer } from './job-timeline-steer';
 import { JobTimelineTool } from './job-timeline-tool';
-import { SubagentDock } from './subagent-dock';
+import { getRunningSubagentSessions, SubagentDock } from './subagent-dock';
 
 export type JobTimelineProps = {
 	parts: TimelinePart[];
@@ -46,6 +46,7 @@ type SubagentDockItem = {
 	kind: 'subagent-dock';
 	id: string;
 	sessions: ReadonlyMap<string, ChildTimeline>;
+	scopeSessionId: string | undefined;
 	activeChildSessionId: string | undefined;
 	onSelect: (sessionId: string) => void;
 };
@@ -219,6 +220,7 @@ function renderPart(
 }
 
 export function JobTimeline(props: JobTimelineProps) {
+	const scopeSessionId = props.currentChild?.id;
 	const allParts = collapseExplorationParts(
 		collapseReasoningParts(
 			props.streamingTail !== null
@@ -229,9 +231,7 @@ export function JobTimeline(props: JobTimelineProps) {
 	const runningChildren =
 		props.childSessions === undefined
 			? []
-			: Array.from(props.childSessions.values()).filter(
-					(child) => child.status === 'running',
-				);
+			: getRunningSubagentSessions(props.childSessions, scopeSessionId);
 	const allItems: TimelineItem[] = [...allParts];
 	if (
 		runningChildren.length > 0 &&
@@ -242,6 +242,7 @@ export function JobTimeline(props: JobTimelineProps) {
 			kind: 'subagent-dock',
 			id: 'running-subagents',
 			sessions: props.childSessions,
+			scopeSessionId,
 			activeChildSessionId: props.activeChildSessionId,
 			onSelect: props.onChildSelect,
 		});
@@ -278,6 +279,7 @@ export function JobTimeline(props: JobTimelineProps) {
 									{item.kind === 'subagent-dock' ? (
 										<SubagentDock
 											sessions={item.sessions}
+											scopeSessionId={item.scopeSessionId}
 											activeChildSessionId={item.activeChildSessionId}
 											onSelect={item.onSelect}
 										/>
