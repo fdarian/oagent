@@ -44,6 +44,14 @@ function isCodeModeExecute(part: ToolPart): part is CodeModeToolPart {
 	);
 }
 
+function codeModeToolNames(code: string): string | undefined {
+	const calls = code.matchAll(
+		/\btools\s*\.\s*([A-Za-z_$][\w$]*)\s*(?:\.\s*[A-Za-z_$][\w$]*|\[\s*(?:"[^"]+"|'[^']+')\s*\])\s*\(/g,
+	);
+	const names = [...new Set(Array.from(calls, (call) => call[1]))];
+	return names.length > 0 ? names.join(', ') : undefined;
+}
+
 function extractText(content: ToolCallContent[]): string {
 	return content
 		.map((c) =>
@@ -173,7 +181,7 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 		return (
 			<ToolRow
 				label="Execute"
-				descriptor="Code Mode"
+				descriptor={codeModeToolNames(part.rawInput.code)}
 				running={isRunning}
 				error={isError}
 			>

@@ -397,6 +397,42 @@ const fullMixedParts = [
 		durationMs: 900,
 	},
 	{
+		kind: 'tool',
+		id: 'tool-code-mode',
+		toolCallId: 'tc-code-mode',
+		toolName: 'execute',
+		title: 'execute',
+		toolKind: 'other',
+		state: 'output-available',
+		content: [
+			{
+				type: 'content',
+				content: {
+					type: 'text',
+					text: '{\n  "status": "verified",\n  "story": "FullMixed",\n  "checks": [\n    "typecheck",\n    "storybook"\n  ]\n}',
+				},
+			},
+		],
+		locations: [],
+		rawInput: {
+			code: `const checks = ['typecheck', 'storybook'];
+const summary = {
+	status: 'verified',
+	story: 'FullMixed',
+	checks,
+};
+
+return summary;`,
+		},
+		rawOutput: {
+			output:
+				'{\n  "status": "verified",\n  "story": "FullMixed",\n  "checks": [\n    "typecheck",\n    "storybook"\n  ]\n}',
+			metadata: { toolCalls: [] },
+		},
+		createdAt: Date.now() - 12_000,
+		durationMs: 500,
+	},
+	{
 		kind: 'text',
 		id: 'text-1',
 		text: 'Updated the mixed timeline fixture and verified the story.',
