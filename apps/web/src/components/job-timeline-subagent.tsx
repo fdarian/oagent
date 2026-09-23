@@ -256,8 +256,9 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 	const details = getSubagentToolDetails(props.part);
 	const child = props.child;
 	const canOpen = child !== undefined && props.onSelect !== undefined;
+	const toolStatus = statusFromPart(props.part);
 	const status =
-		child === undefined ? statusFromPart(props.part) : child.status;
+		toolStatus === 'running' && child !== undefined ? child.status : toolStatus;
 	const description = descriptionFor(details.description, child, props.part);
 
 	const handleClick = () => {
