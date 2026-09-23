@@ -31,6 +31,7 @@ export {
 	formatMcpInstructions,
 	formatPresets,
 	inputSchema as startInputSchema,
+	worktreeInputSchema as startWorktreeInputSchema,
 } from './mcp/tools/start.ts';
 export { steerTool } from './mcp/tools/steer.ts';
 export { OpenCode } from './opencode.ts';

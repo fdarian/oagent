@@ -12,6 +12,7 @@ import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
 import { Settings } from '../settings.ts';
 import { SideChats } from '../side-chats.ts';
+import { validateWorktreeTemplate } from '../worktree.ts';
 
 export type EngineServices =
 	| Jobs
@@ -163,6 +164,8 @@ const router = procedure.router({
 					model: job.model,
 					agentType: job.agentType,
 					sessionId: job.sessionId,
+					worktreePath: job.worktreePath,
+					worktreeBranch: job.worktreeBranch,
 				};
 			}),
 		start: procedure
@@ -173,6 +176,7 @@ const router = procedure.router({
 					model: v.optional(v.string()),
 					agent_type: v.optional(v.string()),
 					sessionId: v.optional(v.string()),
+					worktree: v.optional(v.boolean()),
 				}),
 			)
 			.effect(function* (options) {
@@ -183,6 +187,7 @@ const router = procedure.router({
 					model: options.input.model,
 					agentType: options.input.agent_type,
 					sessionId: options.input.sessionId,
+					worktree: options.input.worktree,
 				});
 				yield* Effect.logInfo(
 					`RPC start accepted ${requestLogFields({
@@ -341,6 +346,31 @@ const router = procedure.router({
 			}),
 	},
 	settings: {
+		getWorktree: procedure.input(v.void_()).effect(function* () {
+			const settings = yield* Settings;
+			return settings.getWorktree();
+		}),
+		setWorktree: procedure
+			.input(
+				v.pipe(
+					v.object({
+						enabled: v.boolean(),
+						createCommand: v.string(),
+					}),
+					v.check(
+						(value) =>
+							!value.enabled ||
+							(value.createCommand.trim().length > 0 &&
+								validateWorktreeTemplate(value.createCommand)),
+						'Enabled worktrees require a nonblank command with only {{branch}}, {{base}}, and {{repo}} variables.',
+					),
+				),
+			)
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				settings.setWorktree(options.input);
+				return settings.getWorktree();
+			}),
 		getStartTimeout: procedure.input(v.void_()).effect(function* () {
 			const jobs = yield* Jobs;
 			return { minutes: jobs.getStartTimeoutMs() / 60000 };

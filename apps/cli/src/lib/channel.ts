@@ -8,6 +8,7 @@ import {
 	formatPresets,
 	resultTool,
 	startInputSchema,
+	startWorktreeInputSchema,
 	steerTool,
 } from '@oagent/engine';
 import { Effect } from 'effect';
@@ -184,10 +185,12 @@ async function waitAndNotify(
 async function fetchStartDescriptionData(client: EngineClient): Promise<{
 	aliases: AliasPreset[];
 	agentTypes: AgentTypePreset[];
+	worktreeEnabled: boolean;
 }> {
 	const responses = await Promise.all([
 		client.aliases.list(),
 		client.agents.list(),
+		client.settings.getWorktree(),
 	]);
 	return {
 		aliases: responses[0].map(
@@ -209,6 +212,8 @@ async function fetchStartDescriptionData(client: EngineClient): Promise<{
 					: { description: agent.description }),
 			}),
 		),
+		worktreeEnabled:
+			responses[2].enabled && responses[2].createCommand.trim() !== '',
 	};
 }
 
@@ -233,12 +238,20 @@ function registerChannelTools(
 					model: args.model,
 					agent_type: args.agent_type,
 					sessionId: args.sessionId,
+					worktree: 'worktree' in args && args.worktree === true,
 				});
 				const jobId = started.jobId;
+				const worktree =
+					started.worktreePath === undefined
+						? {}
+						: {
+								worktreePath: started.worktreePath,
+								worktreeBranch: started.worktreeBranch,
+							};
 
 				if (args.background === true) {
 					void waitAndNotify(server, client, engineUrl, jobId);
-					return jsonContent({ status: 'running', jobId });
+					return jsonContent({ status: 'running', jobId, ...worktree });
 				}
 
 				const startTimeout = await client.settings.getStartTimeout();
@@ -249,10 +262,10 @@ function registerChannelTools(
 
 				if (result.status === 'running') {
 					void waitAndNotify(server, client, engineUrl, jobId);
-					return jsonContent({ status: 'running', jobId });
+					return jsonContent({ status: 'running', jobId, ...worktree });
 				}
 
-				return jsonContent(result);
+				return jsonContent({ ...result, ...worktree });
 			} catch (cause) {
 				return jsonContent({
 					status: 'error',
@@ -356,6 +369,9 @@ export function runChannelServer(params: {
 						Effect.sync(() => {
 							startTool.update({
 								description: `${channelStartDescription(params.mcpName)}${formatPresets(data.aliases)}${formatAgentTypes(data.agentTypes)}`,
+								paramsSchema: data.worktreeEnabled
+									? startWorktreeInputSchema
+									: startInputSchema,
 							});
 						}),
 					),

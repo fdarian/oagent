@@ -15,6 +15,7 @@ import { JobStartError, Jobs } from './jobs.ts';
 import type { OpenCode } from './opencode.ts';
 import { Settings } from './settings.ts';
 import { SIDE_CHAT_FIRST_PROMPT_REMINDER, SideChats } from './side-chats.ts';
+import { Worktrees } from './worktree.ts';
 
 const TEST_SCHEMA = `
 	CREATE TABLE jobs (
@@ -23,6 +24,8 @@ const TEST_SCHEMA = `
 		status TEXT NOT NULL,
 		prompt TEXT NOT NULL,
 		cwd TEXT NOT NULL,
+		worktree_path TEXT,
+		worktree_branch TEXT,
 		model TEXT,
 		agent_type TEXT,
 		backend TEXT NOT NULL,
@@ -104,6 +107,7 @@ async function createSideChatServices(
 			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			Effect.provideService(Settings, {} as Settings['Service']),
 			Effect.provideService(Agents, {} as Agents['Service']),
+			Effect.provideService(Worktrees, {} as Worktrees['Service']),
 		),
 	);
 	const sideChats = await Effect.runPromise(

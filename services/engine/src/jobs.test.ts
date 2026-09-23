@@ -10,6 +10,7 @@ import type { Harness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Jobs } from './jobs.ts';
 import { Settings } from './settings.ts';
+import { Worktrees } from './worktree.ts';
 
 function createDatabase() {
 	const sqlite = new Database(':memory:');
@@ -69,6 +70,7 @@ describe('job event persistence', () => {
 					getSetting: () => undefined,
 				} as unknown as Settings['Service']),
 				Effect.provideService(Agents, {} as Agents['Service']),
+				Effect.provideService(Worktrees, {} as Worktrees['Service']),
 			),
 		);
 
@@ -89,4 +91,73 @@ describe('job event persistence', () => {
 		expect(page.events[1]?.event).toMatchObject(metadataEvent);
 		database.sqlite.close();
 	});
+});
+
+test('starts in a worktree and resumes the session in the same path', async () => {
+	const database = createDatabase();
+	const cwdValues: string[] = [];
+	const branches: string[] = [];
+	const harness = {
+		backend: 'opencode' as const,
+		runTurn: (input: { cwd: string }) =>
+			Effect.sync(() => {
+				cwdValues.push(input.cwd);
+				return {
+					sessionId: 'ses_worktree',
+					text: 'done',
+					stopReason: 'end_turn',
+				};
+			}),
+	} as unknown as Harness;
+	const jobs = await Effect.runPromise(
+		Jobs.make.pipe(
+			Effect.provideService(Db, {
+				db: database.db,
+				sqlite: database.sqlite,
+			} as unknown as Db['Service']),
+			Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
+			Effect.provideService(Settings, {
+				getSetting: () => undefined,
+			} as unknown as Settings['Service']),
+			Effect.provideService(Agents, {} as Agents['Service']),
+			Effect.provideService(Worktrees, {
+				create: (_cwd: string, branch: string) => {
+					branches.push(branch);
+					return Effect.succeed('/repo-worktree/apps/web');
+				},
+			} as Worktrees['Service']),
+		),
+	);
+	const first = await Effect.runPromise(
+		jobs.start({
+			prompt: 'first',
+			cwd: '/repo/apps/web',
+			model: 'opencode:test',
+			worktree: true,
+		}),
+	);
+	await Effect.runPromise(jobs.wait({ jobId: first.jobId, timeoutMs: 1_000 }));
+	const second = await Effect.runPromise(
+		jobs.start({
+			prompt: 'continue',
+			cwd: '/other',
+			model: 'opencode:test',
+			sessionId: 'ses_worktree',
+			worktree: true,
+		}),
+	);
+	await Effect.runPromise(jobs.wait({ jobId: second.jobId, timeoutMs: 1_000 }));
+	expect(branches).toEqual([`oagent/${first.jobId.slice(-8)}`]);
+	expect(cwdValues).toEqual([
+		'/repo-worktree/apps/web',
+		'/repo-worktree/apps/web',
+	]);
+	expect(second.worktreePath).toBe(first.worktreePath);
+	expect(second.worktreeBranch).toBe(`oagent/${first.jobId.slice(-8)}`);
+	expect(jobs.getJobMetadata(second.jobId)).toMatchObject({
+		cwd: '/repo-worktree/apps/web',
+		worktreePath: '/repo-worktree/apps/web',
+		worktreeBranch: `oagent/${first.jobId.slice(-8)}`,
+	});
+	database.sqlite.close();
 });

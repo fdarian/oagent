@@ -7,9 +7,17 @@ import * as schema from './db/schema.ts';
 import type { Backend } from './harness.ts';
 
 const CODEX_HOME_KEY = 'codex_home';
+const WORKTREE_KEY = 'worktree';
 const HARNESS_ENV_KEY_PREFIX = 'harness_env:';
 const HarnessEnvSchema = Schema.Record(Schema.String, Schema.String);
 const HarnessEnvJsonSchema = Schema.fromJsonString(HarnessEnvSchema);
+const WorktreeJsonSchema = Schema.fromJsonString(
+	Schema.Struct({
+		enabled: Schema.Boolean,
+		createCommand: Schema.String,
+	}),
+);
+export type WorktreeSetting = Schema.Schema.Type<typeof WorktreeJsonSchema>;
 type HarnessEnv = Schema.Schema.Type<typeof HarnessEnvSchema>;
 
 function harnessEnvKey(backend: Backend): string {
@@ -89,6 +97,17 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setSetting(harnessEnvKey(backend), value);
 		};
 
+		const getWorktree = (): WorktreeSetting => {
+			const value = getSetting(WORKTREE_KEY);
+			return value === undefined
+				? { enabled: false, createCommand: '' }
+				: Schema.decodeUnknownSync(WorktreeJsonSchema)(value);
+		};
+
+		const setWorktree = (value: WorktreeSetting): void => {
+			setSetting(WORKTREE_KEY, Schema.encodeSync(WorktreeJsonSchema)(value));
+		};
+
 		return {
 			getSetting,
 			setSetting,
@@ -96,6 +115,8 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setCodexHome,
 			getHarnessEnv,
 			setHarnessEnv,
+			getWorktree,
+			setWorktree,
 		};
 	}),
 }) {

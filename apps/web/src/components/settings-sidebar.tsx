@@ -15,6 +15,7 @@ const NAV = [
 	{ label: 'Aliases', to: '/settings/aliases' as const },
 	{ label: 'Agents', to: '/settings/agents' as const },
 	{ label: 'Timeout', to: '/settings/timeout' as const },
+	{ label: 'Worktrees', to: '/settings/worktrees' as const },
 ];
 
 const navItemClass = 'border-l px-22 py-15 text-caption transition-colors';

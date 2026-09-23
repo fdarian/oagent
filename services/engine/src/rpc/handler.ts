@@ -6,6 +6,7 @@ import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
 import { JobNotFound, JobSteerError } from '../jobs.ts';
 import { SideChatError, SideChatNotFound } from '../side-chats.ts';
+import { WorktreeError } from '../worktree.ts';
 import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(error: unknown) {
@@ -16,6 +17,12 @@ function toProcedureError(error: unknown) {
 		});
 	}
 	if (error instanceof JobSteerError) {
+		return new ORPCError('BAD_REQUEST', {
+			message: error.message,
+			cause: error,
+		});
+	}
+	if (error instanceof WorktreeError) {
 		return new ORPCError('BAD_REQUEST', {
 			message: error.message,
 			cause: error,

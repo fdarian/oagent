@@ -28,6 +28,8 @@ export type JobHeaderProps = {
 	status: string;
 	prompt: string;
 	cwd: string;
+	worktreePath?: string;
+	worktreeBranch?: string;
 	backend: Backend;
 	model?: string;
 	agentType?: string;
@@ -258,6 +260,14 @@ export function JobHeader(props: JobHeaderProps) {
 							/>
 						</span>
 					</div>
+					{props.worktreePath !== undefined && (
+						<div className="flex flex-wrap gap-x-3 text-caption text-muted-foreground">
+							<span>Worktree: {props.worktreeBranch}</span>
+							<code className="break-all" title={props.worktreePath}>
+								{props.worktreePath}
+							</code>
+						</div>
+					)}
 				</div>
 				<ActionRow size="md">
 					<div
