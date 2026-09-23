@@ -8,6 +8,7 @@ import {
 	formatMcpInstructions,
 	inputSchema,
 	startTool,
+	worktreeInputSchema,
 } from './start.ts';
 
 type AgentStartError = AgentTypeNotFound | AgentNotMappedForBackend;
@@ -111,6 +112,21 @@ Configured agent types (use as \`agent_type\`):
 			agent_type: 'reviewer',
 		});
 		expect(parsed.agent_type).toBe('reviewer');
+	});
+
+	test('adds worktree fields only to the enabled schema', () => {
+		expect(Object.hasOwn(inputSchema, 'worktree')).toBe(false);
+		expect(
+			z.object(worktreeInputSchema).parse({
+				prompt: 'Run',
+				cwd: '/repo',
+				worktree: true,
+				worktree_branch: 'feature/a',
+			}),
+		).toMatchObject({
+			worktree: true,
+			worktree_branch: 'feature/a',
+		});
 	});
 
 	test('returns a structured unknown-agent response', async () => {

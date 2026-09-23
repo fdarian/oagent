@@ -160,7 +160,21 @@ export const inputSchema = {
 		),
 };
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+export const worktreeInputSchema = {
+	...inputSchema,
+	worktree: z
+		.boolean()
+		.optional()
+		.describe('Create a fresh worktree for this job.'),
+	worktree_branch: z
+		.string()
+		.optional()
+		.describe(
+			'Branch name for the new worktree; defaults to oagent/<job ID suffix>.',
+		),
+};
+
+type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
 type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'start' | 'wait'>;
 
 function errorResponse(code: string, message: string) {
@@ -198,6 +212,8 @@ export const startTool = {
 				agentType: args.agent_type,
 				sessionId: args.sessionId,
 				mcpSessionId: ctx.mcpSessionId,
+				worktree:
+					args.worktree === true ? { branch: args.worktree_branch } : undefined,
 			})
 			.pipe(
 				Effect.tap((result) =>
@@ -206,8 +222,18 @@ export const startTool = {
 					),
 				),
 				Effect.flatMap((result) => {
+					const worktree =
+						result.worktreePath === undefined
+							? {}
+							: {
+									worktreePath: result.worktreePath,
+									worktreeBranch: result.worktreeBranch,
+								};
 					if (args.background === true) {
-						return Effect.succeed(runningResponse(result.jobId));
+						return Effect.succeed({
+							...runningResponse(result.jobId),
+							...worktree,
+						});
 					}
 					return ctx.jobs
 						.wait({
@@ -217,8 +243,8 @@ export const startTool = {
 						.pipe(
 							Effect.map((wait) =>
 								wait.status === 'running'
-									? runningResponse(result.jobId)
-									: wait,
+									? { ...runningResponse(result.jobId), ...worktree }
+									: { ...wait, ...worktree },
 							),
 							Effect.catchTag('JobNotFound', (err) =>
 								Effect.succeed({
@@ -238,6 +264,9 @@ export const startTool = {
 					Effect.succeed(errorResponse(err._tag, err.message)),
 				),
 				Effect.catchTag('AgentNotMappedForBackend', (err) =>
+					Effect.succeed(errorResponse(err._tag, err.message)),
+				),
+				Effect.catchTag('WorktreeError', (err) =>
 					Effect.succeed(errorResponse(err._tag, err.message)),
 				),
 			);

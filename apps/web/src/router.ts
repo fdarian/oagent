@@ -17,6 +17,7 @@ import { HarnessSettingsPage } from './pages/HarnessSettingsPage.tsx';
 import { JobDetailPage } from './pages/JobDetailPage.tsx';
 import { SettingsLayout } from './pages/SettingsLayout.tsx';
 import { TimeoutSettingsPage } from './pages/TimeoutSettingsPage.tsx';
+import { WorktreeSettingsPage } from './pages/WorktreeSettingsPage.tsx';
 
 const rootRoute = createRootRoute({ component: App });
 
@@ -71,6 +72,12 @@ const settingsTimeoutRoute = createRoute({
 	component: TimeoutSettingsPage,
 });
 
+const settingsWorktreeRoute = createRoute({
+	getParentRoute: () => settingsLayoutRoute,
+	path: 'worktrees',
+	component: WorktreeSettingsPage,
+});
+
 const settingsHarnessRoute = createRoute({
 	getParentRoute: () => settingsLayoutRoute,
 	path: 'harnesses/$backend',
@@ -84,6 +91,7 @@ const routeTree = rootRoute.addChildren([
 		settingsAliasesRoute,
 		settingsAgentsRoute,
 		settingsTimeoutRoute,
+		settingsWorktreeRoute,
 		settingsHarnessRoute,
 	]),
 ]);

@@ -403,6 +403,8 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 											status={status}
 											prompt={selectedJob.prompt}
 											cwd={selectedJob.cwd}
+											worktreePath={selectedJob.worktreePath}
+											worktreeBranch={selectedJob.worktreeBranch}
 											backend={selectedJob.backend}
 											model={selectedJob.model}
 											agentType={selectedJob.agentType}

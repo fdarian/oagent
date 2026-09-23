@@ -17,6 +17,7 @@ import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Settings } from './settings.ts';
+import { type WorktreeError, Worktrees } from './worktree.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
 	'JobNotFound',
@@ -92,6 +93,7 @@ type ReserveJobInput = {
 	mcpSessionId?: string;
 	sideChatId?: number;
 	cwd: string;
+	worktree?: { branch?: string };
 };
 
 type WaitResult =
@@ -143,6 +145,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
 		const harnessRegistry = yield* HarnessRegistry;
 		const settings = yield* Settings;
+		const worktrees = yield* Worktrees;
 		const agents = yield* Agents;
 		const dbService = yield* Db;
 		const db = dbService.db;
@@ -728,20 +731,84 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				onPromptDispatch?: () => void;
 			},
 		): Effect.Effect<
-			{ jobId: string },
+			{ jobId: string; worktreePath?: string; worktreeBranch?: string },
 			| ModelResolutionError
 			| AgentTypeNotFound
 			| AgentNotMappedForBackend
-			| JobStartError,
+			| JobStartError
+			| WorktreeError,
 			never
 		> =>
 			Effect.gen(function* () {
 				const reservation = yield* reserve(input);
-				return yield* runReserved({
-					reservation,
-					agentPrompt: input.agentPrompt,
-					onPromptDispatch: input.onPromptDispatch,
-				});
+				return yield* Effect.gen(function* () {
+					const prior =
+						input.sessionId === undefined
+							? undefined
+							: db
+									.select()
+									.from(schema.jobs)
+									.where(eq(schema.jobs.session_id, input.sessionId))
+									.orderBy(desc(schema.jobs.id))
+									.all()
+									.find(
+										(row) =>
+											row.id !== reservation.internalId &&
+											row.worktree_path !== null,
+									);
+					const worktreeBranch =
+						prior !== undefined
+							? (prior.worktree_branch ?? undefined)
+							: input.worktree === undefined
+								? undefined
+								: (input.worktree.branch ??
+									`oagent/${reservation.jobId.slice(-8)}`);
+					const worktreePath =
+						prior !== undefined
+							? (prior.worktree_path ?? undefined)
+							: input.worktree === undefined
+								? undefined
+								: yield* worktrees.create(
+										input.cwd,
+										input.worktree.branch ??
+											`oagent/${reservation.jobId.slice(-8)}`,
+									);
+					if (worktreePath !== undefined) {
+						yield* Effect.try({
+							try: () =>
+								db
+									.update(schema.jobs)
+									.set({
+										cwd: worktreePath,
+										worktree_path: worktreePath,
+										worktree_branch: worktreeBranch,
+									})
+									.where(eq(schema.jobs.id, reservation.internalId))
+									.run(),
+							catch: (cause) =>
+								new JobStartError({
+									code: 'PERSISTENCE_FAILED',
+									message: 'Could not persist the worktree path.',
+									cause,
+								}),
+						});
+					}
+					const started = yield* runReserved({
+						reservation: {
+							...reservation,
+							cwd: worktreePath === undefined ? input.cwd : worktreePath,
+						},
+						agentPrompt: input.agentPrompt,
+						onPromptDispatch: input.onPromptDispatch,
+					});
+					return { ...started, worktreePath, worktreeBranch };
+				}).pipe(
+					Effect.catch((error) =>
+						failReserved(reservation, error).pipe(
+							Effect.flatMap(() => Effect.fail(error)),
+						),
+					),
+				);
 			});
 
 		const cancel = (input: {
@@ -908,6 +975,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType?: string;
 			sessionId?: string;
 			mcpSessionId?: string;
+			worktreePath?: string;
+			worktreeBranch?: string;
 		};
 
 		const toJobSummary = (
@@ -924,6 +993,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType: row.agent_type ?? undefined,
 			sessionId: row.session_id === null ? undefined : row.session_id,
 			mcpSessionId: row.mcp_session_id ?? undefined,
+			worktreePath: row.worktree_path ?? undefined,
+			worktreeBranch: row.worktree_branch ?? undefined,
 		});
 
 		const list = (): JobSummary[] => {
@@ -1145,6 +1216,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),
+		Layer.provide(Worktrees.layer),
 	);
 }
 

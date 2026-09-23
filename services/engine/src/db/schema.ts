@@ -25,6 +25,8 @@ export const jobs = sqliteTable(
 		status: text({ enum: ['running', 'done', 'error', 'cancelled'] }).notNull(),
 		prompt: text().notNull(),
 		cwd: text().notNull(),
+		worktree_path: text(),
+		worktree_branch: text(),
 		model: text(),
 		agent_type: text(),
 		backend: text().notNull(),

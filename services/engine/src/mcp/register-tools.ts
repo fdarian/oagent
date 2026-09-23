@@ -8,15 +8,22 @@ import {
 	Option,
 } from 'effect';
 import type { Jobs } from '../jobs.ts';
+import type { Settings } from '../settings.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
 import { resultTool } from './tools/result.ts';
-import { buildDescription, inputSchema, startTool } from './tools/start.ts';
+import {
+	buildDescription,
+	inputSchema,
+	startTool,
+	worktreeInputSchema,
+} from './tools/start.ts';
 import { steerTool } from './tools/steer.ts';
 
 export function registerTools(
 	server: McpServer,
 	jobs: Jobs['Service'],
+	settings: Settings['Service'],
 	services: Context.Context<never>,
 	waitUrlBase: string | undefined,
 ): void {
@@ -36,9 +43,16 @@ export function registerTools(
 		return exit.value;
 	};
 
+	const worktree = settings.getWorktree();
 	server.registerTool(
 		'start',
-		{ description: buildDescription(), inputSchema },
+		{
+			description: buildDescription(),
+			inputSchema:
+				worktree.enabled && worktree.createCommand.trim() !== ''
+					? worktreeInputSchema
+					: inputSchema,
+		},
 		(args, extra) =>
 			runHandler(
 				startTool.handle(args, {
