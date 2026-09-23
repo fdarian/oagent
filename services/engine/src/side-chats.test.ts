@@ -210,6 +210,44 @@ function createMigratedDatabase() {
 }
 
 describe('side chats', () => {
+	test('runs a side-chat turn in its own session while the source turn is active', async () => {
+		const database = createTestDatabase();
+		const services = await createSideChatServices(
+			database,
+			createOpenCodeService({
+				forkSession: () => Effect.succeed({ sessionId: 'ses_side_chat' }),
+			}),
+		);
+		const sourceJob = insertJob(database, {
+			uuid: 'running-source-job',
+			status: 'running',
+			prompt: 'Main turn',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_main',
+		});
+		const sideChat = await Effect.runPromise(
+			services.sideChats.create(sourceJob.uuid),
+		);
+		const sideChatTurn = await Effect.runPromise(
+			services.sideChats.send({
+				sideChatId: sideChat.id,
+				prompt: 'Side-chat turn',
+			}),
+		);
+		const sideChatResult = await Effect.runPromise(
+			services.jobs.wait({ jobId: sideChatTurn.jobId, timeoutMs: 1_000 }),
+		);
+		const sourceMetadata = services.jobs.getJobMetadata(sourceJob.uuid);
+		const sideChatMetadata = services.jobs.getJobMetadata(sideChatTurn.jobId);
+
+		expect(sideChatResult).toMatchObject({ status: 'done' });
+		expect(sourceMetadata?.status).toBe('running');
+		expect(sideChatMetadata?.status).toBe('done');
+		expect(sideChatMetadata?.sessionId).not.toBe(sourceMetadata?.sessionId);
+		database.sqlite.close();
+	});
+
 	test('keeps the reminder through pre-dispatch failures and reuses the forked session', async () => {
 		const database = createTestDatabase();
 		const startedInputs: Array<{
