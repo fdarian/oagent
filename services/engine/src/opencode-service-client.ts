@@ -32,6 +32,13 @@ const SessionResponse = Schema.Struct({
 	}),
 });
 
+const ActiveSessionsResponse = Schema.Struct({
+	data: Schema.Record(
+		Schema.String,
+		Schema.Struct({ type: Schema.Literals(['running']) }),
+	),
+});
+
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -82,6 +89,20 @@ export class OpenCodeSessionPermissionError extends Schema.TaggedError<OpenCodeS
 		const detail =
 			this.cause instanceof Error ? this.cause.message : String(this.cause);
 		return `Could not set permissions for OpenCode session "${this.sessionId}": ${detail}`;
+	}
+}
+
+export class OpenCodeSessionStatusError extends Schema.TaggedError<OpenCodeSessionStatusError>()(
+	'OpenCodeSessionStatusError',
+	{
+		sessionId: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `Failed to read OpenCode activity for session "${this.sessionId}": ${detail}`;
 	}
 }
 
@@ -353,7 +374,48 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 					}
 				});
 
-			return { steer, disableQuestion };
+			const isSessionActive = (
+				binaryPath: string,
+				sessionId: string,
+			): Effect.Effect<
+				boolean,
+				OpenCodeServiceDiscoveryError | OpenCodeSessionStatusError
+			> =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL('/api/session/active', service.url);
+					const request = HttpClientRequest.get(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+					);
+					const response = yield* httpClient
+						.execute(request)
+						.pipe(
+							Effect.mapError(
+								(cause) => new OpenCodeSessionStatusError({ sessionId, cause }),
+							),
+						);
+					if (response.status !== 200) {
+						return yield* new OpenCodeSessionStatusError({
+							sessionId,
+							cause: new Error(
+								`OpenCode service returned HTTP ${response.status}`,
+							),
+						});
+					}
+					const body = yield* HttpClientResponse.schemaBodyJson(
+						ActiveSessionsResponse,
+					)(response).pipe(
+						Effect.mapError(
+							(cause) => new OpenCodeSessionStatusError({ sessionId, cause }),
+						),
+					);
+					return body.data[sessionId] !== undefined;
+				});
+
+			return { steer, disableQuestion, isSessionActive };
 		}),
 	},
 ) {

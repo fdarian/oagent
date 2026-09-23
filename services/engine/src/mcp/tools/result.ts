@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
+import { requestLogFields } from '../../request-log.ts';
 
 const description = `\
 Fetch the result of an agent job, waiting briefly if it is still running. If it \
@@ -24,26 +25,32 @@ export const resultTool = {
 	description,
 	inputSchema,
 	handle(args: Args, ctx: { jobs: Jobs['Service'] }) {
-		return Effect.map(
-			ctx.jobs
-				.wait({
-					jobId: args.jobId,
-					timeoutMs: Math.min(
-						args.timeoutMs ?? WAIT_TIMEOUT_DEFAULT_MS,
-						WAIT_TIMEOUT_MAX_MS,
-					),
-				})
-				.pipe(
-					Effect.catchTag('JobNotFound', (err) =>
-						Effect.succeed({
-							status: 'error' as const,
-							message: `Job not found: ${err.jobId}`,
-						}),
+		return ctx.jobs
+			.wait({
+				jobId: args.jobId,
+				timeoutMs: Math.min(
+					args.timeoutMs ?? WAIT_TIMEOUT_DEFAULT_MS,
+					WAIT_TIMEOUT_MAX_MS,
+				),
+			})
+			.pipe(
+				Effect.catchTag('JobNotFound', (err) =>
+					Effect.succeed({
+						status: 'error' as const,
+						message: `Job not found: ${err.jobId}`,
+					}),
+				),
+				Effect.tap((result) =>
+					Effect.logInfo(
+						`MCP result ${requestLogFields({
+							jobId: args.jobId,
+							sessionId: 'sessionId' in result ? result.sessionId : undefined,
+						})} status=${result.status}`,
 					),
 				),
-			(result) => ({
-				content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-			}),
-		);
+				Effect.map((result) => ({
+					content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+				})),
+			);
 	},
 };

@@ -2,6 +2,7 @@ import { Effect } from 'effect';
 import { z } from 'zod';
 import type { AgentDefinition } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
+import { requestLogFields } from '../../request-log.ts';
 
 const BASE_DESCRIPTION = `\
 Launch or continue a coding-agent session and return its result. If it returns \
@@ -199,6 +200,11 @@ export const startTool = {
 				mcpSessionId: ctx.mcpSessionId,
 			})
 			.pipe(
+				Effect.tap((result) =>
+					Effect.logInfo(
+						`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: args.sessionId })}`,
+					),
+				),
 				Effect.flatMap((result) => {
 					if (args.background === true) {
 						return Effect.succeed(runningResponse(result.jobId));

@@ -10,6 +10,13 @@ import {
 	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
+import type { Scope } from 'effect/Scope';
+import {
+	type AcpTurnEnvironment,
+	AcpTurnFailed,
+	type AcpTurnRecovery,
+	createAcpTurnRecovery,
+} from './acp-turn-recovery.ts';
 import type { Backend, HarnessCheckResult } from './harness.ts';
 
 type AcpEnv =
@@ -24,6 +31,9 @@ export type AcpAgentConfig = {
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 };
 
+export type { AcpTurnRecovery } from './acp-turn-recovery.ts';
+export { AcpTurnFailed } from './acp-turn-recovery.ts';
+
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	'AcpSessionError',
 	{ cause: Schema.Defect() },
@@ -33,14 +43,28 @@ export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(
 	}
 }
 
-export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
-	'AcpTurnFailed',
-	{
-		code: Schema.optional(Schema.String),
-		message: Schema.String,
-		cause: Schema.Defect(),
-	},
-) {}
+type AcpConnection = {
+	conn: ClientSideConnection;
+	registerListener: (
+		sessionId: string,
+		fn: (e: SessionUpdate) => void,
+	) => () => void;
+	extNotificationHandlers: Map<
+		string,
+		(method: string, params: unknown) => void
+	>;
+	agentInfo:
+		| Exclude<
+				Awaited<ReturnType<ClientSideConnection['initialize']>>['agentInfo'],
+				null
+		  >
+		| undefined;
+	agentCapabilities: Awaited<
+		ReturnType<ClientSideConnection['initialize']>
+	>['agentCapabilities'];
+	processExited: Promise<number>;
+	close: () => void;
+};
 
 export class AcpForkNotSupportedError extends Schema.TaggedError<AcpForkNotSupportedError>()(
 	'AcpForkNotSupportedError',
@@ -59,12 +83,6 @@ function getRpcMessage(cause: unknown): string | undefined {
 		if (typeof data.message === 'string') return data.message;
 	}
 	return typeof error.message === 'string' ? error.message : undefined;
-}
-
-function formatSessionLoadError(sessionId: string, cause: unknown): string {
-	const rpcMessage = getRpcMessage(cause);
-	const detail = rpcMessage === undefined ? '' : `: ${rpcMessage}`;
-	return `Could not load OpenCode session "${sessionId}"${detail}. It may no longer exist or belong to a different backend; start without sessionId.`;
 }
 
 function isSelectGroup(
@@ -184,7 +202,7 @@ export function createAcpConnection(config: {
 	clientInfoName: string;
 	env?: AcpEnv;
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-}) {
+}): Effect.Effect<AcpConnection, AcpSessionError, Scope> {
 	return Effect.gen(function* () {
 		const subprocess = yield* Effect.acquireRelease(
 			Effect.sync(() => {
@@ -321,6 +339,10 @@ export function createAcpConnection(config: {
 			extNotificationHandlers,
 			agentInfo,
 			agentCapabilities: initializeResponse.agentCapabilities,
+			processExited: subprocess.proc.exited,
+			close: () => {
+				if (subprocess.proc.exitCode === null) subprocess.proc.kill();
+			},
 		};
 	});
 }
@@ -347,8 +369,14 @@ export function probeAcpConnection(
 			);
 			const agentInfo = connection.agentInfo;
 			return {
-				agentName: agentInfo === undefined ? undefined : agentInfo.name,
-				agentVersion: agentInfo === undefined ? undefined : agentInfo.version,
+				agentName:
+					agentInfo === undefined || agentInfo === null
+						? undefined
+						: agentInfo.name,
+				agentVersion:
+					agentInfo === undefined || agentInfo === null
+						? undefined
+						: agentInfo.version,
 			};
 		}),
 	);
@@ -371,17 +399,7 @@ export function checkAcpConnection(
 }
 
 export function runAcpTurn(
-	env: {
-		conn: ClientSideConnection;
-		registerListener: (
-			sessionId: string,
-			fn: (e: SessionUpdate) => void,
-		) => () => void;
-		extNotificationHandlers: Map<
-			string,
-			(method: string, params: unknown) => void
-		>;
-	},
+	env: AcpTurnEnvironment,
 	input: {
 		prompt: string;
 		model?: string;
@@ -400,199 +418,167 @@ export function runAcpTurn(
 		onPromptDispatch?: () => void;
 		skipModelSet?: boolean;
 		configOptions?: ReadonlyArray<AcpConfigOption>;
+		recovery?: AcpTurnRecovery;
 	},
 ) {
-	return Effect.gen(function* () {
-		const sessionResult: AcpTurnSessionResult = yield* (() => {
-			if (input.sessionId !== undefined) {
-				const sid = input.sessionId;
-				return Effect.tryPromise({
-					try: () =>
-						env.conn.loadSession({
-							sessionId: sid,
-							cwd: input.cwd,
-							mcpServers: [],
-						}),
-					catch: (cause) =>
-						new AcpTurnFailed({
-							code: 'SESSION_LOAD_FAILED',
-							message: formatSessionLoadError(sid, cause),
-							cause,
-						}),
-				}).pipe(
-					Effect.map((res) => ({
-						sessionId: sid,
-						availableModels: extractSessionModelIds(
-							res.models === undefined || res.models === null
-								? undefined
-								: res.models.availableModels,
-							res.configOptions,
-						),
-						availableModes: extractModeOptions(res.configOptions),
-					})),
-				);
-			}
-			return Effect.tryPromise({
-				try: () => env.conn.newSession({ cwd: input.cwd, mcpServers: [] }),
-				catch: (cause) => new AcpSessionError({ cause }),
-			}).pipe(
-				Effect.map((res) => ({
-					sessionId: res.sessionId,
-					availableModels: extractSessionModelIds(
-						res.models === undefined || res.models === null
-							? undefined
-							: res.models.availableModels,
-						res.configOptions,
-					),
-					availableModes: extractModeOptions(res.configOptions),
-				})),
-			);
-		})();
-
-		const onSessionId = input.onSessionId;
-		if (onSessionId !== undefined) {
-			yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
-		}
-
-		let buffer = '';
-
-		const unregister = env.registerListener(
-			sessionResult.sessionId,
-			(update) => {
-				if (input.onEvent !== undefined) {
-					input.onEvent(update);
-				}
-				if (
-					update.sessionUpdate === 'agent_message_chunk' &&
-					update.content.type === 'text'
-				) {
-					buffer += update.content.text;
-				}
-			},
-		);
-
-		if (input.onExtensionEvent !== undefined) {
-			env.extNotificationHandlers.set(
-				sessionResult.sessionId,
-				input.onExtensionEvent,
-			);
-		}
-
-		const cleanup = Effect.sync(() => {
-			unregister();
-			env.extNotificationHandlers.delete(sessionResult.sessionId);
-		});
-
-		const response = yield* Effect.gen(function* () {
-			if (input.beforePrompt !== undefined) {
-				yield* input.beforePrompt(sessionResult.sessionId);
-			}
-			const configOptions: ReadonlyArray<AcpConfigOption> =
-				input.skipModelSet === true
-					? []
-					: input.configOptions !== undefined
-						? input.configOptions
-						: [
-								...(input.model !== undefined
-									? [{ configId: 'model', value: input.model }]
-									: []),
-								...(input.reasoningEffort !== undefined
-									? [
-											{
-												configId: 'reasoning_effort',
-												value: input.reasoningEffort,
-											},
-										]
-									: []),
-							];
-			const requestedMode =
-				configOptions.find((option) => option.configId === 'mode')?.value ??
-				input.mode;
-			const setConfigOption = (configOption: AcpConfigOption) =>
-				Effect.tryPromise({
-					try: () =>
-						env.conn.setSessionConfigOption({
-							sessionId: sessionResult.sessionId,
-							configId: configOption.configId,
-							value: configOption.value,
-						}),
-					catch: (cause) => {
-						const rpcMessage = getRpcMessage(cause);
-
-						const optionHint = getConfigOptionHint(configOption, sessionResult);
-
-						const detail =
-							rpcMessage !== undefined ? rpcMessage : 'setConfigOption failed';
-						const message =
-							optionHint === undefined ? detail : `${detail}${optionHint}`;
-
-						return new AcpTurnFailed({
-							code: 'SET_CONFIG_OPTION',
-							message,
-							cause,
-						});
-					},
-				});
-			for (const configOption of configOptions) {
-				if (configOption.configId === 'mode') continue;
-				yield* setConfigOption(configOption);
-			}
-			if (requestedMode !== undefined) {
-				const modeIsListed = sessionResult.availableModes.some(
-					(mode) => mode.id === requestedMode,
-				);
-				if (
-					sessionResult.availableModes.length > 0 &&
-					!modeIsListed &&
-					input.setUnlistedMode !== undefined
-				) {
-					yield* input.setUnlistedMode({
-						sessionId: sessionResult.sessionId,
-						mode: requestedMode,
-					});
-				} else {
-					yield* setConfigOption({ configId: 'mode', value: requestedMode });
-				}
-			}
-			return yield* Effect.tryPromise({
-				try: async (signal) => {
-					const onAbort = () => {
-						void env.conn.cancel({
-							sessionId: sessionResult.sessionId,
-						});
-					};
-					signal.addEventListener('abort', onAbort, {
-						once: true,
-					});
-					try {
-						const prompt = env.conn.prompt({
-							sessionId: sessionResult.sessionId,
-							prompt: [{ type: 'text', text: input.prompt }],
-						});
-						const onPromptDispatch = input.onPromptDispatch;
-						if (onPromptDispatch !== undefined) {
-							onPromptDispatch();
-						}
-						return await prompt;
-					} finally {
-						signal.removeEventListener('abort', onAbort);
+	return Effect.scoped(
+		Effect.gen(function* () {
+			const turnState = { buffer: '' };
+			const recoveryController = yield* createAcpTurnRecovery({
+				env,
+				cwd: input.cwd,
+				initialSessionLoad: input.sessionId !== undefined,
+				recovery: input.recovery,
+				onEvent: (update) => {
+					if (input.onEvent !== undefined) input.onEvent(update);
+					if (
+						update.sessionUpdate === 'agent_message_chunk' &&
+						update.content.type === 'text'
+					) {
+						turnState.buffer += update.content.text;
 					}
 				},
-				catch: (cause) =>
-					new AcpTurnFailed({
-						code: 'PROMPT_REJECTED',
-						message: 'prompt rejected',
-						cause,
-					}),
+				onExtensionEvent: input.onExtensionEvent,
 			});
-		}).pipe(Effect.ensuring(cleanup));
 
-		return {
-			sessionId: sessionResult.sessionId,
-			text: buffer,
-			stopReason: response.stopReason,
-		};
-	});
+			const turn = Effect.gen(function* () {
+				const sessionResult: AcpTurnSessionResult = yield* (() => {
+					if (input.sessionId !== undefined) {
+						const sid = input.sessionId;
+						return recoveryController.loadSession(sid).pipe(
+							Effect.map((res) => ({
+								sessionId: sid,
+								availableModels: extractSessionModelIds(
+									res.models === undefined || res.models === null
+										? undefined
+										: res.models.availableModels,
+									res.configOptions,
+								),
+								availableModes: extractModeOptions(res.configOptions),
+							})),
+						);
+					}
+					return Effect.tryPromise({
+						try: () => env.conn.newSession({ cwd: input.cwd, mcpServers: [] }),
+						catch: (cause) => new AcpSessionError({ cause }),
+					})
+						.pipe(
+							Effect.map((res) => ({
+								sessionId: res.sessionId,
+								availableModels: extractSessionModelIds(
+									res.models === undefined || res.models === null
+										? undefined
+										: res.models.availableModels,
+									res.configOptions,
+								),
+								availableModes: extractModeOptions(res.configOptions),
+							})),
+						)
+						.pipe(
+							Effect.tap((res) =>
+								Effect.sync(() => recoveryController.attach(res.sessionId)),
+							),
+						);
+				})();
+
+				const onSessionId = input.onSessionId;
+				if (onSessionId !== undefined) {
+					yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
+				}
+				if (input.beforePrompt !== undefined) {
+					yield* input.beforePrompt(sessionResult.sessionId);
+				}
+
+				const configOptions: ReadonlyArray<AcpConfigOption> =
+					input.skipModelSet === true
+						? []
+						: input.configOptions !== undefined
+							? input.configOptions
+							: [
+									...(input.model !== undefined
+										? [{ configId: 'model', value: input.model }]
+										: []),
+									...(input.reasoningEffort !== undefined
+										? [
+												{
+													configId: 'reasoning_effort',
+													value: input.reasoningEffort,
+												},
+											]
+										: []),
+								];
+				const requestedMode =
+					configOptions.find((option) => option.configId === 'mode')?.value ??
+					input.mode;
+				const setConfigOption = (configOption: AcpConfigOption) =>
+					Effect.tryPromise({
+						try: () =>
+							recoveryController
+								.currentConnection()
+								.conn.setSessionConfigOption({
+									sessionId: sessionResult.sessionId,
+									configId: configOption.configId,
+									value: configOption.value,
+								}),
+						catch: (cause) => {
+							const rpcMessage = getRpcMessage(cause);
+
+							const optionHint = getConfigOptionHint(
+								configOption,
+								sessionResult,
+							);
+
+							const detail =
+								rpcMessage !== undefined
+									? rpcMessage
+									: 'setConfigOption failed';
+							const message =
+								optionHint === undefined ? detail : `${detail}${optionHint}`;
+
+							return new AcpTurnFailed({
+								code: 'SET_CONFIG_OPTION',
+								message,
+								cause,
+							});
+						},
+					});
+				for (const configOption of configOptions) {
+					if (configOption.configId === 'mode') continue;
+					yield* setConfigOption(configOption);
+				}
+				if (requestedMode !== undefined) {
+					const modeIsListed = sessionResult.availableModes.some(
+						(mode) => mode.id === requestedMode,
+					);
+					if (
+						sessionResult.availableModes.length > 0 &&
+						!modeIsListed &&
+						input.setUnlistedMode !== undefined
+					) {
+						yield* input.setUnlistedMode({
+							sessionId: sessionResult.sessionId,
+							mode: requestedMode,
+						});
+					} else {
+						yield* setConfigOption({ configId: 'mode', value: requestedMode });
+					}
+				}
+
+				const response = yield* recoveryController.runPrompt(
+					input.prompt,
+					input.onPromptDispatch,
+				);
+				return { sessionResult, response };
+			}).pipe(Effect.ensuring(recoveryController.cleanup));
+
+			const completed = yield* turn;
+			return {
+				sessionId: completed.sessionResult.sessionId,
+				text: turnState.buffer,
+				stopReason: completed.response.stopReason,
+			};
+		}),
+	);
 }
 
 export function forkAcpSession(
@@ -662,11 +648,19 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			onExtensionEvent?: (method: string, params: unknown) => void;
 			onPromptDispatch?: () => void;
 			configOptions?: ReadonlyArray<AcpConfigOption>;
+			recovery?: AcpTurnRecovery;
 		}) =>
 			Effect.scoped(
 				Effect.gen(function* () {
 					const env = yield* RcRef.get(connectionRef);
-					return yield* runAcpTurn(env, input);
+					return yield* runAcpTurn(
+						{
+							...env,
+							createConnection: () => createAcpConnection(config),
+							onReconnect: () => RcRef.invalidate(connectionRef),
+						},
+						input,
+					);
 				}),
 			);
 

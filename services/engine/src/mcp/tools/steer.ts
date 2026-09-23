@@ -1,6 +1,7 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
 import type { Jobs } from '../../jobs.ts';
+import { requestLogFields } from '../../request-log.ts';
 
 const description = `\
 Queue an instruction for a running agent job; it is delivered at the next step \
@@ -17,8 +18,16 @@ export const steerTool = {
 	description,
 	inputSchema,
 	handle(args: Args, ctx: { jobs: Jobs['Service'] }) {
-		return Effect.map(ctx.jobs.steer(args.jobId, args.prompt), () => ({
-			content: [{ type: 'text' as const, text: JSON.stringify({ ok: true }) }],
-		}));
+		return Effect.gen(function* () {
+			yield* Effect.logInfo(
+				`MCP steer ${requestLogFields({ jobId: args.jobId })}`,
+			);
+			yield* ctx.jobs.steer(args.jobId, args.prompt);
+			return {
+				content: [
+					{ type: 'text' as const, text: JSON.stringify({ ok: true }) },
+				],
+			};
+		});
 	},
 };

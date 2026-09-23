@@ -9,6 +9,7 @@ import { HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
+import { requestLogFields } from '../request-log.ts';
 import { Settings } from '../settings.ts';
 import { SideChats } from '../side-chats.ts';
 
@@ -176,13 +177,20 @@ const router = procedure.router({
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
-				return yield* jobs.start({
+				const result = yield* jobs.start({
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
 					model: options.input.model,
 					agentType: options.input.agent_type,
 					sessionId: options.input.sessionId,
 				});
+				yield* Effect.logInfo(
+					`RPC start accepted ${requestLogFields({
+						jobId: result.jobId,
+						sessionId: options.input.sessionId,
+					})}`,
+				);
+				return result;
 			}),
 		cancel: procedure
 			.input(v.object({ jobId: v.string() }))
@@ -197,6 +205,13 @@ const router = procedure.router({
 			.input(v.object({ jobId: v.string(), prompt: v.string() }))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
+				const sessionId = jobs.getJobMetadata(options.input.jobId)?.sessionId;
+				yield* Effect.logInfo(
+					`RPC steer ${requestLogFields({
+						jobId: options.input.jobId,
+						sessionId,
+					})}`,
+				);
 				yield* jobs.steer(options.input.jobId, options.input.prompt);
 				return { ok: true as const };
 			}),
@@ -209,6 +224,13 @@ const router = procedure.router({
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
+				const sessionId = jobs.getJobMetadata(options.input.jobId)?.sessionId;
+				yield* Effect.logInfo(
+					`RPC wait ${requestLogFields({
+						jobId: options.input.jobId,
+						sessionId,
+					})}`,
+				);
 				return yield* jobs.wait(options.input).pipe(
 					Effect.catchTag('JobNotFound', (error) =>
 						Effect.succeed({
