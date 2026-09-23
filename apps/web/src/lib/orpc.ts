@@ -2,6 +2,7 @@ import type { EngineRouter } from '@oagent/engine';
 import { createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
 import type { RouterClient } from '@orpc/server';
+import { createTanstackQueryUtils } from '@orpc/tanstack-query';
 import { createEngineEndpointURL } from './engine-url.ts';
 
 function getConfiguredEngineURL(): string {
@@ -21,7 +22,8 @@ const link = new RPCLink({
 	origin: rpcURL.origin,
 	url: rpcPath,
 });
-export const orpc: RouterClient<EngineRouter> = createORPCClient(link);
+export const client: RouterClient<EngineRouter> = createORPCClient(link);
+export const orpc = createTanstackQueryUtils(client);
 
 export function getEngineEndpointURL(endpoint: string): string {
 	return createEngineEndpointURL(

@@ -28,12 +28,11 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
 
-type Agent = Awaited<ReturnType<typeof orpc.agents.list>>[number];
+type Agent = Awaited<ReturnType<typeof orpc.agents.list.call>>[number];
 type AgentTarget = Agent['targets'][number];
 type AgentTargetOption = Awaited<
-	ReturnType<typeof orpc.agents.targets>
+	ReturnType<typeof orpc.agents.targets.call>
 >[number];
 
 type AgentFormValues = {
@@ -68,11 +67,12 @@ function getTarget(agent: Agent | undefined, backend: Backend): string {
 }
 
 function useOpenCodeTargets() {
-	return useQuery({
-		queryKey: queryKeys.agentTargets('opencode'),
-		queryFn: () => orpc.agents.targets({ backend: 'opencode' }),
-		staleTime: 5 * 60 * 1000,
-	});
+	return useQuery(
+		orpc.agents.targets.queryOptions({
+			input: { backend: 'opencode' },
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
 }
 
 function addTarget(
@@ -265,27 +265,26 @@ function UnsupportedTargetField(props: UnsupportedTargetFieldProps) {
 function AgentForm(props: AgentFormProps) {
 	const queryClient = useQueryClient();
 	const [saveError, setSaveError] = useState<string | undefined>();
-	const saveMutation = useMutation({
-		mutationFn: (input: {
-			name: string;
-			description: string | null;
-			targets: Array<AgentTarget>;
-		}) => orpc.agents.save(input),
-		onSuccess: async (savedAgent) => {
-			queryClient.setQueryData<ReadonlyArray<Agent>>(
-				queryKeys.agents(),
-				(agents) =>
-					agents?.map((agent) =>
-						agent.name === savedAgent.name ? savedAgent : agent,
-					),
-			);
-			await queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
-			props.onSuccess();
-		},
-		onError: (error: Error) => {
-			setSaveError(error.message);
-		},
-	});
+	const saveMutation = useMutation(
+		orpc.agents.save.mutationOptions({
+			onSuccess: async (savedAgent) => {
+				queryClient.setQueryData<ReadonlyArray<Agent>>(
+					orpc.agents.list.queryKey(),
+					(agents) =>
+						agents?.map((agent) =>
+							agent.name === savedAgent.name ? savedAgent : agent,
+						),
+				);
+				await queryClient.invalidateQueries({
+					queryKey: orpc.agents.list.key(),
+				});
+				props.onSuccess();
+			},
+			onError: (error: Error) => {
+				setSaveError(error.message);
+			},
+		}),
+	);
 	const form = useForm({
 		defaultValues: {
 			name: props.editingAgent === undefined ? '' : props.editingAgent.name,
@@ -501,25 +500,23 @@ export function AgentsPage() {
 	const [editingAgent, setEditingAgent] = useState<Agent | undefined>();
 	const [deleteTarget, setDeleteTarget] = useState<Agent | undefined>();
 	const [deleteError, setDeleteError] = useState<string | undefined>();
-	const listQuery = useQuery({
-		queryKey: queryKeys.agents(),
-		queryFn: () => orpc.agents.list(),
-	});
-	const deleteMutation = useMutation({
-		mutationFn: (name: string) => orpc.agents.delete({ name }),
-		onSuccess: (result) => {
-			if (!result.ok) {
-				setDeleteError('Agent not found');
-				return;
-			}
-			queryClient.invalidateQueries({ queryKey: queryKeys.agents() });
-			setDeleteTarget(undefined);
-			setDeleteError(undefined);
-		},
-		onError: (error: Error) => {
-			setDeleteError(error.message);
-		},
-	});
+	const listQuery = useQuery(orpc.agents.list.queryOptions());
+	const deleteMutation = useMutation(
+		orpc.agents.delete.mutationOptions({
+			onSuccess: (result) => {
+				if (!result.ok) {
+					setDeleteError('Agent not found');
+					return;
+				}
+				queryClient.invalidateQueries({ queryKey: orpc.agents.list.key() });
+				setDeleteTarget(undefined);
+				setDeleteError(undefined);
+			},
+			onError: (error: Error) => {
+				setDeleteError(error.message);
+			},
+		}),
+	);
 
 	function openCreate() {
 		setEditingAgent(undefined);
@@ -545,7 +542,7 @@ export function AgentsPage() {
 	function handleDelete() {
 		if (deleteTarget === undefined) return;
 		setDeleteError(undefined);
-		deleteMutation.mutate(deleteTarget.name);
+		deleteMutation.mutate({ name: deleteTarget.name });
 	}
 
 	return (

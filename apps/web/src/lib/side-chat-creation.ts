@@ -1,11 +1,12 @@
 import type { MutationFilters } from '@tanstack/react-query';
+import { orpc } from './orpc.ts';
 
 export type SideChatCreation = {
 	sourceJobId: string;
 	drawerInstance: number;
 };
 
-export const sideChatCreateMutationKey = ['sideChats', 'create'] as const;
+export const sideChatCreateMutationKey = orpc.sideChats.create.mutationKey();
 
 function isSideChatCreation(value: unknown): value is SideChatCreation {
 	if (typeof value !== 'object' || value === null) return false;

@@ -1,4 +1,7 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from 'bun:test';
+import type { EngineRouter } from '@oagent/engine';
+import type { RouterClient } from '@orpc/server';
+import { createTanstackQueryUtils } from '@orpc/tanstack-query';
 import { Window } from 'happy-dom';
 import type { ReactNode } from 'react';
 
@@ -46,34 +49,42 @@ type SideChatCreateRequest = {
 const sideChatCreateRequests: SideChatCreateRequest[] = [];
 const sideChatListRequests: string[] = [];
 
-mock.module('@/lib/orpc', () => ({
-	orpc: {
-		jobs: {
-			get: async (input: { jobId: string }) => ({
-				id: input.jobId,
-				status: 'done',
-				prompt: `Prompt for ${input.jobId}`,
-				cwd: '/repo',
-				backend: 'opencode',
-				createdAt: 1,
-			}),
-		},
-		sideChats: {
-			list: async (input: { sourceJobId: string }) => {
-				sideChatListRequests.push(input.sourceJobId);
-				return [];
-			},
-			create: (input: { sourceJobId: string }) => {
-				const result = Promise.withResolvers<{ id: string }>();
-				sideChatCreateRequests.push({
-					sourceJobId: input.sourceJobId,
-					resolve: result.resolve,
-				});
-				return result.promise;
-			},
-		},
+const fakeClient = {
+	jobs: {
+		get: async (input: { jobId: string }) => ({
+			id: input.jobId,
+			status: 'done',
+			prompt: `Prompt for ${input.jobId}`,
+			cwd: '/repo',
+			backend: 'opencode',
+			createdAt: 1,
+		}),
+		list: async () => [],
+		cancel: async () => ({ ok: true }),
 	},
-}));
+	sideChats: {
+		list: async (input: { sourceJobId: string }) => {
+			if (input.sourceJobId === undefined)
+				throw new Error('Missing source job id');
+			sideChatListRequests.push(input.sourceJobId);
+			return [];
+		},
+		create: (input: { sourceJobId: string }) => {
+			const result = Promise.withResolvers<{ id: string }>();
+			sideChatCreateRequests.push({
+				sourceJobId: input.sourceJobId,
+				resolve: result.resolve,
+			});
+			return result.promise;
+		},
+		send: async () => ({ jobId: 'turn-job' }),
+	},
+};
+const orpc = createTanstackQueryUtils(
+	fakeClient as unknown as RouterClient<EngineRouter>,
+);
+
+mock.module('@/lib/orpc', () => ({ orpc, client: fakeClient }));
 
 type JobHeaderProps = {
 	onNewSideChat?: () => void;
@@ -440,6 +451,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		const returnedButtonA = await waitForNewSideChatButton(
 			mountedRoute.container,
 		);
+		await flush();
 		expect(returnedButtonA.disabled).toBeTrue();
 
 		const jobAListRequestCount = sideChatListRequestCount('job-a');

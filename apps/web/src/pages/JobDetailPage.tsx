@@ -12,13 +12,11 @@ import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
 import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
 import { SubagentHeader } from '@/components/subagent-header';
-import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
+import { client, orpc } from '@/lib/orpc';
 import {
 	isCurrentSideChatCreation,
 	type SideChatCreation,
 	sideChatCreateMutationFilter,
-	sideChatCreateMutationKey,
 } from '@/lib/side-chat-creation.ts';
 import { useJobEvents } from '@/lib/use-job-events';
 import { useSideChatTimeline } from '@/lib/use-side-chat-timeline.ts';
@@ -53,10 +51,9 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	>(undefined);
 	const childSelection = activeChildState[0];
 	const setChildSelection = activeChildState[1];
-	const selectedJobQuery = useQuery({
-		queryKey: queryKeys.job(jobId),
-		queryFn: () => orpc.jobs.get({ jobId }),
-	});
+	const selectedJobQuery = useQuery(
+		orpc.jobs.get.queryOptions({ input: { jobId } }),
+	);
 	const selectedJob = selectedJobQuery.data;
 	const events = useJobEvents(selectedJob?.id);
 	const queryClient = useQueryClient();
@@ -84,11 +81,12 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			isSideChatCreationActiveRef.current = false;
 		};
 	}, []);
-	const sideChatsQuery = useQuery({
-		queryKey: queryKeys.sideChats(jobId),
-		queryFn: () => orpc.sideChats.list({ sourceJobId: jobId }),
-		enabled: selectedJob !== undefined,
-	});
+	const sideChatsQuery = useQuery(
+		orpc.sideChats.list.queryOptions({
+			input: { sourceJobId: jobId },
+			enabled: selectedJob !== undefined,
+		}),
+	);
 	const sideChats = sideChatsQuery.data;
 	const selectedSideChat =
 		sideChats === undefined || search.sideChat === undefined
@@ -169,7 +167,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 
 	const handleSideChatTurnTerminal = useCallback(() => {
 		void queryClient.invalidateQueries({
-			queryKey: queryKeys.sideChats(jobId),
+			queryKey: orpc.sideChats.list.key({ input: { sourceJobId: jobId } }),
 		});
 	}, [jobId, queryClient]);
 	const sideChatTimeline = useSideChatTimeline(
@@ -177,44 +175,46 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		handleSideChatTurnTerminal,
 	);
 
-	const cancelJob = useMutation({
-		mutationFn: (id: string) => orpc.jobs.cancel({ jobId: id }),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: queryKeys.jobs() });
-		},
-		onError: (error) => {
-			console.error('Failed to cancel job', error);
-		},
-	});
+	const cancelJob = useMutation(
+		orpc.jobs.cancel.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({ queryKey: orpc.jobs.list.key() });
+			},
+			onError: (error) => {
+				console.error('Failed to cancel job', error);
+			},
+		}),
+	);
 	const createSideChat = useMutation({
-		mutationKey: sideChatCreateMutationKey,
+		...orpc.sideChats.create.mutationOptions(),
 		mutationFn: (creation: SideChatCreation) =>
-			orpc.sideChats.create({ sourceJobId: creation.sourceJobId }),
+			client.sideChats.create({ sourceJobId: creation.sourceJobId }),
 	});
 	const isCreatingSideChat =
 		useIsMutating(sideChatCreateMutationFilter(jobId)) > 0;
-	const sendSideChat = useMutation({
-		mutationFn: (input: { sideChatId: string; prompt: string }) =>
-			orpc.sideChats.send(input),
-		onSuccess: async () => {
-			setSideChatError(undefined);
-			await queryClient.invalidateQueries({
-				queryKey: queryKeys.sideChats(jobId),
-			});
-		},
-	});
-	const cancelSideChatTurn = useMutation({
-		mutationFn: (turnJobId: string) => orpc.jobs.cancel({ jobId: turnJobId }),
-		onSuccess: async () => {
-			setSideChatError(undefined);
-			await queryClient.invalidateQueries({
-				queryKey: queryKeys.sideChats(jobId),
-			});
-		},
-		onError: (error) => {
-			showSideChatError(error);
-		},
-	});
+	const sendSideChat = useMutation(
+		orpc.sideChats.send.mutationOptions({
+			onSuccess: async () => {
+				setSideChatError(undefined);
+				await queryClient.invalidateQueries({
+					queryKey: orpc.sideChats.list.key({ input: { sourceJobId: jobId } }),
+				});
+			},
+		}),
+	);
+	const cancelSideChatTurn = useMutation(
+		orpc.jobs.cancel.mutationOptions({
+			onSuccess: async () => {
+				setSideChatError(undefined);
+				await queryClient.invalidateQueries({
+					queryKey: orpc.sideChats.list.key({ input: { sourceJobId: jobId } }),
+				});
+			},
+			onError: (error) => {
+				showSideChatError(error);
+			},
+		}),
+	);
 
 	const completeSideChatCreation = useCallback(
 		async (creation: SideChatCreation) => {
@@ -222,7 +222,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 				const sourceJobId = creation.sourceJobId;
 				const sideChat = await createSideChat.mutateAsync(creation);
 				await queryClient.invalidateQueries({
-					queryKey: queryKeys.sideChats(sourceJobId),
+					queryKey: orpc.sideChats.list.key({ input: { sourceJobId } }),
 					refetchType: 'all',
 				});
 				if (!isCurrentDrawerCreation(creation)) return;
@@ -410,7 +410,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 											createdAt={selectedJob.createdAt}
 											terminatedAt={selectedJob.terminatedAt}
 											onCancel={() => {
-												cancelJob.mutate(selectedJob.id);
+												cancelJob.mutate({ jobId: selectedJob.id });
 											}}
 											onExpandPrompt={() => setIsPromptExpanded(true)}
 											onNewSideChat={handleNewSideChat}
@@ -458,7 +458,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 				onSubmitError={handleSideChatSubmitError}
 				isSending={sendSideChat.isPending}
 				onCancelTurn={(turnJobId) => {
-					cancelSideChatTurn.mutate(turnJobId);
+					cancelSideChatTurn.mutate({ jobId: turnJobId });
 				}}
 			/>
 		</>

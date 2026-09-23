@@ -9,14 +9,12 @@ import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import {
-	type Backend,
 	HARNESS_NAMES,
 	harnessAuthStatusQueryOptions,
 	harnessesQueryOptions,
 	isBackend,
 } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
 
 export function HarnessSettingsPage() {
 	const params = useParams({ from: '/settings/harnesses/$backend' });
@@ -25,26 +23,30 @@ export function HarnessSettingsPage() {
 	const [codexHome, setCodexHome] = useState('');
 
 	const harnessesQuery = useQuery(harnessesQueryOptions());
-	const codexHomeQuery = useQuery({
-		queryKey: ['settings', 'codexHome'],
-		queryFn: () => orpc.settings.getCodexHome(),
-		enabled: backend === 'codex',
-	});
+	const codexHomeQuery = useQuery(
+		orpc.settings.getCodexHome.queryOptions({
+			enabled: backend === 'codex',
+		}),
+	);
 
-	const checkMutation = useMutation({
-		mutationFn: (input: { backend: Backend }) => orpc.harnesses.check(input),
-	});
-	const codexHomeMutation = useMutation({
-		mutationFn: (home: string | undefined) =>
-			orpc.settings.setCodexHome({ home }),
-		onSuccess: () => {
-			queryClient.invalidateQueries({ queryKey: ['settings', 'codexHome'] });
-			queryClient.invalidateQueries({
-				queryKey: queryKeys.harnessAuthStatus('codex'),
-			});
-			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
-		},
-	});
+	const checkMutation = useMutation(orpc.harnesses.check.mutationOptions());
+	const codexHomeMutation = useMutation(
+		orpc.settings.setCodexHome.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: orpc.settings.getCodexHome.key(),
+				});
+				queryClient.invalidateQueries({
+					queryKey: orpc.harnesses.authStatus.key({
+						input: { backend: 'codex' },
+					}),
+				});
+				queryClient.invalidateQueries({
+					queryKey: orpc.models.list.key({ input: { backend: 'codex' } }),
+				});
+			},
+		}),
+	);
 
 	useEffect(() => {
 		if (backend === undefined) return;
@@ -105,13 +107,13 @@ export function HarnessSettingsPage() {
 
 	function saveCodexHome() {
 		if (!canSaveCodexHome || !isCodexHomeChanged) return;
-		codexHomeMutation.mutate(draftCodexHome);
+		codexHomeMutation.mutate({ home: draftCodexHome });
 	}
 
 	function clearCodexHome() {
 		if (!canSaveCodexHome) return;
 		setCodexHome('');
-		codexHomeMutation.mutate(undefined);
+		codexHomeMutation.mutate({ home: undefined });
 	}
 
 	return (
@@ -277,49 +279,65 @@ function CodexAuthSection() {
 		{ verificationUrl: string; userCode: string } | undefined
 	>(undefined);
 	const authStatusQuery = useQuery(harnessAuthStatusQueryOptions('codex'));
-	const loginMutation = useMutation({
-		mutationFn: () => orpc.harnesses.login({ backend: 'codex' }),
-		onSuccess: (result) => {
-			if (result.status === 'pending') {
-				setLoginPrompt({
-					verificationUrl: result.verificationUrl,
-					userCode: result.userCode,
+	const loginMutation = useMutation(
+		orpc.harnesses.login.mutationOptions({
+			onSuccess: (result) => {
+				if (result.status === 'pending') {
+					setLoginPrompt({
+						verificationUrl: result.verificationUrl,
+						userCode: result.userCode,
+					});
+					queryClient.setQueryData(
+						orpc.harnesses.authStatus.queryKey({ input: { backend: 'codex' } }),
+						{
+							backend: 'codex',
+							status: 'pending',
+						},
+					);
+					return;
+				}
+				queryClient.invalidateQueries({
+					queryKey: orpc.harnesses.authStatus.key({
+						input: { backend: 'codex' },
+					}),
 				});
-				queryClient.setQueryData(queryKeys.harnessAuthStatus('codex'), {
-					backend: 'codex',
-					status: 'pending',
+			},
+		}),
+	);
+	const cancelMutation = useMutation(
+		orpc.harnesses.cancelLogin.mutationOptions({
+			onSuccess: () => {
+				setLoginPrompt(undefined);
+				queryClient.invalidateQueries({
+					queryKey: orpc.harnesses.authStatus.key({
+						input: { backend: 'codex' },
+					}),
 				});
-				return;
-			}
-			queryClient.invalidateQueries({
-				queryKey: queryKeys.harnessAuthStatus('codex'),
-			});
-		},
-	});
-	const cancelMutation = useMutation({
-		mutationFn: () => orpc.harnesses.cancelLogin({ backend: 'codex' }),
-		onSuccess: () => {
-			setLoginPrompt(undefined);
-			queryClient.invalidateQueries({
-				queryKey: queryKeys.harnessAuthStatus('codex'),
-			});
-		},
-	});
-	const logoutMutation = useMutation({
-		mutationFn: () => orpc.harnesses.logout({ backend: 'codex' }),
-		onSuccess: () => {
-			setLoginPrompt(undefined);
-			queryClient.invalidateQueries({
-				queryKey: queryKeys.harnessAuthStatus('codex'),
-			});
-			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
-		},
-	});
+			},
+		}),
+	);
+	const logoutMutation = useMutation(
+		orpc.harnesses.logout.mutationOptions({
+			onSuccess: () => {
+				setLoginPrompt(undefined);
+				queryClient.invalidateQueries({
+					queryKey: orpc.harnesses.authStatus.key({
+						input: { backend: 'codex' },
+					}),
+				});
+				queryClient.invalidateQueries({
+					queryKey: orpc.models.list.key({ input: { backend: 'codex' } }),
+				});
+			},
+		}),
+	);
 
 	useEffect(() => {
 		const status = authStatusQuery.data?.status;
 		if (previousAuthStatus.current === 'pending' && status === 'logged_in') {
-			queryClient.invalidateQueries({ queryKey: ['models', 'codex'] });
+			queryClient.invalidateQueries({
+				queryKey: orpc.models.list.key({ input: { backend: 'codex' } }),
+			});
 		}
 		if (status === 'logged_in') {
 			setLoginPrompt(undefined);
@@ -370,7 +388,7 @@ function CodexAuthSection() {
 						type="button"
 						variant="outline"
 						disabled={isLoginBusy}
-						onClick={() => logoutMutation.mutate()}
+						onClick={() => logoutMutation.mutate({ backend: 'codex' })}
 					>
 						{logoutMutation.isPending ? (
 							<>
@@ -419,7 +437,7 @@ function CodexAuthSection() {
 						type="button"
 						variant="outline"
 						disabled={isLoginBusy}
-						onClick={() => cancelMutation.mutate()}
+						onClick={() => cancelMutation.mutate({ backend: 'codex' })}
 					>
 						{cancelMutation.isPending ? 'Cancelling…' : 'Cancel login'}
 					</Button>
@@ -437,7 +455,7 @@ function CodexAuthSection() {
 					<Button
 						type="button"
 						disabled={isLoginBusy}
-						onClick={() => loginMutation.mutate()}
+						onClick={() => loginMutation.mutate({ backend: 'codex' })}
 					>
 						{loginMutation.isPending ? (
 							<>

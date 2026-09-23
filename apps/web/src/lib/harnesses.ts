@@ -1,7 +1,6 @@
-import { orpc } from './orpc';
-import { queryKeys } from './query-keys';
+import { type client, orpc } from './orpc';
 
-export type Harness = Awaited<ReturnType<typeof orpc.harnesses.list>>[number];
+export type Harness = Awaited<ReturnType<typeof client.harnesses.list>>[number];
 export type Backend = Harness['backend'];
 
 export const HARNESS_NAMES: Record<Backend, string> = {
@@ -23,22 +22,16 @@ export function isBackend(value: string): value is Backend {
 }
 
 export function harnessesQueryOptions() {
-	return {
-		queryKey: queryKeys.harnesses(),
-		queryFn: () => orpc.harnesses.list(),
+	return orpc.harnesses.list.queryOptions({
 		staleTime: Infinity,
-	};
+	});
 }
 
 export function harnessAuthStatusQueryOptions(backend: Backend) {
-	return {
-		queryKey: queryKeys.harnessAuthStatus(backend),
-		queryFn: () => orpc.harnesses.authStatus({ backend }),
+	return orpc.harnesses.authStatus.queryOptions({
+		input: { backend },
 		enabled: backend === 'codex',
-		refetchInterval: (query: {
-			state: {
-				data: Awaited<ReturnType<typeof orpc.harnesses.authStatus>> | undefined;
-			};
-		}) => (query.state.data?.status === 'pending' ? 2_000 : false),
-	};
+		refetchInterval: (query) =>
+			query.state.data?.status === 'pending' ? 2_000 : false,
+	});
 }

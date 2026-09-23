@@ -1,11 +1,14 @@
 import { describe, expect, test } from 'bun:test';
 import { QueryClient } from '@tanstack/react-query';
-import {
-	isCurrentSideChatCreation,
-	type SideChatCreation,
-	sideChatCreateMutationFilter,
-	sideChatCreateMutationKey,
-} from './side-chat-creation.ts';
+import { Window } from 'happy-dom';
+import type { SideChatCreation } from './side-chat-creation.ts';
+
+const window = new Window({ url: 'http://localhost/' });
+Object.defineProperty(globalThis, 'location', {
+	configurable: true,
+	value: window.location,
+});
+const sideChatCreation = await import('./side-chat-creation.ts');
 
 describe('side-chat creation guard', () => {
 	test('does not apply an old drawer creation after navigating to another job', async () => {
@@ -27,7 +30,7 @@ describe('side-chat creation guard', () => {
 		};
 		const applyResponse = response.promise.then((sideChatId) => {
 			if (
-				!isCurrentSideChatCreation({
+				!sideChatCreation.isCurrentSideChatCreation({
 					creation,
 					currentJobId: route.jobId,
 					currentDrawerInstance: route.drawerInstance,
@@ -60,7 +63,7 @@ describe('side-chat creation guard', () => {
 		};
 
 		expect(
-			isCurrentSideChatCreation({
+			sideChatCreation.isCurrentSideChatCreation({
 				creation,
 				currentJobId: 'job-a',
 				currentDrawerInstance: 5,
@@ -75,11 +78,11 @@ describe('side-chat creation guard', () => {
 		const creationB = { sourceJobId: 'job-b', drawerInstance: 7 };
 		const queryClient = new QueryClient();
 		const mutationA = queryClient.getMutationCache().build(queryClient, {
-			mutationKey: sideChatCreateMutationKey,
+			mutationKey: sideChatCreation.sideChatCreateMutationKey,
 			mutationFn: () => delayedA.promise,
 		});
 		const mutationB = queryClient.getMutationCache().build(queryClient, {
-			mutationKey: sideChatCreateMutationKey,
+			mutationKey: sideChatCreation.sideChatCreateMutationKey,
 			mutationFn: () => successfulB.promise,
 		});
 		const route: {
@@ -93,7 +96,7 @@ describe('side-chat creation guard', () => {
 		};
 		const applyResponse = (creation: SideChatCreation, sideChatId: string) => {
 			if (
-				!isCurrentSideChatCreation({
+				!sideChatCreation.isCurrentSideChatCreation({
 					creation,
 					currentJobId: route.jobId,
 					currentDrawerInstance: route.drawerInstance,
@@ -105,32 +108,44 @@ describe('side-chat creation guard', () => {
 		};
 
 		const pendingA = mutationA.execute(creationA);
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-a'))).toBe(
-			1,
-		);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-a'),
+			),
+		).toBe(1);
 
 		route.jobId = 'job-b';
 		route.drawerInstance = 7;
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-b'))).toBe(
-			0,
-		);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-b'),
+			),
+		).toBe(0);
 
 		const pendingB = mutationB.execute(creationB);
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-b'))).toBe(
-			1,
-		);
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-a'))).toBe(
-			1,
-		);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-b'),
+			),
+		).toBe(1);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-a'),
+			),
+		).toBe(1);
 
 		successfulB.resolve('chat-b');
 		applyResponse(creationB, await pendingB);
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-b'))).toBe(
-			0,
-		);
-		expect(queryClient.isMutating(sideChatCreateMutationFilter('job-a'))).toBe(
-			1,
-		);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-b'),
+			),
+		).toBe(0);
+		expect(
+			queryClient.isMutating(
+				sideChatCreation.sideChatCreateMutationFilter('job-a'),
+			),
+		).toBe(1);
 		delayedA.resolve('chat-a');
 		applyResponse(creationA, await pendingA);
 

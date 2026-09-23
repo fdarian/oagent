@@ -15,7 +15,6 @@ import {
 } from '@/lib/harness-env-validation';
 import type { Backend } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
-import { queryKeys } from '@/lib/query-keys';
 
 type HarnessEnvFormEntry = HarnessEnvEntry & {
 	id: string;
@@ -154,10 +153,11 @@ type HarnessEnvSectionProps = {
 };
 
 export function HarnessEnvSection(props: HarnessEnvSectionProps) {
-	const envQuery = useQuery({
-		queryKey: queryKeys.harnessEnv(props.backend),
-		queryFn: () => orpc.settings.getHarnessEnv({ backend: props.backend }),
-	});
+	const envQuery = useQuery(
+		orpc.settings.getHarnessEnv.queryOptions({
+			input: { backend: props.backend },
+		}),
+	);
 
 	return (
 		<div className="grid max-w-xl gap-4 border-t border-border pt-8">
@@ -200,25 +200,27 @@ function useHarnessEnvForm(props: {
 	entries: ReadonlyArray<HarnessEnvEntry>;
 }) {
 	const queryClient = useQueryClient();
-	const saveMutation = useMutation({
-		mutationFn: (env: ReadonlyArray<HarnessEnvFormEntry>) =>
-			orpc.settings.setHarnessEnv({
-				backend: props.backend,
-				env: env.map((entry) => ({
-					key: entry.key,
-					value: entry.value,
-				})),
-			}),
-		onSuccess: () => {
-			queryClient.invalidateQueries({
-				queryKey: queryKeys.harnessEnv(props.backend),
-			});
-		},
-	});
+	const saveMutation = useMutation(
+		orpc.settings.setHarnessEnv.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: orpc.settings.getHarnessEnv.key({
+						input: { backend: props.backend },
+					}),
+				});
+			},
+		}),
+	);
 	const form = useForm({
 		defaultValues: { env: toFormEntries(props.entries) },
 		onSubmit: (submission) => {
-			saveMutation.mutate(submission.value.env);
+			saveMutation.mutate({
+				backend: props.backend,
+				env: submission.value.env.map((entry) => ({
+					key: entry.key,
+					value: entry.value,
+				})),
+			});
 		},
 	});
 	return { form, saveMutation };
