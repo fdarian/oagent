@@ -93,7 +93,7 @@ type ReserveJobInput = {
 	mcpSessionId?: string;
 	sideChatId?: number;
 	cwd: string;
-	worktree?: { branch?: string };
+	worktree?: boolean;
 };
 
 type WaitResult =
@@ -758,10 +758,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						? undefined
 						: findSessionWorktree(input.sessionId, reservation.internalId);
 				if (prior !== undefined) return prior;
-				if (input.worktree === undefined) return undefined;
+				if (input.worktree !== true) return undefined;
 
-				const branch =
-					input.worktree.branch ?? `oagent/${reservation.jobId.slice(-8)}`;
+				const branch = `oagent/${reservation.jobId.slice(-8)}`;
 				const path = yield* worktrees.create(input.cwd, branch);
 				return { path, branch };
 			});

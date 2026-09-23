@@ -166,12 +166,6 @@ export const worktreeInputSchema = {
 		.boolean()
 		.optional()
 		.describe('Create a fresh worktree for this job.'),
-	worktree_branch: z
-		.string()
-		.optional()
-		.describe(
-			'Branch name for the new worktree; defaults to oagent/<job ID suffix>.',
-		),
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
@@ -212,8 +206,7 @@ export const startTool = {
 				agentType: args.agent_type,
 				sessionId: args.sessionId,
 				mcpSessionId: ctx.mcpSessionId,
-				worktree:
-					args.worktree === true ? { branch: args.worktree_branch } : undefined,
+				worktree: args.worktree,
 			})
 			.pipe(
 				Effect.tap((result) =>

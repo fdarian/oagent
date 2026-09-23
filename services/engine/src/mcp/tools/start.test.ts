@@ -121,12 +121,11 @@ Configured agent types (use as \`agent_type\`):
 				prompt: 'Run',
 				cwd: '/repo',
 				worktree: true,
-				worktree_branch: 'feature/a',
 			}),
 		).toMatchObject({
 			worktree: true,
-			worktree_branch: 'feature/a',
 		});
+		expect(Object.hasOwn(worktreeInputSchema, 'worktree_branch')).toBe(false);
 	});
 
 	test('returns a structured unknown-agent response', async () => {

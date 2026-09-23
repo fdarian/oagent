@@ -239,11 +239,6 @@ function registerChannelTools(
 					agent_type: args.agent_type,
 					sessionId: args.sessionId,
 					worktree: 'worktree' in args && args.worktree === true,
-					worktree_branch:
-						'worktree_branch' in args &&
-						typeof args.worktree_branch === 'string'
-							? args.worktree_branch
-							: undefined,
 				});
 				const jobId = started.jobId;
 				const worktree =

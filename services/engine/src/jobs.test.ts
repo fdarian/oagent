@@ -133,7 +133,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			prompt: 'first',
 			cwd: '/repo/apps/web',
 			model: 'opencode:test',
-			worktree: { branch: 'feature/a' },
+			worktree: true,
 		}),
 	);
 	await Effect.runPromise(jobs.wait({ jobId: first.jobId, timeoutMs: 1_000 }));
@@ -143,21 +143,21 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			cwd: '/other',
 			model: 'opencode:test',
 			sessionId: 'ses_worktree',
-			worktree: { branch: 'ignored' },
+			worktree: true,
 		}),
 	);
 	await Effect.runPromise(jobs.wait({ jobId: second.jobId, timeoutMs: 1_000 }));
-	expect(branches).toEqual(['feature/a']);
+	expect(branches).toEqual([`oagent/${first.jobId.slice(-8)}`]);
 	expect(cwdValues).toEqual([
 		'/repo-worktree/apps/web',
 		'/repo-worktree/apps/web',
 	]);
 	expect(second.worktreePath).toBe(first.worktreePath);
-	expect(second.worktreeBranch).toBe('feature/a');
+	expect(second.worktreeBranch).toBe(`oagent/${first.jobId.slice(-8)}`);
 	expect(jobs.getJobMetadata(second.jobId)).toMatchObject({
 		cwd: '/repo-worktree/apps/web',
 		worktreePath: '/repo-worktree/apps/web',
-		worktreeBranch: 'feature/a',
+		worktreeBranch: `oagent/${first.jobId.slice(-8)}`,
 	});
 	database.sqlite.close();
 });

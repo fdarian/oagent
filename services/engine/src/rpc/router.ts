@@ -177,7 +177,6 @@ const router = procedure.router({
 					agent_type: v.optional(v.string()),
 					sessionId: v.optional(v.string()),
 					worktree: v.optional(v.boolean()),
-					worktree_branch: v.optional(v.string()),
 				}),
 			)
 			.effect(function* (options) {
@@ -188,10 +187,7 @@ const router = procedure.router({
 					model: options.input.model,
 					agentType: options.input.agent_type,
 					sessionId: options.input.sessionId,
-					worktree:
-						options.input.worktree === true
-							? { branch: options.input.worktree_branch }
-							: undefined,
+					worktree: options.input.worktree,
 				});
 				yield* Effect.logInfo(
 					`RPC start accepted ${requestLogFields({
