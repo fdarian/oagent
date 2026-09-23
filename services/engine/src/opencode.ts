@@ -452,6 +452,26 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
 			acpAgent.forkSession(input);
 
+		const forkSessionBefore = (input: {
+			sessionId: string;
+			cwd: string;
+			before: string;
+		}) =>
+			Effect.gen(function* () {
+				yield* requireSteerSupport();
+				return {
+					sessionId: yield* serviceClient.forkSession(binary, input),
+				};
+			});
+
+		const getLatestMessageId = (sessionId: string) =>
+			serviceClient.getLatestMessageId(binary, sessionId);
+
+		const getFirstMessageAfter = (input: {
+			sessionId: string;
+			messageId: string;
+		}) => serviceClient.getFirstMessageAfter(binary, input);
+
 		const version = () =>
 			versionSemaphore.withPermit(
 				Effect.gen(function* () {
@@ -658,6 +678,9 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			backend: 'opencode',
 			runTurn,
 			forkSession,
+			forkSessionBefore,
+			getLatestMessageId,
+			getFirstMessageAfter,
 			listModels,
 			listSessionCatalog,
 			listModelEfforts,

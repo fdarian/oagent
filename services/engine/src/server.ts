@@ -16,6 +16,7 @@ import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
+import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { SideChats } from './side-chats.ts';
 
@@ -41,6 +42,7 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const sessionService = yield* Sessions;
 		const settings = yield* Settings;
 		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
@@ -65,7 +67,15 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					server: McpServer,
 					services: Context.Context<never>,
 					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, settings, services, waitUrlBase),
+				) =>
+					registerTools(
+						server,
+						jobs,
+						sessionService,
+						settings,
+						services,
+						waitUrlBase,
+					),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -122,6 +132,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
+								sessionService,
 								settings,
 								services,
 								portlessPublicBase ?? url.origin,
@@ -282,6 +293,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(Sessions.layer),
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(HarnessRegistry.layer),

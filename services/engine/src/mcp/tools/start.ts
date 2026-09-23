@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { AgentDefinition } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
+import type { Sessions } from '../../sessions.ts';
 
 const BASE_DESCRIPTION = `\
 Launch or continue a coding-agent session and return its result. If it returns \
@@ -169,7 +170,8 @@ export const worktreeInputSchema = {
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
-type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'start' | 'wait'>;
+type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+type StartSessions = Pick<Sessions['Service'], 'sendMessage' | 'start'>;
 
 function errorResponse(code: string, message: string) {
 	return {
@@ -188,6 +190,7 @@ export const startTool = {
 		args: Args,
 		ctx: {
 			jobs: StartJobs;
+			sessions: StartSessions;
 			waitUrlBase: string | undefined;
 			mcpSessionId: string | undefined;
 		},
@@ -198,70 +201,93 @@ export const startTool = {
 		});
 		const timeoutMs = ctx.jobs.getStartTimeoutMs();
 
-		return ctx.jobs
-			.start({
-				prompt: args.prompt,
-				cwd: args.cwd,
-				model: args.model,
-				agentType: args.agent_type,
-				sessionId: args.sessionId,
-				mcpSessionId: ctx.mcpSessionId,
-				worktree: args.worktree,
-			})
-			.pipe(
-				Effect.tap((result) =>
-					Effect.logInfo(
-						`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: args.sessionId })}`,
-					),
-				),
-				Effect.flatMap((result) => {
-					const worktree =
-						result.worktreePath === undefined
-							? {}
-							: {
-									worktreePath: result.worktreePath,
-									worktreeBranch: result.worktreeBranch,
-								};
-					if (args.background === true) {
-						return Effect.succeed({
-							...runningResponse(result.jobId),
-							...worktree,
-						});
-					}
-					return ctx.jobs
-						.wait({
-							jobId: result.jobId,
-							timeoutMs,
+		const started: Effect.Effect<
+			{
+				sessionId: string;
+				jobId: string;
+				delivery: 'started' | 'steered';
+				worktreePath?: string;
+				worktreeBranch?: string;
+			},
+			Error,
+			never
+		> =
+			args.sessionId === undefined
+				? ctx.sessions
+						.start({
+							prompt: args.prompt,
+							cwd: args.cwd,
+							model: args.model,
+							agentType: args.agent_type,
+							mcpSessionId: ctx.mcpSessionId,
+							worktree: args.worktree,
 						})
 						.pipe(
-							Effect.map((wait) =>
-								wait.status === 'running'
-									? { ...runningResponse(result.jobId), ...worktree }
-									: { ...wait, ...worktree },
-							),
-							Effect.catchTag('JobNotFound', (err) =>
-								Effect.succeed({
-									status: 'error' as const,
-									message: `Job not found: ${err.jobId}`,
-								}),
-							),
-						);
-				}),
-				Effect.map((response) => ({
-					content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-				})),
-				Effect.catchTag('ModelResolutionError', (err) =>
-					Effect.succeed(errorResponse(err.code, err.message)),
+							Effect.map((result) => ({
+								...result,
+								delivery: 'started' as const,
+							})),
+						)
+				: ctx.sessions.sendMessage({
+						sessionId: args.sessionId,
+						prompt: args.prompt,
+					});
+		return started.pipe(
+			Effect.tap((result) =>
+				Effect.logInfo(
+					`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: result.sessionId })}`,
 				),
-				Effect.catchTag('AgentTypeNotFound', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
-				),
-				Effect.catchTag('AgentNotMappedForBackend', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
-				),
-				Effect.catchTag('WorktreeError', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
-				),
-			);
+			),
+			Effect.flatMap((result) => {
+				const worktree =
+					result.worktreePath === undefined
+						? {}
+						: {
+								worktreePath: result.worktreePath,
+								worktreeBranch: result.worktreeBranch,
+							};
+				if (result.delivery === 'steered' || args.background === true) {
+					return Effect.succeed({
+						...runningResponse(result.jobId),
+						sessionId: result.sessionId,
+						...(result.delivery === 'steered'
+							? {
+									message:
+										'Message queued for delivery at the next step boundary.',
+								}
+							: {}),
+						...worktree,
+					});
+				}
+				return ctx.jobs
+					.wait({
+						jobId: result.jobId,
+						timeoutMs,
+					})
+					.pipe(
+						Effect.map((wait) =>
+							wait.status === 'running'
+								? {
+										...runningResponse(result.jobId),
+										sessionId: result.sessionId,
+										...worktree,
+									}
+								: { ...wait, sessionId: result.sessionId, ...worktree },
+						),
+						Effect.catchTag('JobNotFound', (err) =>
+							Effect.succeed({
+								status: 'error' as const,
+								message: `Job not found: ${err.jobId}`,
+							}),
+						),
+					);
+			}),
+			Effect.map((response) => ({
+				content: [{ type: 'text' as const, text: JSON.stringify(response) }],
+			})),
+			Effect.catch((error) =>
+				Effect.succeed(errorResponse(error.name, error.message)),
+			),
+		);
 	},
 };

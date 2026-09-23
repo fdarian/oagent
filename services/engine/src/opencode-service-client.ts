@@ -39,6 +39,17 @@ const ActiveSessionsResponse = Schema.Struct({
 	),
 });
 
+const ForkResponse = Schema.Struct({
+	data: Schema.Struct({ id: Schema.String }),
+});
+
+const MessagesResponse = Schema.Struct({
+	data: Schema.Array(Schema.Struct({ id: Schema.String })),
+	cursor: Schema.optional(
+		Schema.Struct({ next: Schema.optional(Schema.NullOr(Schema.String)) }),
+	),
+});
+
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -103,6 +114,21 @@ export class OpenCodeSessionStatusError extends Schema.TaggedError<OpenCodeSessi
 		const detail =
 			this.cause instanceof Error ? this.cause.message : String(this.cause);
 		return `Failed to read OpenCode activity for session "${this.sessionId}": ${detail}`;
+	}
+}
+
+export class OpenCodeSessionRestError extends Schema.TaggedError<OpenCodeSessionRestError>()(
+	'OpenCodeSessionRestError',
+	{
+		operation: Schema.String,
+		sessionId: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {
+	override get message() {
+		const detail =
+			this.cause instanceof Error ? this.cause.message : String(this.cause);
+		return `OpenCode ${this.operation} failed for session "${this.sessionId}": ${detail}`;
 	}
 }
 
@@ -415,7 +441,155 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 					return body.data[sessionId] !== undefined;
 				});
 
-			return { steer, disableQuestion, isSessionActive };
+			const forkSession = (
+				binaryPath: string,
+				input: {
+					sessionId: string;
+					before?: string;
+				},
+			): Effect.Effect<
+				string,
+				OpenCodeServiceDiscoveryError | OpenCodeSessionRestError
+			> =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL(
+						`/api/session/${encodeURIComponent(input.sessionId)}/fork`,
+						service.url,
+					);
+					const operationError = (cause: unknown) =>
+						new OpenCodeSessionRestError({
+							operation: 'REST fork',
+							sessionId: input.sessionId,
+							cause,
+						});
+					const request = yield* HttpClientRequest.post(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+						HttpClientRequest.bodyJson(
+							input.before === undefined ? {} : { before: input.before },
+						),
+						Effect.mapError(operationError),
+					);
+					const response = yield* httpClient
+						.execute(request)
+						.pipe(Effect.mapError(operationError));
+					if (response.status !== 200) {
+						return yield* operationError(
+							new Error(`OpenCode service returned HTTP ${response.status}`),
+						);
+					}
+					const body = yield* HttpClientResponse.schemaBodyJson(ForkResponse)(
+						response,
+					).pipe(Effect.mapError(operationError));
+					return body.data.id;
+				});
+
+			const getLatestMessageId = (binaryPath: string, sessionId: string) =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL(
+						`/api/session/${encodeURIComponent(sessionId)}/message?order=desc&limit=1`,
+						service.url,
+					);
+					const operationError = (cause: unknown) =>
+						new OpenCodeSessionRestError({
+							operation: 'message lookup',
+							sessionId,
+							cause,
+						});
+					const request = HttpClientRequest.get(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+					);
+					const response = yield* httpClient
+						.execute(request)
+						.pipe(Effect.mapError(operationError));
+					if (response.status !== 200) {
+						return yield* operationError(
+							new Error(`OpenCode service returned HTTP ${response.status}`),
+						);
+					}
+					const body = yield* HttpClientResponse.schemaBodyJson(
+						MessagesResponse,
+					)(response).pipe(Effect.mapError(operationError));
+					const latest = body.data[0];
+					if (latest === undefined) {
+						return yield* operationError(new Error('Session has no messages'));
+					}
+					return latest.id;
+				});
+
+			const getFirstMessageAfter = (
+				binaryPath: string,
+				input: { sessionId: string; messageId: string },
+			) =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const operationError = (cause: unknown) =>
+						new OpenCodeSessionRestError({
+							operation: 'message lookup',
+							sessionId: input.sessionId,
+							cause,
+						});
+					let cursor: string | undefined;
+					let previousWasCheckpoint = false;
+					while (true) {
+						const url = new URL(
+							`/api/session/${encodeURIComponent(input.sessionId)}/message`,
+							service.url,
+						);
+						url.searchParams.set('limit', '100');
+						if (cursor === undefined) {
+							url.searchParams.set('order', 'asc');
+						} else {
+							url.searchParams.set('cursor', cursor);
+						}
+						const request = HttpClientRequest.get(url).pipe(
+							HttpClientRequest.basicAuth(
+								'opencode',
+								Redacted.make(service.password),
+							),
+						);
+						const response = yield* httpClient
+							.execute(request)
+							.pipe(Effect.mapError(operationError));
+						if (response.status !== 200) {
+							return yield* operationError(
+								new Error(`OpenCode service returned HTTP ${response.status}`),
+							);
+						}
+						const body = yield* HttpClientResponse.schemaBodyJson(
+							MessagesResponse,
+						)(response).pipe(Effect.mapError(operationError));
+						for (const message of body.data) {
+							if (previousWasCheckpoint) return message.id;
+							previousWasCheckpoint = message.id === input.messageId;
+						}
+						const next = body.cursor?.next ?? undefined;
+						if (next === undefined) {
+							return yield* operationError(
+								new Error(
+									`Message ${input.messageId} has no following message`,
+								),
+							);
+						}
+						cursor = next;
+					}
+				});
+
+			return {
+				steer,
+				disableQuestion,
+				isSessionActive,
+				forkSession,
+				getLatestMessageId,
+				getFirstMessageAfter,
+			};
 		}),
 	},
 ) {

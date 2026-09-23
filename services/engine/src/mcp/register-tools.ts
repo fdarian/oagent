@@ -8,6 +8,7 @@ import {
 	Option,
 } from 'effect';
 import type { Jobs } from '../jobs.ts';
+import type { Sessions } from '../sessions.ts';
 import type { Settings } from '../settings.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
@@ -23,6 +24,7 @@ import { steerTool } from './tools/steer.ts';
 export function registerTools(
 	server: McpServer,
 	jobs: Jobs['Service'],
+	sessions: Sessions['Service'],
 	settings: Settings['Service'],
 	services: Context.Context<never>,
 	waitUrlBase: string | undefined,
@@ -57,6 +59,7 @@ export function registerTools(
 			runHandler(
 				startTool.handle(args, {
 					jobs,
+					sessions,
 					waitUrlBase,
 					mcpSessionId: extra.sessionId,
 				}),
