@@ -1,9 +1,11 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { fn } from 'storybook/test';
 import { JobEmptyState } from '@/components/job-empty-state';
 import { JobHeader } from '@/components/job-header';
 import { JobSidebar } from '@/components/job-sidebar';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
+import { createConcurrentSubagentFixture } from '@/components/subagent-fixtures';
 import type { TimelinePart } from '@/lib/event-adapter';
 
 const meta: Meta = {
@@ -15,6 +17,9 @@ const meta: Meta = {
 
 export default meta;
 type Story = StoryObj<typeof meta>;
+
+const runningSubagents = createConcurrentSubagentFixture(3);
+const selectSubagent = fn<(sessionId: string) => void>();
 
 export const EmptySelection: Story = {
 	render: () => (
@@ -114,7 +119,7 @@ export const RunningSession: Story = {
 			<div className="flex min-w-0 flex-1 flex-col">
 				<JobStatusStrip status="Running tool: read_file" isRunning />
 				<div className="flex min-h-0 flex-1 flex-col px-33 py-22">
-					<div className="mx-auto flex w-full max-w-[900px] flex-col">
+					<div className="mx-auto flex min-h-0 w-full max-w-[900px] flex-1 flex-col">
 						<JobHeader
 							id="job-run"
 							status="running"
@@ -126,9 +131,12 @@ export const RunningSession: Story = {
 							createdAt={Date.now() - 120_000}
 							onCancel={() => {}}
 						/>
-						<div className="mt-22 min-h-0 flex-1">
+						<div className="mt-22 flex min-h-0 flex-1 flex-col">
 							<JobTimeline
 								cwd="/Users/dev/project/apps/api"
+								childSessions={runningSubagents.children}
+								activeChildSessionId="child-2"
+								onChildSelect={selectSubagent}
 								parts={[
 									{
 										kind: 'reasoning',

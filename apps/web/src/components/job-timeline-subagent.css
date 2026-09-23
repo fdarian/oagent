@@ -23,11 +23,6 @@
 	transition: background-color 150ms ease;
 }
 
-.job-timeline-subagent:hover .job-timeline-subagent__surface,
-.job-timeline-subagent:focus-visible .job-timeline-subagent__surface {
-	background: #f2f2f2;
-}
-
 .job-timeline-subagent__icon,
 .job-timeline-subagent__progress {
 	display: block;
@@ -69,6 +64,20 @@
 	font-size: 13px;
 	line-height: 20px;
 	letter-spacing: -0.04px;
+}
+
+.job-timeline-subagent--dock .job-timeline-subagent__surface,
+.job-timeline-subagent--dock .job-timeline-subagent__info {
+	flex: 1 1 auto;
+}
+
+.job-timeline-subagent:hover .job-timeline-subagent__surface,
+.job-timeline-subagent:focus-visible .job-timeline-subagent__surface {
+	background: #f2f2f2;
+}
+
+.job-timeline-subagent[data-active="true"] .job-timeline-subagent__surface {
+	background: #f2f2f2;
 }
 
 .job-timeline-subagent__title {

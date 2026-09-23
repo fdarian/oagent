@@ -11,7 +11,6 @@ import { JobPromptView } from '@/components/job-prompt-view';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
 import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
-import { SubagentDock } from '@/components/subagent-dock';
 import { SubagentHeader } from '@/components/subagent-header';
 import { orpc } from '@/lib/orpc';
 import { queryKeys } from '@/lib/query-keys';
@@ -385,6 +384,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 						cwd={selectedJob.cwd}
 						childSessions={events.children}
 						currentChild={activeChild}
+						activeChildSessionId={activeChildSessionId}
 						onChildSelect={selectChild}
 						isChildTimeline={activeChild !== undefined}
 						isLoading={
@@ -432,11 +432,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 								/>
 							)
 						}
-					/>
-					<SubagentDock
-						sessions={events.children}
-						activeChildSessionId={activeChildSessionId}
-						onSelect={selectChild}
 					/>
 				</div>
 			)}

@@ -1,13 +1,19 @@
+import { ChevronRightIcon } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+	Collapsible,
+	CollapsibleContent,
+	CollapsibleTrigger,
+} from '@/components/ui/collapsible';
 import type { ChildTimeline } from '@/lib/event-adapter';
-import { formatElapsed } from '@/lib/format';
-import { stripChildTitlePrefix } from '@/lib/subagent-title';
-import { useClock } from '@/lib/use-clock';
 import { cn } from '@/lib/utils';
+import { SubagentCard } from './job-timeline-subagent';
 
 export type SubagentDockProps = {
 	sessions: ReadonlyMap<string, ChildTimeline>;
 	activeChildSessionId: string | undefined;
 	onSelect: (sessionId: string) => void;
+	className?: string;
 };
 
 function descriptionForChild(child: ChildTimeline): string {
@@ -18,56 +24,48 @@ export function SubagentDock(props: SubagentDockProps) {
 	const running = Array.from(props.sessions.values()).filter(
 		(child) => child.status === 'running',
 	);
-	const now = useClock(running.length > 0);
 	if (running.length === 0) return null;
 
 	return (
-		<aside
-			aria-label="Running subagents"
-			className="shrink-0 border-primary border-t bg-primary/5 text-foreground"
+		<Collapsible
+			defaultOpen={false}
+			className={cn('group mb-3 w-full', props.className)}
 		>
-			<div className="overflow-x-auto p-2">
-				<div className="flex min-w-max flex-nowrap gap-2">
+			<CollapsibleTrigger asChild>
+				<Button
+					variant="ghost"
+					size="sm"
+					className="h-auto w-full justify-start px-0 py-1 text-muted-foreground hover:bg-transparent hover:text-foreground -translate-x-2.5 animate-pulse"
+				>
+					<span>
+						{running.length} running {running.length === 1 ? 'agent' : 'agents'}
+					</span>
+					<ChevronRightIcon
+						className={cn(
+							'size-3.5 shrink-0 opacity-0 transition-all group-hover:opacity-100',
+							'group-data-[state=open]:rotate-90',
+						)}
+					/>
+				</Button>
+			</CollapsibleTrigger>
+			<CollapsibleContent className="ml-1 max-h-[min(320px,40vh)] overflow-y-auto border-border border-l pl-4 pt-1">
+				<div className="flex w-full flex-col gap-2">
 					{running.map((child) => {
 						const isActive = props.activeChildSessionId === child.id;
 						return (
-							<button
-								type="button"
+							<SubagentCard
 								key={child.id}
-								onClick={() => props.onSelect(child.id)}
-								aria-current={isActive ? 'true' : undefined}
-								className={cn(
-									'flex w-fit min-w-[220px] max-w-[min(320px,80vw)] shrink-0 flex-col gap-1 border border-primary/30 bg-background/80 px-15 py-2 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/50',
-									isActive
-										? 'border-primary bg-primary/10'
-										: 'hover:bg-primary/10',
-								)}
-							>
-								<div className="flex w-full items-center justify-between gap-15 text-caption">
-									{child.agentName !== undefined && (
-										<span className="truncate font-medium">
-											{child.agentName}
-										</span>
-									)}
-									<span className="shrink-0 opacity-80">
-										{formatElapsed(child.startedAt, now)}
-									</span>
-								</div>
-								<span className="w-full truncate text-sm">
-									{descriptionForChild(child)}
-								</span>
-								<span className="w-full truncate text-caption text-muted-foreground">
-									{stripChildTitlePrefix(
-										child.lastActivity,
-										child.title,
-										child.description,
-									)}
-								</span>
-							</button>
+								agentName={child.agentName}
+								description={descriptionForChild(child)}
+								status={child.status}
+								onSelect={() => props.onSelect(child.id)}
+								active={isActive}
+								className="job-timeline-subagent--dock w-full justify-start"
+							/>
 						);
 					})}
 				</div>
-			</div>
-		</aside>
+			</CollapsibleContent>
+		</Collapsible>
 	);
 }

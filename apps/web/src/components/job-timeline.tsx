@@ -17,6 +17,7 @@ import { JobTimelineMessage } from './job-timeline-message';
 import { JobTimelineReasoning } from './job-timeline-reasoning';
 import { JobTimelineSteer } from './job-timeline-steer';
 import { JobTimelineTool } from './job-timeline-tool';
+import { SubagentDock } from './subagent-dock';
 
 export type JobTimelineProps = {
 	parts: TimelinePart[];
@@ -27,6 +28,7 @@ export type JobTimelineProps = {
 	contentClassName?: string;
 	childSessions?: ReadonlyMap<string, ChildTimeline>;
 	currentChild?: ChildTimeline;
+	activeChildSessionId?: string;
 	onChildSelect?: (sessionId: string) => void;
 	isChildTimeline?: boolean;
 };
@@ -40,7 +42,15 @@ type ExplorationGroup = {
 	parts: ToolPart[];
 };
 
-type TimelineItem = TimelinePart | ExplorationGroup;
+type SubagentDockItem = {
+	kind: 'subagent-dock';
+	id: string;
+	sessions: ReadonlyMap<string, ChildTimeline>;
+	activeChildSessionId: string | undefined;
+	onSelect: (sessionId: string) => void;
+};
+
+type TimelineItem = TimelinePart | ExplorationGroup | SubagentDockItem;
 
 function collapseReasoningParts(parts: TimelinePart[]): TimelinePart[] {
 	const collapsed: TimelinePart[] = [];
@@ -216,43 +226,74 @@ export function JobTimeline(props: JobTimelineProps) {
 				: props.parts,
 		),
 	);
+	const runningChildren =
+		props.childSessions === undefined
+			? []
+			: Array.from(props.childSessions.values()).filter(
+					(child) => child.status === 'running',
+				);
+	const allItems: TimelineItem[] = [...allParts];
+	if (
+		runningChildren.length > 0 &&
+		props.childSessions !== undefined &&
+		props.onChildSelect !== undefined
+	) {
+		allItems.push({
+			kind: 'subagent-dock',
+			id: 'running-subagents',
+			sessions: props.childSessions,
+			activeChildSessionId: props.activeChildSessionId,
+			onSelect: props.onChildSelect,
+		});
+	}
 
-	function partAt(index: number): TimelineItem {
-		const part = allParts[index];
-		if (part === undefined) {
+	function itemAt(index: number): TimelineItem {
+		const item = allItems[index];
+		if (item === undefined) {
 			throw new Error(
-				`Timeline part at index ${index} is undefined (length: ${allParts.length})`,
+				`Timeline item at index ${index} is undefined (length: ${allItems.length})`,
 			);
 		}
-		return part;
+		return item;
 	}
 
 	return (
 		<Conversation
-			count={allParts.length}
-			getItemKey={(index) => partAt(index).id}
+			count={allItems.length}
+			getItemKey={(index) => itemAt(index).id}
 			estimateSize={() => 72}
 			className="min-h-0 flex-1"
 		>
-			{allParts.length === 0 ? (
+			{allItems.length === 0 ? (
 				<div className="flex items-center justify-center py-66 text-caption text-muted-foreground">
 					{props.isLoading ? 'Loading events…' : 'Waiting for events…'}
 				</div>
 			) : (
 				<ConversationContent header={props.header}>
-					{(virtualItem) => (
-						<div className={cn('px-33', props.contentClassName)}>
-							<div className="mx-auto max-w-[900px]">
-								{renderPart(
-									partAt(virtualItem.index),
-									props.cwd,
-									props.childSessions,
-									props.currentChild,
-									props.onChildSelect,
-								)}
+					{(virtualItem) => {
+						const item = itemAt(virtualItem.index);
+						return (
+							<div className={cn('px-33', props.contentClassName)}>
+								<div className="mx-auto max-w-[900px]">
+									{item.kind === 'subagent-dock' ? (
+										<SubagentDock
+											sessions={item.sessions}
+											activeChildSessionId={item.activeChildSessionId}
+											onSelect={item.onSelect}
+										/>
+									) : (
+										renderPart(
+											item,
+											props.cwd,
+											props.childSessions,
+											props.currentChild,
+											props.onChildSelect,
+										)
+									)}
+								</div>
 							</div>
-						</div>
-					)}
+						);
+					}}
 				</ConversationContent>
 			)}
 			<ConversationScrollButton />

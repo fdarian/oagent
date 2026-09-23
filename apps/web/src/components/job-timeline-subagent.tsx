@@ -50,6 +50,17 @@ export type JobTimelineSubagentProps = {
 	onSelect?: (sessionId: string) => void;
 };
 
+export type SubagentCardProps = {
+	agentName?: string;
+	fallbackLabel?: string;
+	description?: string;
+	status: ChildSessionStatus;
+	onSelect?: () => void;
+	active?: boolean;
+	className?: string;
+	ariaLabel?: string;
+};
+
 function statusFromPart(part: TimelineToolPart): ChildSessionStatus {
 	if (part.state === 'output-error') return 'failed';
 	if (part.state === 'output-available') return 'completed';
@@ -63,18 +74,20 @@ function capitalize(value: string): string {
 
 function agentLabel(
 	agentName: string | undefined,
-	part: TimelineToolPart,
+	fallbackLabel: string | undefined,
 ): string {
 	if (agentName !== undefined && agentName.length > 0) {
 		return capitalize(agentName);
 	}
-	const partTitle = part.title.toLowerCase();
-	if (
-		partTitle !== 'subagent' &&
-		partTitle !== 'task' &&
-		part.title.length > 0
-	) {
-		return capitalize(part.title);
+	if (fallbackLabel !== undefined) {
+		const fallbackTitle = fallbackLabel.toLowerCase();
+		if (
+			fallbackTitle !== 'subagent' &&
+			fallbackTitle !== 'task' &&
+			fallbackLabel.length > 0
+		) {
+			return capitalize(fallbackLabel);
+		}
 	}
 	return 'General';
 }
@@ -160,21 +173,21 @@ function SubagentProgressIndicator() {
 	);
 }
 
-export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
-	const details = getSubagentToolDetails(props.part);
-	const child = props.child;
-	const canOpen = child !== undefined && props.onSelect !== undefined;
-	const status =
-		child === undefined ? statusFromPart(props.part) : child.status;
-	const running = status === 'running';
-	const label = agentLabel(details.agentName, props.part);
-	const description = descriptionFor(details.description, child, props.part);
+export function SubagentCard(props: SubagentCardProps) {
+	const canOpen = props.onSelect !== undefined;
+	const running = props.status === 'running';
+	const label = agentLabel(props.agentName, props.fallbackLabel);
 	const accessibleDescription =
-		description === undefined ? label : `${label}: ${description}`;
+		props.description === undefined ? label : `${label}: ${props.description}`;
+	const ariaLabel =
+		props.ariaLabel !== undefined
+			? props.ariaLabel
+			: canOpen
+				? `Open subagent timeline: ${accessibleDescription}`
+				: `Subagent timeline is not available yet: ${accessibleDescription}`;
 
 	const handleClick = () => {
-		if (child === undefined || props.onSelect === undefined) return;
-		props.onSelect(child.id);
+		props.onSelect?.();
 	};
 
 	return (
@@ -183,13 +196,12 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 			disabled={!canOpen}
 			onClick={handleClick}
 			data-component="task-tool-card"
-			aria-label={
-				canOpen
-					? `Open subagent timeline: ${accessibleDescription}`
-					: `Subagent timeline is not available yet: ${accessibleDescription}`
-			}
+			data-active={props.active ? 'true' : undefined}
+			aria-current={props.active ? 'true' : undefined}
+			aria-label={ariaLabel}
 			className={cn(
-				'group/subagent job-timeline-subagent mb-4 -translate-x-3',
+				'group/subagent job-timeline-subagent',
+				props.className,
 				canOpen
 					? 'cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50'
 					: 'cursor-default',
@@ -198,7 +210,7 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 			<span
 				className="job-timeline-subagent__surface"
 				data-component="task-tool-surface"
-				style={{ color: agentColor(details.agentName) }}
+				style={{ color: agentColor(props.agentName) }}
 			>
 				{running ? (
 					<span data-component="task-tool-spinner">
@@ -217,12 +229,12 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 					>
 						{label}
 					</span>
-					{description !== undefined && (
+					{props.description !== undefined && (
 						<span
 							className="job-timeline-subagent__description"
 							data-slot="basic-tool-tool-subtitle"
 						>
-							{description}
+							{props.description}
 						</span>
 					)}
 				</span>
@@ -237,5 +249,30 @@ export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
 				</span>
 			)}
 		</button>
+	);
+}
+
+export function JobTimelineSubagent(props: JobTimelineSubagentProps) {
+	const details = getSubagentToolDetails(props.part);
+	const child = props.child;
+	const canOpen = child !== undefined && props.onSelect !== undefined;
+	const status =
+		child === undefined ? statusFromPart(props.part) : child.status;
+	const description = descriptionFor(details.description, child, props.part);
+
+	const handleClick = () => {
+		if (!canOpen || child === undefined || props.onSelect === undefined) return;
+		props.onSelect(child.id);
+	};
+
+	return (
+		<SubagentCard
+			agentName={details.agentName}
+			fallbackLabel={props.part.title}
+			description={description}
+			status={status}
+			onSelect={canOpen ? handleClick : undefined}
+			className="mb-4 -translate-x-3"
+		/>
 	);
 }

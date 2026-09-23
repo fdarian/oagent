@@ -5,7 +5,6 @@ import type { TimelinePart } from '@/lib/event-adapter';
 import { JobHeader } from './job-header';
 import { JobStatusStrip } from './job-status-strip';
 import { JobTimeline } from './job-timeline';
-import { SubagentDock } from './subagent-dock';
 import { createSubagentFixture } from './subagent-fixtures';
 import { SubagentHeader } from './subagent-header';
 
@@ -562,6 +561,7 @@ function InteractiveSubagentTimeline() {
 					cwd="/Users/dev/project"
 					childSessions={interactiveFixture.display.children}
 					currentChild={activeChild}
+					activeChildSessionId={activeChildSessionId}
 					onChildSelect={handleChildSelect}
 					isChildTimeline={activeChild !== undefined}
 					header={
@@ -587,11 +587,6 @@ function InteractiveSubagentTimeline() {
 							/>
 						)
 					}
-				/>
-				<SubagentDock
-					sessions={interactiveFixture.display.children}
-					activeChildSessionId={activeChildSessionId}
-					onSelect={handleChildSelect}
 				/>
 			</div>
 		</div>
