@@ -135,7 +135,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - `oagent serve` — run the HTTP server in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
 - **jobs**
   - `oagent jobs list` — list recent jobs. Flags: `--engine-url`, `--limit` (default 10), `--format` (`toon`|`json`).
-  - `oagent jobs wait <jobId>` — block until a job reaches a terminal state. Flags: `--engine-url`, `--timeout-ms` (default 3h).
+  - `oagent jobs wait <jobId>` — block until a job reaches a terminal state and print its markdown result. Flags: `--engine-url`, `--timeout-ms` (default 3h), `--json` (print the JSON result).
 - **claude**
   - `oagent claude mcp serve` — run the Claude Code channel MCP that bridges to a running engine. Flags: `--engine-url`, `--mcp-name`.
 
@@ -157,51 +157,68 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 
 #### `start`
 
-Launches or continues an agent. By default it blocks (up to 30 minutes) and returns the final result directly.
+Starts a new agent session or forks the state of an existing session/job. By default it waits (up to 30 minutes) for the final response.
 
 Input:
 - `prompt: string` — the task to send
-- `cwd: string` — **required** absolute path to the directory the agent should operate in; typically the parent agent's project root
+- `cwd?: string` — absolute path to the directory the agent should operate in; required unless `forkId` is set
 - `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`, `claude`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`, `claude:<modelId>`. If the user hasn't specified a model, ask them which model and backend to use.
 - `agent_type?: string` — configured agent type to use for the selected backend. The tool description lists the currently configured names. Unknown names and names without a mapping for the selected backend return distinct errors.
-- `sessionId?: string` — pass the `sessionId` returned from a prior `done` result to continue that conversation.
-- `background?: boolean` — default `false` (block until finished, up to 30 minutes). If `true`, return immediately with `{ status: "running", jobId }`.
+- `forkId?: string` — session ID or job ID whose state should be forked. A session ID or latest job forks the full current state. An earlier job forks from its checkpoint and is supported only for OpenCode jobs with a recorded checkpoint.
+- `background?: boolean` — default `false`. If `true`, return a running handle immediately.
+- `worktree?: boolean` — create a worktree when worktrees are enabled in oagent settings.
 
-Output (discriminated union):
-- `{ status: "done", text, sessionId, stopReason }` — final aggregated assistant text plus the `sessionId` to continue the conversation
-- `{ status: "error", message }`
-- `{ status: "cancelled" }`
-- `{ status: "running", jobId }` — either `background: true` was passed, or the 30-minute blocking window elapsed; use `result` (or `oagent jobs wait <jobId>` as a background shell command) to pick it back up
+Output is one markdown text block, for example:
 
-#### `result`
+```text
+Session ID: <sessionId>
+Job ID: <jobId>
+Status: done
+---
+<final assistant response>
+```
 
-Fetches the result of a job, blocking up to `timeoutMs` if it's still running. This is the fallback for jobs `start` didn't finish inline (e.g. `background: true`, or the blocking window elapsed).
+Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `read` with the session ID or run `oagent jobs wait <jobId>` in the background. Errors include the error message after `---`.
+
+Every MCP result is returned as a single text content block; tools do not set `structuredContent`.
+
+#### `send_message`
+
+Continues a session. If a turn is running, the message is queued for delivery at the next step boundary. If the session is idle, a new turn starts; foreground calls wait for its response and `background: true` returns a running handle.
 
 Input:
-- `jobId: string`
-- `timeoutMs?: number` — default 50000, capped at 55000 to stay under Claude Code's tool timeout
+- `sessionId: string`
+- `prompt: string`
+- `background?: boolean` — used only when starting a new turn
 
-Output: same discriminated union as `start`.
+An idle turn returns the same markdown shape as `start`. A steered turn returns `Status: running` and says the message is queued.
+
+#### `read`
+
+Reads the latest turn in a session, waiting briefly if it is still running.
+
+Input:
+- `sessionId: string`
+- `timeoutMs?: number` — default 50000, capped at 55000
+
+Output: the same markdown result format as `start`. Call again if the latest turn is still running.
 
 #### `cancel`
 
-Cancels a running job. Interrupts the underlying agent session and marks the job `cancelled`. Cancelling an already-terminal job is a no-op.
+Cancels a running turn in a session. Cancelling an idle session is a no-op.
 
 Input:
-- `jobId: string`
+- `sessionId: string`
 
-Output:
-- `{ ok: true }` — job was found (running or already terminal)
-- `{ ok: false }` — no job with that `jobId` exists
+Output: markdown text with the session and cancellation status.
 
 #### `list`
 
-Lists all agent jobs spawned by the current MCP session — id, status, prompt, and creation time. Only available in `/mcp` HTTP mode, where a session id is tracked (not available under `stdio`).
+Lists sessions started by the current MCP transport session, including each session's latest job ID, status, prompt, and creation time. Only available in `/mcp` HTTP mode, where the transport session ID is tracked; it is not available under `stdio`.
 
 ## Limits
 
 The following are intentionally not supported:
-- Worktree isolation — jobs run against the given `cwd` directly; there's no isolated worktree per job (background detach itself is supported via `start`'s `background` param)
 - Streaming partial output — you only see the aggregated text on `done`
 - No auth — the HTTP daemon binds to `127.0.0.1` only; no token is required or checked
 

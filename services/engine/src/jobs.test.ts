@@ -1,22 +1,35 @@
-import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
+import { eq } from 'drizzle-orm';
 import { Effect } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
-import { runMigrations } from './db/migrate.ts';
 import * as schema from './db/schema.ts';
 import type { Harness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Jobs } from './jobs.ts';
 import { Settings } from './settings.ts';
+import { createTestDatabase } from './test-database.ts';
 import { Worktrees } from './worktree.ts';
 
 function createDatabase() {
-	const sqlite = new Database(':memory:');
-	const db = drizzle(sqlite, { schema });
-	Effect.runSync(runMigrations(db));
-	return { sqlite, db };
+	return createTestDatabase();
+}
+
+function insertSession(
+	database: ReturnType<typeof createDatabase>,
+	input: { uuid: string; cwd: string; backend?: string },
+) {
+	const session = database.db
+		.insert(schema.sessions)
+		.values({
+			uuid: input.uuid,
+			backend: input.backend ?? 'opencode',
+			cwd: input.cwd,
+		})
+		.returning()
+		.get();
+	if (session === undefined) throw new Error('Expected inserted session');
+	return session;
 }
 
 function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
@@ -73,11 +86,15 @@ describe('job event persistence', () => {
 				Effect.provideService(Worktrees, {} as Worktrees['Service']),
 			),
 		);
+		const session = insertSession(database, {
+			uuid: 'session-events',
+			cwd: '/tmp',
+		});
 
 		const started = await Effect.runPromise(
 			jobs.start({
+				session,
 				prompt: 'run',
-				cwd: '/tmp',
 				model: 'opencode:test',
 			}),
 		);
@@ -128,21 +145,30 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			} as Worktrees['Service']),
 		),
 	);
+	const session = insertSession(database, {
+		uuid: 'session-worktree',
+		cwd: '/repo/apps/web',
+	});
 	const first = await Effect.runPromise(
 		jobs.start({
+			session,
 			prompt: 'first',
-			cwd: '/repo/apps/web',
 			model: 'opencode:test',
 			worktree: true,
 		}),
 	);
 	await Effect.runPromise(jobs.wait({ jobId: first.jobId, timeoutMs: 1_000 }));
+	const resumedSession = database.db
+		.select()
+		.from(schema.sessions)
+		.where(eq(schema.sessions.uuid, 'session-worktree'))
+		.get();
+	if (resumedSession === undefined) throw new Error('Expected resumed session');
 	const second = await Effect.runPromise(
 		jobs.start({
+			session: resumedSession,
 			prompt: 'continue',
-			cwd: '/other',
 			model: 'opencode:test',
-			sessionId: 'ses_worktree',
 			worktree: true,
 		}),
 	);

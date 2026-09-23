@@ -17,7 +17,7 @@ function runStdio(version: Version) {
 				instructions: engine.mcp.getInstructions(),
 			},
 		);
-		engine.mcp.registerTools(server, services, undefined);
+		engine.mcp.registerTools(server, services);
 
 		yield* Effect.tryPromise({
 			try: () => server.connect(new StdioServerTransport()),
