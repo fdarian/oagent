@@ -4,9 +4,9 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import {
 	applyEvent,
 	createInitialState,
-	toDisplayState,
 	type TimelinePart,
 	type TimelineToolPart,
+	toDisplayState,
 } from '@/lib/event-adapter';
 import { JobTimelineSubagent } from './job-timeline-subagent';
 
