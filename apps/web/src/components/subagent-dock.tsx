@@ -11,18 +11,31 @@ import { SubagentCard } from './job-timeline-subagent';
 
 export type SubagentDockProps = {
 	sessions: ReadonlyMap<string, ChildTimeline>;
+	scopeSessionId?: string;
 	activeChildSessionId: string | undefined;
 	onSelect: (sessionId: string) => void;
 	className?: string;
 };
+
+export function getRunningSubagentSessions(
+	sessions: ReadonlyMap<string, ChildTimeline>,
+	scopeSessionId: string | undefined,
+): ChildTimeline[] {
+	return Array.from(sessions.values()).filter(
+		(child) =>
+			child.status === 'running' &&
+			(scopeSessionId === undefined || child.parentId === scopeSessionId),
+	);
+}
 
 function descriptionForChild(child: ChildTimeline): string {
 	return child.description === undefined ? child.title : child.description;
 }
 
 export function SubagentDock(props: SubagentDockProps) {
-	const running = Array.from(props.sessions.values()).filter(
-		(child) => child.status === 'running',
+	const running = getRunningSubagentSessions(
+		props.sessions,
+		props.scopeSessionId,
 	);
 	if (running.length === 0) return null;
 
