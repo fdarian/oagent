@@ -5,6 +5,12 @@ import { ChevronRightIcon, Loader2Icon, WrenchIcon } from 'lucide-react';
 import { memo, useMemo } from 'react';
 import { CodeBlock } from '@/components/ai-elements/code-block';
 import { Tool, ToolContent, ToolHeader } from '@/components/ai-elements/tool';
+import { JobTimelineCodeMode } from '@/components/job-timeline-code-mode';
+import {
+	JobTimelineToolContentBlock,
+	toolContentKey,
+} from '@/components/job-timeline-tool-content';
+import { readToolStringProp } from '@/components/job-timeline-tool-helpers';
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -30,20 +36,29 @@ export type JobTimelineToolProps = {
 	onChildSelect?: (sessionId: string) => void;
 };
 
-function contentKey(content: ToolCallContent, fallbackIndex: number): string {
-	if (content.type === 'diff') return `diff-${content.path}`;
-	if (content.type === 'terminal') return `terminal-${content.terminalId}`;
-	return `content-${fallbackIndex}`;
-}
-
 function capitalize(s: string): string {
 	return s.length === 0 ? s : s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-function readStringProp(value: unknown, key: string): string | undefined {
-	if (typeof value !== 'object' || value === null) return undefined;
-	const prop = (value as Record<string, unknown>)[key];
-	return typeof prop === 'string' ? prop : undefined;
+type CodeModeToolPart = ToolPart & { rawInput: { code: string } };
+
+function isCodeModeExecute(part: ToolPart): part is CodeModeToolPart {
+	// ACP maps the unrecognized "execute" tool name to "other", so its identity
+	// must stay separate from the shell kind.
+	const isExecuteIdentity =
+		part.toolName.trim().toLowerCase() === 'execute' ||
+		part.title.trim().toLowerCase() === 'execute';
+	return (
+		isExecuteIdentity && readToolStringProp(part.rawInput, 'code') !== undefined
+	);
+}
+
+function codeModeToolNames(code: string): string | undefined {
+	const calls = code.matchAll(
+		/\btools\s*\.\s*([A-Za-z_$][\w$]*)\s*(?:\.\s*[A-Za-z_$][\w$]*|\[\s*(?:"[^"]+"|'[^']+')\s*\])\s*\(/g,
+	);
+	const names = [...new Set(Array.from(calls, (call) => call[1]))];
+	return names.length > 0 ? names.join(', ') : undefined;
 }
 
 function extractText(content: ToolCallContent[]): string {
@@ -55,11 +70,11 @@ function extractText(content: ToolCallContent[]): string {
 }
 
 function extractRawOutputText(rawOutput: unknown): string {
-	const formattedOutput = readStringProp(rawOutput, 'formatted_output');
+	const formattedOutput = readToolStringProp(rawOutput, 'formatted_output');
 	if (formattedOutput !== undefined) return formattedOutput;
-	const aggregatedOutput = readStringProp(rawOutput, 'aggregated_output');
+	const aggregatedOutput = readToolStringProp(rawOutput, 'aggregated_output');
 	if (aggregatedOutput !== undefined) return aggregatedOutput;
-	const stdout = readStringProp(rawOutput, 'stdout');
+	const stdout = readToolStringProp(rawOutput, 'stdout');
 	if (stdout !== undefined) return stdout;
 	return '';
 }
@@ -68,6 +83,15 @@ function extractEffectiveOutput(part: ToolPart): string {
 	const text = extractText(part.content);
 	if (text.length > 0) return text;
 	return extractRawOutputText(part.rawOutput);
+}
+
+function extractCodeModeOutput(part: ToolPart): string | undefined {
+	const content = extractEffectiveOutput(part);
+	if (content.length > 0) return content;
+	return (
+		readToolStringProp(part.rawOutput, 'output') ??
+		readToolStringProp(part.rawOutput, 'error')
+	);
 }
 
 function relativePath(absPath: string, cwd: string): string {
@@ -81,17 +105,17 @@ function shellDescriptor(part: ToolPart): string {
 	const meaningfulTitle =
 		title.length > 0 && title.toLowerCase() !== 'bash' ? title : undefined;
 	const description =
-		meaningfulTitle ?? readStringProp(part.rawInput, 'description');
+		meaningfulTitle ?? readToolStringProp(part.rawInput, 'description');
 	if (description !== undefined && description.length > 0) return description;
-	const command = readStringProp(part.rawInput, 'command');
+	const command = readToolStringProp(part.rawInput, 'command');
 	if (command !== undefined && command.length > 0) return command;
 	return 'Shell command';
 }
 
 function readDescriptor(part: ToolPart, cwd: string): string | undefined {
 	const filePath =
-		readStringProp(part.rawInput, 'filePath') ??
-		readStringProp(part.rawInput, 'target_file') ??
+		readToolStringProp(part.rawInput, 'filePath') ??
+		readToolStringProp(part.rawInput, 'target_file') ??
 		part.locations[0]?.path;
 	if (filePath !== undefined && filePath.length > 0) {
 		return relativePath(filePath, cwd);
@@ -193,9 +217,28 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 		);
 	}
 
+	if (isCodeModeExecute(part)) {
+		const output = extractCodeModeOutput(part);
+		return (
+			<ToolRow
+				label="Execute"
+				descriptor={codeModeToolNames(part.rawInput.code)}
+				running={isRunning}
+				error={isError}
+			>
+				<JobTimelineCodeMode
+					code={part.rawInput.code}
+					content={part.content}
+					output={output}
+					rawOutput={part.rawOutput}
+				/>
+			</ToolRow>
+		);
+	}
+
 	if (part.toolKind === 'execute') {
 		const descriptor = shellDescriptor(part);
-		const command = readStringProp(part.rawInput, 'command');
+		const command = readToolStringProp(part.rawInput, 'command');
 		const output = extractEffectiveOutput(part);
 		const children =
 			command !== undefined || output.length > 0 ? (
@@ -261,7 +304,7 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 		return <SkillRow part={part} running={isRunning} error={isError} />;
 	}
 
-	if (readStringProp(part.rawInput, 'variant') === 'ListDir') {
+	if (readToolStringProp(part.rawInput, 'variant') === 'ListDir') {
 		return <ListRow part={part} running={isRunning} error={isError} />;
 	}
 
@@ -276,7 +319,10 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 			<ToolContent>
 				{part.content.length > 0 ? (
 					part.content.map((c, i) => (
-						<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+						<JobTimelineToolContentBlock
+							key={toolContentKey(c, i)}
+							content={c}
+						/>
 					))
 				) : (
 					<GenericOutput output={extractEffectiveOutput(part)} />
@@ -290,16 +336,16 @@ export const JobTimelineTool = memo(function JobTimelineTool(
 });
 
 function isWrite(part: ToolPart): boolean {
-	const variant = readStringProp(part.rawInput, 'variant');
+	const variant = readToolStringProp(part.rawInput, 'variant');
 	if (variant === 'Write') return true;
 
 	const diffEntry = part.content.find((c) => c.type === 'diff');
 
 	// opencode: has content field, no oldString/old_string, no diff
 	if (
-		readStringProp(part.rawInput, 'content') !== undefined &&
-		readStringProp(part.rawInput, 'oldString') === undefined &&
-		readStringProp(part.rawInput, 'old_string') === undefined &&
+		readToolStringProp(part.rawInput, 'content') !== undefined &&
+		readToolStringProp(part.rawInput, 'oldString') === undefined &&
+		readToolStringProp(part.rawInput, 'old_string') === undefined &&
 		diffEntry === undefined
 	) {
 		return true;
@@ -315,7 +361,7 @@ function isWrite(part: ToolPart): boolean {
 }
 
 function writeBody(part: ToolPart): string | undefined {
-	const contentProp = readStringProp(part.rawInput, 'content');
+	const contentProp = readToolStringProp(part.rawInput, 'content');
 	if (contentProp !== undefined) return contentProp;
 
 	const diffEntry = part.content.find((c) => c.type === 'diff');
@@ -332,8 +378,8 @@ function writeBody(part: ToolPart): string | undefined {
 
 function writePath(part: ToolPart): string | undefined {
 	return (
-		readStringProp(part.rawInput, 'filePath') ??
-		readStringProp(part.rawInput, 'file_path') ??
+		readToolStringProp(part.rawInput, 'filePath') ??
+		readToolStringProp(part.rawInput, 'file_path') ??
 		part.content.find((c) => c.type === 'diff')?.path ??
 		part.locations[0]?.path
 	);
@@ -410,9 +456,9 @@ function DeleteRow(props: {
 	const rawPath =
 		diffEntry?.path ??
 		part.locations[0]?.path ??
-		readStringProp(part.rawInput, 'filePath') ??
-		readStringProp(part.rawInput, 'path') ??
-		readStringProp(part.rawInput, 'file_path');
+		readToolStringProp(part.rawInput, 'filePath') ??
+		readToolStringProp(part.rawInput, 'path') ??
+		readToolStringProp(part.rawInput, 'file_path');
 
 	const descriptor =
 		rawPath !== undefined && rawPath.length > 0
@@ -433,7 +479,7 @@ function ListRow(props: { part: ToolPart; running: boolean; error: boolean }) {
 	const part = props.part;
 
 	const descriptor =
-		readStringProp(part.rawInput, 'target_directory') ??
+		readToolStringProp(part.rawInput, 'target_directory') ??
 		part.locations[0]?.path ??
 		'.';
 
@@ -469,9 +515,9 @@ function EditRow(props: { part: ToolPart; cwd: string }) {
 	if (diffEntry === undefined || diffEntry.type !== 'diff') {
 		const rawPath =
 			part.locations[0]?.path ??
-			readStringProp(part.rawInput, 'filePath') ??
-			readStringProp(part.rawInput, 'path');
-		const patchText = readStringProp(part.rawInput, 'patchText');
+			readToolStringProp(part.rawInput, 'filePath') ??
+			readToolStringProp(part.rawInput, 'path');
+		const patchText = readToolStringProp(part.rawInput, 'patchText');
 		const descriptor =
 			rawPath !== undefined && rawPath.length > 0
 				? relativePath(rawPath, props.cwd)
@@ -577,9 +623,9 @@ function SearchRow(props: {
 	const label = /glob/i.test(part.title) ? 'Glob' : 'Grep';
 
 	const pattern =
-		readStringProp(part.rawInput, 'pattern') ??
-		readStringProp(part.rawInput, 'glob_pattern');
-	const include = readStringProp(part.rawInput, 'include');
+		readToolStringProp(part.rawInput, 'pattern') ??
+		readToolStringProp(part.rawInput, 'glob_pattern');
+	const include = readToolStringProp(part.rawInput, 'include');
 
 	let descriptorText = '';
 	if (pattern !== undefined) {
@@ -627,14 +673,14 @@ function SearchRow(props: {
 function SkillRow(props: { part: ToolPart; running: boolean; error: boolean }) {
 	const part = props.part;
 	const skillName =
-		readStringProp(part.rawInput, 'id') ??
-		readStringProp(part.rawInput, 'name');
+		readToolStringProp(part.rawInput, 'id') ??
+		readToolStringProp(part.rawInput, 'name');
 	const descriptor = skillName === undefined ? undefined : `${skillName}`;
 	const output = extractEffectiveOutput(part);
 	const children =
 		part.content.length > 0 ? (
 			part.content.map((c, i) => (
-				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+				<JobTimelineToolContentBlock key={toolContentKey(c, i)} content={c} />
 			))
 		) : output.length > 0 ? (
 			<GenericOutput output={output} />
@@ -685,7 +731,7 @@ function ReadOutput(props: { part: ToolPart; output: string }) {
 	return (
 		<>
 			{props.part.content.map((c, i) => (
-				<ToolCallContentBlock key={contentKey(c, i)} content={c} />
+				<JobTimelineToolContentBlock key={toolContentKey(c, i)} content={c} />
 			))}
 		</>
 	);
@@ -696,48 +742,6 @@ function GenericOutput(props: { output: string }) {
 	return (
 		<CodeBlock code={props.output} language={detectLanguage(props.output)} />
 	);
-}
-
-function ToolCallContentBlock(props: { content: ToolCallContent }) {
-	const content = props.content;
-	if (content.type === 'content') {
-		if (content.content.type === 'text') {
-			return (
-				<CodeBlock
-					code={content.content.text}
-					language={detectLanguage(content.content.text)}
-				/>
-			);
-		}
-		return (
-			<div className="text-xs text-muted-foreground">
-				[{content.content.type}]
-			</div>
-		);
-	}
-	if (content.type === 'diff') {
-		return (
-			<div className="space-y-1">
-				<div className="text-xs font-mono text-muted-foreground">
-					{content.path}
-				</div>
-				{content.oldText !== undefined && content.oldText !== null && (
-					<pre className="text-xs text-destructive whitespace-pre-wrap">
-						{content.oldText}
-					</pre>
-				)}
-				<pre className="text-xs whitespace-pre-wrap">{content.newText}</pre>
-			</div>
-		);
-	}
-	if (content.type === 'terminal') {
-		return (
-			<div className="text-xs text-muted-foreground">
-				[terminal {content.terminalId}]
-			</div>
-		);
-	}
-	return null;
 }
 
 function ToolLocations(props: { locations: ToolCallLocation[] }) {
