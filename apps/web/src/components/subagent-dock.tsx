@@ -56,7 +56,7 @@ export function SubagentDock(props: SubagentDockProps) {
 					<ChevronRightIcon
 						className={cn(
 							'size-3.5 shrink-0 opacity-0 transition-all group-hover:opacity-100',
-							'group-data-[state=open]:rotate-90',
+							'group-data-open:rotate-90',
 						)}
 					/>
 				</Button>
