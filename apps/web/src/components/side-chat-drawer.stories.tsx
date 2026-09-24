@@ -125,7 +125,7 @@ function ExistingChatsPreview(props: { initialSideChats: SideChat[] }) {
 			<SideChatDrawer
 				open={open}
 				onOpenChange={setOpen}
-				onCloseAutoFocus={() => reopenButtonRef.current?.focus()}
+				finalFocus={() => reopenButtonRef.current?.focus()}
 				cwd="/Users/dev/project"
 				sideChats={sideChats}
 				selectedSideChatId={selectedSideChatId}

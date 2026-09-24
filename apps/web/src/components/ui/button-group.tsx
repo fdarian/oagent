@@ -42,23 +42,19 @@ function ButtonGroup(
 
 type ButtonGroupTextProps = React.ComponentProps<'div'> & {
 	render?: React.ReactElement;
-	asChild?: boolean;
 };
 
 function ButtonGroupText(props: ButtonGroupTextProps) {
 	const renderProps = { ...props };
 	delete renderProps.className;
 	delete renderProps.render;
-	delete renderProps.asChild;
 
 	return useRender({
 		defaultTagName: 'div',
-		render: props.asChild
-			? (props.children as React.ReactElement)
-			: props.render,
+		render: props.render,
 		props: {
 			...renderProps,
-			children: props.asChild ? undefined : props.children,
+			children: props.children,
 			className: cn(
 				'flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4',
 				props.className,

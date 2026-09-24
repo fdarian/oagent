@@ -2,6 +2,7 @@
 
 import { ChevronDownIcon, SearchIcon } from 'lucide-react';
 import type { ComponentProps } from 'react';
+import { isValidElement } from 'react';
 import {
 	Collapsible,
 	CollapsibleContent,
@@ -54,21 +55,25 @@ export const TaskTrigger = ({
 	className,
 	title,
 	...props
-}: TaskTriggerProps) => (
-	<CollapsibleTrigger
-		className={cn('group', className)}
-		{...props}
-		render={
-			children ?? (
-				<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
-					<SearchIcon className="size-4" />
-					<p className="text-sm">{title}</p>
-					<ChevronDownIcon className="size-4 transition-transform group-data-open:rotate-180" />
-				</div>
-			)
-		}
-	/>
-);
+}: TaskTriggerProps) => {
+	const trigger = children ?? (
+		<div className="flex w-full cursor-pointer items-center gap-2 text-muted-foreground text-sm transition-colors hover:text-foreground">
+			<SearchIcon className="size-4" />
+			<p className="text-sm">{title}</p>
+			<ChevronDownIcon className="size-4 transition-transform group-data-open:rotate-180" />
+		</div>
+	);
+	if (!isValidElement(trigger))
+		throw new Error('TaskTrigger requires one element');
+
+	return (
+		<CollapsibleTrigger
+			className={cn('group', className)}
+			{...props}
+			render={trigger}
+		/>
+	);
+};
 
 export type TaskContentProps = ComponentProps<typeof CollapsibleContent>;
 

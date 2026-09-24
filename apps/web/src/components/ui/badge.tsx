@@ -29,24 +29,20 @@ const badgeVariants = cva(
 type BadgeProps = React.ComponentProps<'span'> &
 	VariantProps<typeof badgeVariants> & {
 		render?: React.ReactElement;
-		asChild?: boolean;
 	};
 
 function Badge(props: BadgeProps) {
 	const renderProps = { ...props };
 	delete renderProps.className;
 	delete renderProps.render;
-	delete renderProps.asChild;
 	delete renderProps.variant;
 
 	return useRender({
 		defaultTagName: 'span',
-		render: props.asChild
-			? (props.children as React.ReactElement)
-			: props.render,
+		render: props.render,
 		props: {
 			...renderProps,
-			children: props.asChild ? undefined : props.children,
+			children: props.children,
 			'data-slot': 'badge',
 			'data-variant': props.variant ?? 'default',
 			className: cn(badgeVariants({ variant: props.variant }), props.className),

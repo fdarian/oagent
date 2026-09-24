@@ -39,44 +39,30 @@ const buttonVariants = cva(
 	},
 );
 
-function Button(
-	props: ButtonPrimitive.Props &
-		VariantProps<typeof buttonVariants> & { asChild?: boolean },
-) {
+type ButtonProps = Omit<ButtonPrimitive.Props, 'render'> &
+	VariantProps<typeof buttonVariants> & {
+		render?: React.ReactElement;
+	};
+
+function Button(props: ButtonProps) {
 	const variant = props.variant ?? 'default';
 	const size = props.size ?? 'default';
 	const buttonProps = { ...props };
 	delete buttonProps.variant;
 	delete buttonProps.size;
-	delete buttonProps.asChild;
-	if (props.asChild && !React.isValidElement(props.children)) {
-		throw new Error('asChild requires one React element');
-	}
-
 	const button = useRender({
-		enabled: props.asChild === true,
 		defaultTagName: 'button',
-		render: props.asChild ? (props.children as React.ReactElement) : undefined,
+		render: props.render,
 		props: {
 			...buttonProps,
-			children: props.asChild ? undefined : props.children,
-			type: props.asChild ? props.type : (props.type ?? 'button'),
+			type: props.type ?? 'button',
 			'data-slot': 'button',
 			'data-variant': variant,
 			'data-size': size,
 			className: cn(buttonVariants({ variant, size }), props.className),
 		},
 	});
-	if (button !== null) return button;
-	return (
-		<ButtonPrimitive
-			{...buttonProps}
-			data-slot="button"
-			data-variant={variant}
-			data-size={size}
-			className={cn(buttonVariants({ variant, size }), props.className)}
-		/>
-	);
+	return button;
 }
 
 export { Button, buttonVariants };

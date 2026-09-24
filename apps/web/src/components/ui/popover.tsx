@@ -1,21 +1,15 @@
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import type * as React from 'react';
 import { cn } from '@/lib/utils';
-import { type AsChild, asChildProps } from './as-child';
 
 function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
 	return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
 function PopoverTrigger(
-	props: React.ComponentProps<typeof PopoverPrimitive.Trigger> & AsChild,
+	props: React.ComponentProps<typeof PopoverPrimitive.Trigger>,
 ) {
-	return (
-		<PopoverPrimitive.Trigger
-			data-slot="popover-trigger"
-			{...asChildProps(props)}
-		/>
-	);
+	return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
 type PopoverContentProps = React.ComponentProps<typeof PopoverPrimitive.Popup> &

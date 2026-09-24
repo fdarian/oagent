@@ -4,7 +4,6 @@ import { Menu as DropdownMenuPrimitive } from '@base-ui/react/menu';
 import { CheckIcon, ChevronRightIcon, CircleIcon } from 'lucide-react';
 import type * as React from 'react';
 import { cn } from '@/lib/utils';
-import { type AsChild, asChildProps } from './as-child';
 
 function DropdownMenu(
 	props: React.ComponentProps<typeof DropdownMenuPrimitive.Root>,
@@ -21,12 +20,12 @@ function DropdownMenuPortal(
 }
 
 function DropdownMenuTrigger(
-	props: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger> & AsChild,
+	props: React.ComponentProps<typeof DropdownMenuPrimitive.Trigger>,
 ) {
 	return (
 		<DropdownMenuPrimitive.Trigger
 			data-slot="dropdown-menu-trigger"
-			{...asChildProps(props)}
+			{...props}
 		/>
 	);
 }
@@ -80,11 +79,10 @@ function DropdownMenuGroup(
 
 type DropdownMenuItemProps = React.ComponentProps<
 	typeof DropdownMenuPrimitive.Item
-> &
-	AsChild & {
-		inset?: boolean;
-		variant?: 'default' | 'destructive';
-	};
+> & {
+	inset?: boolean;
+	variant?: 'default' | 'destructive';
+};
 
 function DropdownMenuItem(props: DropdownMenuItemProps) {
 	const itemProps = { ...props };
@@ -93,7 +91,7 @@ function DropdownMenuItem(props: DropdownMenuItemProps) {
 
 	return (
 		<DropdownMenuPrimitive.Item
-			{...asChildProps(itemProps)}
+			{...itemProps}
 			data-slot="dropdown-menu-item"
 			data-inset={props.inset}
 			data-variant={props.variant ?? 'default'}

@@ -442,7 +442,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 				key={jobId}
 				open={drawerOpen}
 				onOpenChange={handleDrawerOpenChange}
-				onCloseAutoFocus={handleDrawerCloseAutoFocus}
+				finalFocus={handleDrawerCloseAutoFocus}
 				cwd={selectedJob.cwd}
 				sideChats={sideChats}
 				selectedSideChatId={search.sideChat}

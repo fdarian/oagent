@@ -9,7 +9,7 @@ import { ActionRow } from './ui/action-row';
 export type SideChatDrawerProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onCloseAutoFocus?: () => void;
+	finalFocus?: React.ComponentProps<typeof DialogPrimitive.Popup>['finalFocus'];
 	cwd: string;
 	sideChats: SideChat[] | undefined;
 	selectedSideChatId?: string;
@@ -95,14 +95,7 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 			<DialogPrimitive.Portal>
 				<DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/35 data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0" />
 				<DialogPrimitive.Popup
-					finalFocus={
-						props.onCloseAutoFocus === undefined
-							? undefined
-							: () => {
-									props.onCloseAutoFocus?.();
-									return false;
-								}
-					}
+					finalFocus={props.finalFocus}
 					className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-full max-w-[min(44rem,100vw)] flex-col overflow-hidden border-l border-border bg-background shadow-xl outline-none data-closed:animate-out data-closed:slide-out-to-right data-open:animate-in data-open:slide-in-from-right"
 				>
 					<div className="flex shrink-0 items-center justify-between gap-10 border-b border-border px-22 py-15">

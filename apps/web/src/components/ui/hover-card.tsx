@@ -1,7 +1,6 @@
 import { PreviewCard as HoverCardPrimitive } from '@base-ui/react/preview-card';
 import * as React from 'react';
 import { cn } from '@/lib/utils';
-import { type AsChild, asChildProps } from './as-child';
 
 const HoverCardDelay = React.createContext<{
 	openDelay?: number;
@@ -27,7 +26,7 @@ function HoverCard(
 }
 
 function HoverCardTrigger(
-	props: React.ComponentProps<typeof HoverCardPrimitive.Trigger> & AsChild,
+	props: React.ComponentProps<typeof HoverCardPrimitive.Trigger>,
 ) {
 	const delay = React.useContext(HoverCardDelay);
 	return (
@@ -35,7 +34,7 @@ function HoverCardTrigger(
 			data-slot="hover-card-trigger"
 			delay={delay.openDelay}
 			closeDelay={delay.closeDelay}
-			{...asChildProps(props)}
+			{...props}
 		/>
 	);
 }

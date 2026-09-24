@@ -170,7 +170,7 @@ function ToolRow(props: ToolRowProps) {
 				{props.running && (
 					<Loader2Icon className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
 				)}
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover/tool-row:opacity-100 group-data-[state=open]/tool-row:rotate-90 group-data-[state=open]/tool-row:opacity-100" />
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover/tool-row:opacity-100 group-data-open/tool-row:rotate-90 group-data-open/tool-row:opacity-100" />
 			</CollapsibleTrigger>
 			<CollapsibleContent className="pt-2">{props.children}</CollapsibleContent>
 		</Collapsible>
