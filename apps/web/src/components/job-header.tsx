@@ -171,24 +171,26 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 
 	return (
 		<Popover open={open} onOpenChange={handleOpenChange}>
-			<PopoverTrigger asChild>
-				<Badge
-					asChild
-					variant="outline"
-					className="cursor-help rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground hover:bg-secondary hover:text-foreground"
-				>
-					<button
-						type="button"
-						aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
-						onPointerEnter={handleOpen}
-						onPointerLeave={handleClose}
-						onFocus={handleOpen}
-						onBlur={handleClose}
-					>
-						{HARNESS_NAMES[props.backend]}
-					</button>
-				</Badge>
-			</PopoverTrigger>
+			<PopoverTrigger
+				render={
+					<Badge
+						variant="outline"
+						className="cursor-help rounded-none border-border bg-transparent px-1.5 py-0 font-light text-caption text-muted-foreground hover:bg-secondary hover:text-foreground"
+						render={
+							<button
+								type="button"
+								aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
+								onPointerEnter={handleOpen}
+								onPointerLeave={handleClose}
+								onFocus={handleOpen}
+								onBlur={handleClose}
+							>
+								{HARNESS_NAMES[props.backend]}
+							</button>
+						}
+					></Badge>
+				}
+			/>
 			<PopoverContent
 				align="start"
 				sideOffset={8}
@@ -326,16 +328,18 @@ export function JobHeader(props: JobHeaderProps) {
 					{(props.onNewSideChat !== undefined ||
 						props.onOpenSideChats !== undefined) && (
 						<DropdownMenu>
-							<DropdownMenuTrigger asChild>
-								<button
-									ref={props.moreTriggerRef}
-									type="button"
-									className="flex items-center gap-1 border border-border px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
-								>
-									<EllipsisIcon className="h-3 w-3" />
-									More
-								</button>
-							</DropdownMenuTrigger>
+							<DropdownMenuTrigger
+								render={
+									<button
+										ref={props.moreTriggerRef}
+										type="button"
+										className="flex items-center gap-1 border border-border px-2 py-1 text-caption text-muted-foreground transition-colors hover:border-ink hover:text-foreground"
+									>
+										<EllipsisIcon className="h-3 w-3" />
+										More
+									</button>
+								}
+							/>
 							<DropdownMenuContent align="end">
 								{props.onOpenSideChats !== undefined && (
 									<DropdownMenuItem
