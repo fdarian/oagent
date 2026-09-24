@@ -1,6 +1,5 @@
 'use client';
 
-import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import {
 	CircleSmallIcon,
 	MarsIcon,
@@ -34,6 +33,7 @@ import {
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
 import { cn } from '@/lib/utils';
+import { useControllableState } from '@/hooks/use-controllable-state';
 
 interface VoiceSelectorContextValue {
 	value: string | undefined;

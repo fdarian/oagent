@@ -1,6 +1,5 @@
 'use client';
 
-import { useControllableState } from '@radix-ui/react-use-controllable-state';
 import { cjk } from '@streamdown/cjk';
 import { code } from '@streamdown/code';
 import { math } from '@streamdown/math';
@@ -24,6 +23,7 @@ import {
 	CollapsibleTrigger,
 } from '@/components/ui/collapsible';
 import { cn } from '@/lib/utils';
+import { useControllableState } from '@/hooks/use-controllable-state';
 
 import { Shimmer } from './shimmer';
 
