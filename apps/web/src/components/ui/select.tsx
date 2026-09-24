@@ -80,6 +80,7 @@ function SelectContent(props: SelectContentProps) {
 	delete popupProps.position;
 	delete popupProps.side;
 	delete popupProps.sideOffset;
+	delete popupProps.className;
 	const position = props.position ?? 'item-aligned';
 
 	return (
@@ -90,9 +91,10 @@ function SelectContent(props: SelectContentProps) {
 				alignItemWithTrigger={position === 'item-aligned'}
 				side={props.side}
 				sideOffset={props.sideOffset ?? 4}
-				className="z-50"
+				className="isolate z-[60]"
 			>
 				<SelectPrimitive.Popup
+					{...popupProps}
 					data-slot="select-content"
 					data-align-trigger={position === 'item-aligned'}
 					className={cn(
@@ -101,7 +103,6 @@ function SelectContent(props: SelectContentProps) {
 							'data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1',
 						props.className,
 					)}
-					{...popupProps}
 				>
 					<SelectScrollUpButton />
 					<SelectPrimitive.List

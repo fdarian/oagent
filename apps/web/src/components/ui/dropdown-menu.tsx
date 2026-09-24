@@ -46,6 +46,7 @@ function DropdownMenuContent(props: DropdownMenuContentProps) {
 	delete popupProps.alignOffset;
 	delete popupProps.side;
 	delete popupProps.sideOffset;
+	delete popupProps.className;
 
 	return (
 		<DropdownMenuPrimitive.Portal>
@@ -54,15 +55,15 @@ function DropdownMenuContent(props: DropdownMenuContentProps) {
 				alignOffset={props.alignOffset}
 				side={props.side}
 				sideOffset={props.sideOffset ?? 4}
-				className="z-50"
+				className="isolate z-[60]"
 			>
 				<DropdownMenuPrimitive.Popup
+					{...popupProps}
 					data-slot="dropdown-menu-content"
 					className={cn(
 						'max-h-(--available-height) min-w-[8rem] origin-(--transform-origin) overflow-x-hidden overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95',
 						props.className,
 					)}
-					{...popupProps}
 				/>
 			</DropdownMenuPrimitive.Positioner>
 		</DropdownMenuPrimitive.Portal>
@@ -258,6 +259,7 @@ function DropdownMenuSubContent(props: DropdownMenuSubContentProps) {
 	delete popupProps.alignOffset;
 	delete popupProps.side;
 	delete popupProps.sideOffset;
+	delete popupProps.className;
 
 	return (
 		<DropdownMenuPrimitive.Portal>
@@ -266,15 +268,15 @@ function DropdownMenuSubContent(props: DropdownMenuSubContentProps) {
 				alignOffset={props.alignOffset}
 				side={props.side ?? 'right'}
 				sideOffset={props.sideOffset}
-				className="z-50"
+				className="isolate z-[60]"
 			>
 				<DropdownMenuPrimitive.Popup
+					{...popupProps}
 					data-slot="dropdown-menu-sub-content"
 					className={cn(
 						'min-w-[8rem] origin-(--transform-origin) overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-lg data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95',
 						props.className,
 					)}
-					{...popupProps}
 				/>
 			</DropdownMenuPrimitive.Positioner>
 		</DropdownMenuPrimitive.Portal>

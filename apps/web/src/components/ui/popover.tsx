@@ -24,6 +24,7 @@ function PopoverContent(props: PopoverContentProps) {
 	delete popupProps.alignOffset;
 	delete popupProps.side;
 	delete popupProps.sideOffset;
+	delete popupProps.className;
 
 	return (
 		<PopoverPrimitive.Portal>
@@ -32,15 +33,15 @@ function PopoverContent(props: PopoverContentProps) {
 				alignOffset={props.alignOffset}
 				side={props.side}
 				sideOffset={props.sideOffset ?? 4}
-				className="z-50"
+				className="isolate z-[60]"
 			>
 				<PopoverPrimitive.Popup
+					{...popupProps}
 					data-slot="popover-content"
 					className={cn(
 						'w-72 origin-(--transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95',
 						props.className,
 					)}
-					{...popupProps}
 				/>
 			</PopoverPrimitive.Positioner>
 		</PopoverPrimitive.Portal>
