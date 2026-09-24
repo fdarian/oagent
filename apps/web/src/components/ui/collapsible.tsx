@@ -1,29 +1,35 @@
-import { Collapsible as CollapsiblePrimitive } from 'radix-ui';
+import { Collapsible as CollapsiblePrimitive } from '@base-ui/react/collapsible';
+import { asChildProps, type AsChild } from './as-child';
 
-function Collapsible({
-	...props
-}: React.ComponentProps<typeof CollapsiblePrimitive.Root>) {
-	return <CollapsiblePrimitive.Root data-slot="collapsible" {...props} />;
-}
-
-function CollapsibleTrigger({
-	...props
-}: React.ComponentProps<typeof CollapsiblePrimitive.CollapsibleTrigger>) {
+function Collapsible(
+	props: React.ComponentProps<typeof CollapsiblePrimitive.Root> & AsChild,
+) {
 	return (
-		<CollapsiblePrimitive.CollapsibleTrigger
-			data-slot="collapsible-trigger"
-			{...props}
+		<CollapsiblePrimitive.Root
+			data-slot="collapsible"
+			{...asChildProps(props)}
 		/>
 	);
 }
 
-function CollapsibleContent({
-	...props
-}: React.ComponentProps<typeof CollapsiblePrimitive.CollapsibleContent>) {
+function CollapsibleTrigger(
+	props: React.ComponentProps<typeof CollapsiblePrimitive.Trigger> & AsChild,
+) {
 	return (
-		<CollapsiblePrimitive.CollapsibleContent
+		<CollapsiblePrimitive.Trigger
+			data-slot="collapsible-trigger"
+			{...asChildProps(props)}
+		/>
+	);
+}
+
+function CollapsibleContent(
+	props: React.ComponentProps<typeof CollapsiblePrimitive.Panel> & AsChild,
+) {
+	return (
+		<CollapsiblePrimitive.Panel
 			data-slot="collapsible-content"
-			{...props}
+			{...asChildProps(props)}
 		/>
 	);
 }

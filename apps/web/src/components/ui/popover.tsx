@@ -1,76 +1,82 @@
-import { Popover as PopoverPrimitive } from 'radix-ui';
+import { Popover as PopoverPrimitive } from '@base-ui/react/popover';
 import type * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-function Popover({
-	...props
-}: React.ComponentProps<typeof PopoverPrimitive.Root>) {
+function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
 	return <PopoverPrimitive.Root data-slot="popover" {...props} />;
 }
 
-function PopoverTrigger({
-	...props
-}: React.ComponentProps<typeof PopoverPrimitive.Trigger>) {
+function PopoverTrigger(
+	props: React.ComponentProps<typeof PopoverPrimitive.Trigger>,
+) {
 	return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
-function PopoverContent({
-	className,
-	align = 'center',
-	sideOffset = 4,
-	...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+type PopoverContentProps = React.ComponentProps<typeof PopoverPrimitive.Popup> &
+	Pick<
+		React.ComponentProps<typeof PopoverPrimitive.Positioner>,
+		'align' | 'alignOffset' | 'side' | 'sideOffset'
+	>;
+
+function PopoverContent(props: PopoverContentProps) {
+	const popupProps = { ...props };
+	delete popupProps.align;
+	delete popupProps.alignOffset;
+	delete popupProps.side;
+	delete popupProps.sideOffset;
+
 	return (
 		<PopoverPrimitive.Portal>
-			<PopoverPrimitive.Content
-				data-slot="popover-content"
-				align={align}
-				sideOffset={sideOffset}
-				className={cn(
-					'z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
-					className,
-				)}
-				{...props}
-			/>
+			<PopoverPrimitive.Positioner
+				align={props.align ?? 'center'}
+				alignOffset={props.alignOffset}
+				side={props.side}
+				sideOffset={props.sideOffset ?? 4}
+				className="z-50"
+			>
+				<PopoverPrimitive.Popup
+					data-slot="popover-content"
+					className={cn(
+						'w-72 origin-(--transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95',
+						props.className,
+					)}
+					{...popupProps}
+				/>
+			</PopoverPrimitive.Positioner>
 		</PopoverPrimitive.Portal>
 	);
 }
 
-function PopoverAnchor({
-	...props
-}: React.ComponentProps<typeof PopoverPrimitive.Anchor>) {
-	return <PopoverPrimitive.Anchor data-slot="popover-anchor" {...props} />;
+function PopoverAnchor(props: React.ComponentProps<'div'>) {
+	return <div data-slot="popover-anchor" {...props} />;
 }
 
-function PopoverHeader({ className, ...props }: React.ComponentProps<'div'>) {
+function PopoverHeader(props: React.ComponentProps<'div'>) {
 	return (
 		<div
 			data-slot="popover-header"
-			className={cn('flex flex-col gap-1 text-sm', className)}
+			className={cn('flex flex-col gap-1 text-sm', props.className)}
 			{...props}
 		/>
 	);
 }
 
-function PopoverTitle({ className, ...props }: React.ComponentProps<'h2'>) {
+function PopoverTitle(props: React.ComponentProps<'h2'>) {
 	return (
-		<div
+		<h2
 			data-slot="popover-title"
-			className={cn('font-medium', className)}
+			className={cn('font-medium', props.className)}
 			{...props}
 		/>
 	);
 }
 
-function PopoverDescription({
-	className,
-	...props
-}: React.ComponentProps<'p'>) {
+function PopoverDescription(props: React.ComponentProps<'p'>) {
 	return (
 		<p
 			data-slot="popover-description"
-			className={cn('text-muted-foreground', className)}
+			className={cn('text-muted-foreground', props.className)}
 			{...props}
 		/>
 	);

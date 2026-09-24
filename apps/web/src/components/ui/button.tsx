@@ -1,6 +1,6 @@
+import { Button as ButtonPrimitive } from '@base-ui/react/button';
+import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
-import type * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -38,25 +38,31 @@ const buttonVariants = cva(
 	},
 );
 
-function Button({
-	className,
-	variant = 'default',
-	size = 'default',
-	asChild = false,
-	...props
-}: React.ComponentProps<'button'> &
-	VariantProps<typeof buttonVariants> & {
-		asChild?: boolean;
-	}) {
-	const Comp = asChild ? Slot.Root : 'button';
+function Button(
+	props: ButtonPrimitive.Props &
+		VariantProps<typeof buttonVariants> & { asChild?: boolean },
+) {
+	const variant = props.variant ?? 'default';
+	const size = props.size ?? 'default';
+	const buttonProps = { ...props };
+	delete buttonProps.asChild;
+	delete buttonProps.variant;
+	delete buttonProps.size;
+	if (props.asChild && !React.isValidElement(props.children))
+		throw new Error('asChild requires one React element');
 
 	return (
-		<Comp
+		<ButtonPrimitive
+			{...buttonProps}
+			render={
+				props.asChild ? (props.children as React.ReactElement) : props.render
+			}
 			data-slot="button"
 			data-variant={variant}
 			data-size={size}
-			className={cn(buttonVariants({ variant, size, className }))}
-			{...props}
+			className={cn(
+				buttonVariants({ variant, size, className: props.className }),
+			)}
 		/>
 	);
 }
