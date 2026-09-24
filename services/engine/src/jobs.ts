@@ -231,6 +231,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
+		const closingJobs = new Set<string>();
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
@@ -686,6 +687,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				};
 
 				const closeResources = Effect.sync(() => {
+					closingJobs.delete(input.reservation.jobId);
 					liveEmitters.delete(input.reservation.jobId);
 					liveFibers.delete(input.reservation.jobId);
 					emitter.emit(TERMINAL_EVENT);
@@ -747,6 +749,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
 							Effect.gen(function* () {
+								closingJobs.add(input.reservation.jobId);
 								const messageId = yield* captureLastMessageId;
 								yield* Effect.try({
 									try: () => {
@@ -932,7 +935,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (job.status !== 'running') {
 					return;
 				}
-
 				db.update(schema.jobs)
 					.set({ status: 'cancelled', terminated_at: new Date() })
 					.where(eq(schema.jobs.id, job.id))
@@ -977,6 +979,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						message: `Job ${jobId} cannot be steered because it is ${job.status}; only running jobs can be steered.`,
 					});
 				}
+				if (closingJobs.has(jobId)) {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} has finished its harness turn.`,
+					});
+				}
 
 				const backend = parseBackend(session.backend);
 				const harness = harnessRegistry.get(backend);
@@ -1007,6 +1015,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							}),
 					),
 				);
+				const current = db
+					.select({ status: schema.jobs.status })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.id, job.id))
+					.get();
+				if (current?.status !== 'running' || closingJobs.has(jobId)) {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} finished while steering; start a new turn instead.`,
+					});
+				}
 
 				publishEvent(job.id, jobId, {
 					sessionUpdate: 'user_message_chunk',

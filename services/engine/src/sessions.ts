@@ -368,21 +368,35 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							message: `Session ${session.uuid} is busy on the ${session.backend} backend.`,
 						});
 					}
-					yield* jobs.steer(running.uuid, input.prompt).pipe(
-						Effect.mapError(
-							(error) =>
-								new SessionBusy({
-									sessionId: session.uuid,
-									code: 'TURN_IN_PROGRESS',
-									message: error.message,
-								}),
+					const steered = yield* jobs.steer(running.uuid, input.prompt).pipe(
+						Effect.as(true),
+						Effect.catchTag('JobSteerError', (error) =>
+							error.code === 'NOT_RUNNING'
+								? Effect.succeed(false)
+								: Effect.fail(
+										new SessionBusy({
+											sessionId: session.uuid,
+											code: 'TURN_IN_PROGRESS',
+											message: error.message,
+										}),
+									),
 						),
 					);
-					return {
-						sessionId: session.uuid,
-						jobId: running.uuid,
-						delivery: 'steered' as const,
-					};
+					if (steered) {
+						return {
+							sessionId: session.uuid,
+							jobId: running.uuid,
+							delivery: 'steered' as const,
+						};
+					}
+					const completed = yield* jobs.wait({ jobId: running.uuid });
+					if (completed.status === 'running') {
+						return yield* new SessionBusy({
+							sessionId: session.uuid,
+							code: 'TURN_IN_PROGRESS',
+							message: `Session ${session.uuid} is finishing its current turn.`,
+						});
+					}
 				}
 
 				const latest = latestJob(session);

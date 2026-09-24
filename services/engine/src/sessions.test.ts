@@ -350,6 +350,68 @@ describe('session turns', () => {
 		cursorDatabase.sqlite.close();
 	});
 
+	test('starts a new turn when the running turn finishes during steering', async () => {
+		const database = createTestDatabase();
+		const firstStarted = Promise.withResolvers<void>();
+		const finishFirst = Promise.withResolvers<void>();
+		const steering = Promise.withResolvers<void>();
+		const finishSteer = Promise.withResolvers<void>();
+		const prompts: string[] = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.promise(async () => {
+					prompts.push(input.prompt);
+					input.onSessionId?.('ses_race');
+					if (prompts.length === 1) {
+						firstStarted.resolve();
+						await finishFirst.promise;
+					}
+					return {
+						sessionId: 'ses_race',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				steer: () =>
+					Effect.promise(async () => {
+						steering.resolve();
+						await finishSteer.promise;
+						return { messageId: 'msg_late', text: 'second' };
+					}),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+			}),
+		);
+		await firstStarted.promise;
+		const followUp = Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await steering.promise;
+		finishFirst.resolve();
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		finishSteer.resolve();
+		const result = await followUp;
+		expect(result.delivery).toBe('started');
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: result.jobId, timeoutMs: 1_000 }),
+		);
+		expect(prompts).toEqual(['first', 'second']);
+		database.sqlite.close();
+	});
+
 	test('reads the latest turn and cancels only a running turn', async () => {
 		const database = createTestDatabase();
 		const turnStarted = Promise.withResolvers<void>();
