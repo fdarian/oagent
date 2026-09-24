@@ -344,7 +344,7 @@ export function JobHeader(props: JobHeaderProps) {
 								{props.onOpenSideChats !== undefined && (
 									<DropdownMenuItem
 										className={moreMenuItemClassName}
-										onSelect={props.onOpenSideChats}
+										onClick={props.onOpenSideChats}
 									>
 										Open side chats
 									</DropdownMenuItem>
@@ -353,7 +353,7 @@ export function JobHeader(props: JobHeaderProps) {
 									<DropdownMenuItem
 										className={moreMenuItemClassName}
 										disabled={props.isCreatingSideChat}
-										onSelect={props.onNewSideChat}
+										onClick={props.onNewSideChat}
 									>
 										New side chat
 									</DropdownMenuItem>
