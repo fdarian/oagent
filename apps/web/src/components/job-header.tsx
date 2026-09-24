@@ -5,7 +5,13 @@ import {
 	MaximizeIcon,
 	XCircleIcon,
 } from 'lucide-react';
-import { type RefObject, useEffect, useRef, useState } from 'react';
+import {
+	type ComponentProps,
+	type RefObject,
+	useEffect,
+	useRef,
+	useState,
+} from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
 	DropdownMenu,
@@ -135,6 +141,7 @@ function SessionIdRow(props: SessionIdRowProps) {
 function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	const [open, setOpen] = useState(false);
 	const closeTimeout = useRef<number | undefined>(undefined);
+	const suppressTriggerFocusOpen = useRef(false);
 
 	useEffect(
 		() => () => {
@@ -156,6 +163,14 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 		setOpen(true);
 	};
 
+	const handleTriggerFocus = () => {
+		if (suppressTriggerFocusOpen.current) {
+			suppressTriggerFocusOpen.current = false;
+			return;
+		}
+		handleOpen();
+	};
+
 	const handleClose = () => {
 		clearCloseTimeout();
 		closeTimeout.current = window.setTimeout(() => {
@@ -164,8 +179,13 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 		}, 120);
 	};
 
-	const handleOpenChange = (nextOpen: boolean) => {
+	const handleOpenChange: NonNullable<
+		ComponentProps<typeof Popover>['onOpenChange']
+	> = (nextOpen, eventDetails) => {
 		if (nextOpen) clearCloseTimeout();
+		if (!nextOpen && eventDetails.reason === 'escape-key') {
+			suppressTriggerFocusOpen.current = true;
+		}
 		setOpen(nextOpen);
 	};
 
@@ -182,7 +202,7 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 								aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
 								onPointerEnter={handleOpen}
 								onPointerLeave={handleClose}
-								onFocus={handleOpen}
+								onFocus={handleTriggerFocus}
 								onBlur={handleClose}
 							>
 								{HARNESS_NAMES[props.backend]}
