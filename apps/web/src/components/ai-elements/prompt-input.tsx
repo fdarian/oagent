@@ -421,7 +421,11 @@ export const PromptInputActionAddAttachments = ({
 	const attachments = usePromptInputAttachments();
 
 	const handleSelect = useCallback(
-		(e: Event) => {
+		(
+			e: Parameters<
+				NonNullable<PromptInputActionAddAttachmentsProps['onSelect']>
+			>[0],
+		) => {
 			e.preventDefault();
 			attachments.openFileDialog();
 		},
@@ -449,7 +453,11 @@ export const PromptInputActionAddScreenshot = ({
 	const attachments = usePromptInputAttachments();
 
 	const handleSelect = useCallback(
-		async (event: Event) => {
+		async (
+			event: Parameters<
+				NonNullable<PromptInputActionAddScreenshotProps['onSelect']>
+			>[0],
+		) => {
 			onSelect?.(event);
 			if (event.defaultPrevented) {
 				return;
@@ -1236,7 +1244,7 @@ export const PromptInputSubmit = ({
 	}
 
 	const handleClick = useCallback(
-		(e: React.MouseEvent<HTMLButtonElement>) => {
+		(e: Parameters<NonNullable<PromptInputSubmitProps['onClick']>>[0]) => {
 			if (isGenerating && onStop) {
 				e.preventDefault();
 				onStop();

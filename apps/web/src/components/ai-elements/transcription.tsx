@@ -3,8 +3,8 @@
 import type { Experimental_TranscriptionResult as TranscriptionResult } from 'ai';
 import type { ComponentProps, ReactNode } from 'react';
 import { createContext, useCallback, useContext, useMemo } from 'react';
+import { useControllableState } from '@/lib/use-controllable-state';
 import { cn } from '@/lib/utils';
-import { useControllableState } from '@/hooks/use-controllable-state';
 
 type TranscriptionSegment = TranscriptionResult['segments'][number];
 

@@ -132,16 +132,18 @@ export const PlanFooter = (props: PlanFooterProps) => (
 export type PlanTriggerProps = ComponentProps<typeof CollapsibleTrigger>;
 
 export const PlanTrigger = ({ className, ...props }: PlanTriggerProps) => (
-	<CollapsibleTrigger asChild>
-		<Button
-			className={cn('size-8', className)}
-			data-slot="plan-trigger"
-			size="icon"
-			variant="ghost"
-			{...props}
-		>
-			<ChevronsUpDownIcon className="size-4" />
-			<span className="sr-only">Toggle plan</span>
-		</Button>
+	<CollapsibleTrigger
+		{...props}
+		render={
+			<Button
+				className={cn('size-8', className)}
+				data-slot="plan-trigger"
+				size="icon"
+				variant="ghost"
+			/>
+		}
+	>
+		<ChevronsUpDownIcon className="size-4" />
+		<span className="sr-only">Toggle plan</span>
 	</CollapsibleTrigger>
 );

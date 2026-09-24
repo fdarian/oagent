@@ -24,8 +24,8 @@ import {
 	PopoverContent,
 	PopoverTrigger,
 } from '@/components/ui/popover';
+import { useControllableState } from '@/lib/use-controllable-state';
 import { cn } from '@/lib/utils';
-import { useControllableState } from '@/hooks/use-controllable-state';
 
 const deviceIdRegex = /\(([\da-fA-F]{4}:[\da-fA-F]{4})\)$/;
 

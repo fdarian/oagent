@@ -32,8 +32,8 @@ import {
 	DialogTrigger,
 } from '@/components/ui/dialog';
 import { Spinner } from '@/components/ui/spinner';
+import { useControllableState } from '@/lib/use-controllable-state';
 import { cn } from '@/lib/utils';
-import { useControllableState } from '@/hooks/use-controllable-state';
 
 interface VoiceSelectorContextValue {
 	value: string | undefined;
@@ -56,7 +56,11 @@ export const useVoiceSelector = () => {
 	return context;
 };
 
-export type VoiceSelectorProps = ComponentProps<typeof Dialog> & {
+export type VoiceSelectorProps = Omit<
+	ComponentProps<typeof Dialog>,
+	'onOpenChange'
+> & {
+	onOpenChange?: (open: boolean) => void;
 	value?: string;
 	defaultValue?: string;
 	onValueChange?: (value: string | undefined) => void;
