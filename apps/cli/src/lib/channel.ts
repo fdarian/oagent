@@ -240,8 +240,8 @@ function registerChannelTools(
 						}),
 					);
 				}
-				const result = await client.sessions.read({
-					sessionId: started.sessionId,
+				const result = await client.jobs.wait({
+					jobId: started.jobId,
 					timeoutMs: startTimeout.minutes * 60_000,
 				});
 				if (result.status === 'running') {
@@ -307,8 +307,8 @@ function registerChannelTools(
 						}),
 					);
 				}
-				const result = await client.sessions.read({
-					sessionId: started.sessionId,
+				const result = await client.jobs.wait({
+					jobId: started.jobId,
 					timeoutMs: startTimeout.minutes * 60_000,
 				});
 				if (result.status === 'running') {

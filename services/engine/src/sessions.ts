@@ -190,7 +190,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					return yield* new SessionForkError({
 						forkId,
 						code: 'SOURCE_NOT_READY',
-						message: `Session ${source.session.uuid} has no completed turn to fork.`,
+						message: `Session ${source.session.uuid} has no turn to fork.`,
 					});
 				}
 				if (source.session.harness_session_id === null) {
