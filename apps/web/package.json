@@ -11,12 +11,12 @@
 		"build-storybook": "storybook build"
 	},
 	"dependencies": {
+		"@base-ui/react": "^1.8.0",
 		"@lexical/plain-text": "^0.51.0",
 		"@lexical/react": "^0.51.0",
 		"@orpc/client": "catalog:",
 		"@orpc/tanstack-query": "catalog:",
 		"@pierre/diffs": "^1.2.9",
-		"@radix-ui/react-use-controllable-state": "^1.2.2",
 		"@rive-app/react-webgl2": "^4.28.3",
 		"@streamdown/cjk": "^1.0.3",
 		"@streamdown/code": "^1.1.1",
@@ -40,7 +40,6 @@
 		"media-chrome": "^4.19.0",
 		"motion": "^12.40.0",
 		"nanoid": "^5.1.11",
-		"radix-ui": "^1.4.3",
 		"react": "^19.2.6",
 		"react-dom": "^19.2.6",
 		"react-jsx-parser": "^2.4.1",
