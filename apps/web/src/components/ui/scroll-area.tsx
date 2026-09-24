@@ -3,22 +3,22 @@ import type * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
-function ScrollArea({
-	className,
-	children,
-	...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+function ScrollArea(
+	props: React.ComponentProps<typeof ScrollAreaPrimitive.Root>,
+) {
 	return (
 		<ScrollAreaPrimitive.Root
 			data-slot="scroll-area"
-			className={cn('relative', className)}
+			className={cn('relative', props.className)}
 			{...props}
 		>
 			<ScrollAreaPrimitive.Viewport
 				data-slot="scroll-area-viewport"
 				className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
 			>
-				<ScrollAreaPrimitive.Content>{children}</ScrollAreaPrimitive.Content>
+				<ScrollAreaPrimitive.Content>
+					{props.children}
+				</ScrollAreaPrimitive.Content>
 			</ScrollAreaPrimitive.Viewport>
 			<ScrollBar />
 			<ScrollAreaPrimitive.Corner />
@@ -26,22 +26,19 @@ function ScrollArea({
 	);
 }
 
-function ScrollBar({
-	className,
-	orientation = 'vertical',
-	...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Scrollbar>) {
+function ScrollBar(
+	props: React.ComponentProps<typeof ScrollAreaPrimitive.Scrollbar>,
+) {
 	return (
 		<ScrollAreaPrimitive.Scrollbar
 			data-slot="scroll-area-scrollbar"
-			orientation={orientation}
+			orientation={props.orientation ?? 'vertical'}
 			className={cn(
 				'flex touch-none p-px transition-colors select-none',
-				orientation === 'vertical' &&
-					'h-full w-2.5 border-l border-l-transparent',
-				orientation === 'horizontal' &&
-					'h-2.5 flex-col border-t border-t-transparent',
-				className,
+				props.orientation === 'horizontal'
+					? 'h-2.5 flex-col border-t border-t-transparent'
+					: 'h-full w-2.5 border-l border-l-transparent',
+				props.className,
 			)}
 			{...props}
 		>

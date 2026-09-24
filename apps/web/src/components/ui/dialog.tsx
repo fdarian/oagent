@@ -49,6 +49,8 @@ type DialogContentProps = React.ComponentProps<typeof DialogPrimitive.Popup> & {
 };
 
 function DialogContent(props: DialogContentProps) {
+	const popupProps = { ...props };
+	delete popupProps.showCloseButton;
 	return (
 		<DialogPortal data-slot="dialog-portal">
 			<DialogOverlay />
@@ -58,7 +60,7 @@ function DialogContent(props: DialogContentProps) {
 					'fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 outline-none data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95 sm:max-w-lg',
 					props.className,
 				)}
-				{...props}
+				{...popupProps}
 			>
 				{props.children}
 				{props.showCloseButton !== false && (

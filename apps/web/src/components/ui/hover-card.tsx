@@ -1,19 +1,42 @@
 import { PreviewCard as HoverCardPrimitive } from '@base-ui/react/preview-card';
-import type * as React from 'react';
-
+import * as React from 'react';
 import { cn } from '@/lib/utils';
+import { type AsChild, asChildProps } from './as-child';
+
+const HoverCardDelay = React.createContext<{
+	openDelay?: number;
+	closeDelay?: number;
+}>({});
 
 function HoverCard(
-	props: React.ComponentProps<typeof HoverCardPrimitive.Root>,
+	props: React.ComponentProps<typeof HoverCardPrimitive.Root> & {
+		openDelay?: number;
+		closeDelay?: number;
+	},
 ) {
-	return <HoverCardPrimitive.Root data-slot="hover-card" {...props} />;
+	const rootProps = { ...props };
+	delete rootProps.openDelay;
+	delete rootProps.closeDelay;
+	return (
+		<HoverCardDelay.Provider
+			value={{ openDelay: props.openDelay, closeDelay: props.closeDelay }}
+		>
+			<HoverCardPrimitive.Root {...rootProps} />
+		</HoverCardDelay.Provider>
+	);
 }
 
 function HoverCardTrigger(
-	props: React.ComponentProps<typeof HoverCardPrimitive.Trigger>,
+	props: React.ComponentProps<typeof HoverCardPrimitive.Trigger> & AsChild,
 ) {
+	const delay = React.useContext(HoverCardDelay);
 	return (
-		<HoverCardPrimitive.Trigger data-slot="hover-card-trigger" {...props} />
+		<HoverCardPrimitive.Trigger
+			data-slot="hover-card-trigger"
+			delay={delay.openDelay}
+			closeDelay={delay.closeDelay}
+			{...asChildProps(props)}
+		/>
 	);
 }
 

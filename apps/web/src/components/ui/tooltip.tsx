@@ -1,35 +1,21 @@
-import { asChildProps, type AsChild } from '@/components/ui/as-child';
-('use client');
-
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip';
 import type * as React from 'react';
-
 import { cn } from '@/lib/utils';
+import { type AsChild, asChildProps } from './as-child';
 
-function TooltipProvider({
-	delayDuration = 0,
-	...props
-}: React.ComponentProps<typeof TooltipPrimitive.Provider> & {
-	delayDuration?: number;
-}) {
-	return (
-		<TooltipPrimitive.Provider
-			data-slot="tooltip-provider"
-			delay={delayDuration}
-			{...props}
-		/>
-	);
+function TooltipProvider(
+	props: React.ComponentProps<typeof TooltipPrimitive.Provider>,
+) {
+	return <TooltipPrimitive.Provider delay={props.delay ?? 0} {...props} />;
 }
 
-function Tooltip({
-	...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip(props: React.ComponentProps<typeof TooltipPrimitive.Root>) {
 	return <TooltipPrimitive.Root data-slot="tooltip" {...props} />;
 }
 
-function TooltipTrigger({
-	...props
-}: React.ComponentProps<typeof TooltipPrimitive.Trigger> & AsChild) {
+function TooltipTrigger(
+	props: React.ComponentProps<typeof TooltipPrimitive.Trigger> & AsChild,
+) {
 	return (
 		<TooltipPrimitive.Trigger
 			data-slot="tooltip-trigger"
@@ -38,34 +24,37 @@ function TooltipTrigger({
 	);
 }
 
-function TooltipContent({
-	className,
-	sideOffset = 0,
-	side,
-	align,
-	children,
-	...props
-}: React.ComponentProps<typeof TooltipPrimitive.Popup> & {
-	side?: 'top' | 'bottom' | 'left' | 'right';
-	align?: 'start' | 'center' | 'end';
-	sideOffset?: number;
-}) {
+type TooltipContentProps = React.ComponentProps<typeof TooltipPrimitive.Popup> &
+	Pick<
+		React.ComponentProps<typeof TooltipPrimitive.Positioner>,
+		'align' | 'alignOffset' | 'side' | 'sideOffset'
+	>;
+
+function TooltipContent(props: TooltipContentProps) {
+	const popupProps = { ...props };
+	delete popupProps.align;
+	delete popupProps.alignOffset;
+	delete popupProps.side;
+	delete popupProps.sideOffset;
+
 	return (
 		<TooltipPrimitive.Portal>
 			<TooltipPrimitive.Positioner
-				side={side}
-				align={align}
-				sideOffset={sideOffset}
+				align={props.align}
+				alignOffset={props.alignOffset}
+				side={props.side}
+				sideOffset={props.sideOffset ?? 0}
+				className="z-50"
 			>
 				<TooltipPrimitive.Popup
 					data-slot="tooltip-content"
 					className={cn(
-						'z-50 w-fit origin-(--transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95',
-						className,
+						'w-fit origin-(--transform-origin) animate-in rounded-md bg-foreground px-3 py-1.5 text-xs text-balance text-background fade-in-0 zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[starting-style]:animate-in data-[starting-style]:fade-in-0 data-[starting-style]:zoom-in-95 data-[ending-style]:animate-out data-[ending-style]:fade-out-0 data-[ending-style]:zoom-out-95',
+						props.className,
 					)}
-					{...props}
+					{...popupProps}
 				>
-					{children}
+					{props.children}
 					<TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-foreground fill-foreground" />
 				</TooltipPrimitive.Popup>
 			</TooltipPrimitive.Positioner>

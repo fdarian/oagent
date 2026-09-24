@@ -1,6 +1,6 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
-import * as React from 'react';
 import { cva, type VariantProps } from 'class-variance-authority';
+import * as React from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -48,6 +48,7 @@ function Button(
 	delete buttonProps.asChild;
 	delete buttonProps.variant;
 	delete buttonProps.size;
+	if (props.asChild) buttonProps.children = undefined;
 	if (props.asChild && !React.isValidElement(props.children))
 		throw new Error('asChild requires one React element');
 
