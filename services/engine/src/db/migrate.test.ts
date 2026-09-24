@@ -14,7 +14,9 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 	const copyPath = join(directory, 'copy.sqlite');
 	try {
 		const original = new Database(originalPath);
-		const previousMigrations = bundle.journal.entries.slice(0, -1);
+		const previousMigrations = bundle.journal.entries.filter(
+			(entry) => entry.idx <= 12,
+		);
 		for (const migration of previousMigrations) {
 			const sql = bundle.files[migration.tag];
 			if (sql === undefined) throw new Error(`Missing ${migration.tag}`);
@@ -178,7 +180,9 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 test('checks foreign keys before committing a migration, but skips checks on an up-to-date database', () => {
 	const sqlite = new Database(':memory:');
 	try {
-		const previousMigrations = bundle.journal.entries.slice(0, -1);
+		const previousMigrations = bundle.journal.entries.filter(
+			(entry) => entry.idx <= 12,
+		);
 		for (const migration of previousMigrations) {
 			const migrationSql = bundle.files[migration.tag];
 			if (migrationSql === undefined)
@@ -209,7 +213,9 @@ test('checks foreign keys before committing a migration, but skips checks on an 
 		Effect.runSync(runMigrations(drizzle(sqlite)));
 		expect(
 			sqlite.query('SELECT count(*) AS count FROM __drizzle_migrations').get(),
-		).toEqual({ count: 2 });
+		).toEqual({
+			count: 1 + bundle.journal.entries.length - previousMigrations.length,
+		});
 		sqlite.exec(
 			"PRAGMA foreign_keys=OFF; INSERT INTO events (id, job_id, type, created_at) VALUES (1, 999, 'agent_message_chunk', 1); PRAGMA foreign_keys=ON;",
 		);

@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Effect } from 'effect';
-import { Agents } from './agents.ts';
+import { Agents, AgentTypeNotFound } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import type { Backend, Harness } from './harness.ts';
@@ -26,6 +26,7 @@ function createServices(
 		forkSessionBefore?: Harness['forkSessionBefore'];
 		getFirstMessageAfter?: Harness['getFirstMessageAfter'];
 		getLatestMessageId?: Harness['getLatestMessageId'];
+		agentResolve?: Agents['Service']['resolve'];
 	},
 ) {
 	const harness = {
@@ -50,7 +51,9 @@ function createServices(
 		getSetting: () => undefined,
 	} as unknown as Settings['Service'];
 	const agents = {
-		resolve: (name: string) => Effect.succeed(`${name}-target`),
+		resolve:
+			options?.agentResolve ??
+			((name: string) => Effect.succeed(`${name}-target`)),
 	} as unknown as Agents['Service'];
 	const worktrees = {
 		create: () => Effect.succeed('/tmp/worktree'),
@@ -128,6 +131,144 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	test('keeps alias reasoning effort across follow-up turns and forks', async () => {
+		const database = createTestDatabase();
+		database.db
+			.insert(schema.modelAliases)
+			.values({
+				name: 'deep',
+				backend: 'opencode',
+				model_id: 'provider/model',
+				reasoning_effort: 'high',
+			})
+			.run();
+		const calls: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					calls.push(input.reasoningEffort);
+					input.onSessionId?.(input.sessionId ?? 'ses_alias');
+					return {
+						sessionId: input.sessionId ?? 'ses_alias',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				forkSession: () => Effect.succeed({ sessionId: 'ses_alias_fork' }),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({ prompt: 'first', cwd: '/repo', model: 'deep' }),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		const continued = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: continued.jobId, timeoutMs: 1_000 }),
+		);
+		const forked = await Effect.runPromise(
+			services.sessions.start({ prompt: 'fork', forkId: started.sessionId }),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: forked.jobId, timeoutMs: 1_000 }),
+		);
+		expect(calls).toEqual(['high', 'high', 'high']);
+		expect(
+			database.db
+				.select({ effort: schema.jobs.reasoning_effort })
+				.from(schema.jobs)
+				.all(),
+		).toEqual([{ effort: 'high' }, { effort: 'high' }, { effort: 'high' }]);
+		database.sqlite.close();
+	});
+
+	test('rejects an incompatible fork model before creating a harness fork or session row', async () => {
+		const database = createTestDatabase();
+		let forks = 0;
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					input.onSessionId?.('ses_original');
+					return {
+						sessionId: 'ses_original',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				forkSession: () =>
+					Effect.sync(() => {
+						forks += 1;
+						return { sessionId: 'ses_unwanted' };
+					}),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		await expect(
+			Effect.runPromise(
+				services.sessions.start({
+					prompt: 'fork',
+					forkId: started.sessionId,
+					model: 'codex:model',
+				}),
+			),
+		).rejects.toMatchObject({ code: 'SESSION_BACKEND_MISMATCH' });
+		expect(forks).toBe(0);
+		expect(database.db.select().from(schema.sessions).all()).toHaveLength(1);
+		database.sqlite.close();
+	});
+
+	test('rejects an unknown agent before inserting a session', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(
+			database,
+			'opencode',
+			() =>
+				Effect.succeed({
+					sessionId: 'ses_unused',
+					text: 'done',
+					stopReason: 'end_turn',
+				}),
+			{
+				agentResolve: (agentType) =>
+					Effect.fail(
+						new AgentTypeNotFound({ agentType, configuredAgentTypes: [] }),
+					),
+			},
+		);
+		await expect(
+			Effect.runPromise(
+				services.sessions.start({
+					prompt: 'first',
+					cwd: '/repo',
+					model: 'opencode:model',
+					agentType: 'missing',
+				}),
+			),
+		).rejects.toMatchObject({ _tag: 'AgentTypeNotFound' });
+		expect(database.db.select().from(schema.sessions).all()).toHaveLength(0);
+		database.sqlite.close();
+	});
 	test('persists a session before starting and continues idle turns with inherited settings', async () => {
 		const database = createTestDatabase();
 		const calls: Array<{

@@ -94,6 +94,7 @@ type ReserveJobInput = {
 	session: typeof schema.sessions.$inferSelect;
 	prompt: string;
 	model?: string;
+	reasoningEffort?: string;
 	agentType?: string;
 	sideChatId?: number;
 };
@@ -228,6 +229,25 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			}
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
+
+		const validateStart = (input: {
+			model: string;
+			backend: Backend;
+			agentType?: string;
+		}) =>
+			Effect.gen(function* () {
+				const resolved = yield* resolveModel(input.model);
+				if (resolved.backend !== input.backend) {
+					return yield* new JobStartError({
+						code: 'SESSION_BACKEND_MISMATCH',
+						message: `The selected model belongs to ${resolved.backend}, not ${input.backend}.`,
+						cause: new Error('Session backend does not match model backend'),
+					});
+				}
+				if (input.agentType !== undefined) {
+					yield* agents.resolve(input.agentType, input.backend);
+				}
+			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
@@ -509,7 +529,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Session backend does not match model backend'),
 					});
 				}
-				const reasoningEffort = resolvedModel.reasoningEffort;
+				const reasoningEffort =
+					input.reasoningEffort ?? resolvedModel.reasoningEffort;
 				const agentTarget =
 					input.agentType === undefined
 						? undefined
@@ -526,6 +547,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 									status: 'running',
 									prompt: input.prompt,
 									model: rest,
+									reasoning_effort: reasoningEffort,
 									agent_type: input.agentType,
 									session_id: input.session.id,
 									side_chat_id: input.sideChatId,
@@ -1330,6 +1352,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			start,
 			reserve,
 			resolveBackend,
+			validateStart,
 			runReserved,
 			failReserved,
 			cancel,

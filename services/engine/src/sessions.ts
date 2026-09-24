@@ -299,6 +299,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					sourceSession: source.session,
 					sourceJob: selectedJob,
 					model: selectedJob.model,
+					reasoningEffort: selectedJob.reasoning_effort ?? undefined,
 					agentType: selectedJob.agent_type ?? undefined,
 					backend,
 					harnessSessionId: forkedSession.sessionId,
@@ -307,6 +308,17 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const start = (input: StartInput) =>
 			Effect.gen(function* () {
+				const source =
+					input.forkId === undefined ? undefined : findForkSource(input.forkId);
+				if (source?.job !== undefined && source.job.model !== null) {
+					yield* jobs.validateStart({
+						model:
+							input.model ??
+							`${parseBackend(source.session.backend)}:${source.job.model}`,
+						backend: parseBackend(source.session.backend),
+						agentType: input.agentType ?? source.job.agent_type ?? undefined,
+					});
+				}
 				const fork =
 					input.forkId === undefined
 						? undefined
@@ -326,6 +338,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					input.model ??
 					(fork === undefined ? undefined : `${fork.backend}:${fork.model}`);
 				const agentType = input.agentType ?? fork?.agentType;
+				if (fork === undefined && model !== undefined) {
+					yield* jobs.validateStart({ model, backend, agentType });
+				}
 				const session = yield* insertSession({
 					backend,
 					harnessSessionId: fork?.harnessSessionId,
@@ -339,6 +354,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					session,
 					prompt: input.prompt,
 					model,
+					reasoningEffort: fork?.reasoningEffort,
 					agentType,
 					worktree: input.worktree,
 				});
@@ -411,6 +427,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						session,
 						prompt: input.prompt,
 						model: `${parseBackend(session.backend)}:${latest.model}`,
+						reasoningEffort: latest.reasoning_effort ?? undefined,
 						agentType: latest.agent_type ?? undefined,
 					})
 					.pipe(
