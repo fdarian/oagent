@@ -2,6 +2,8 @@ import { describe, expect, test } from 'bun:test';
 import { Effect } from 'effect';
 import { z } from 'zod';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
+import type { Jobs } from '../../jobs.ts';
+import type { Sessions } from '../../sessions.ts';
 import {
 	buildDescription,
 	formatAgentTypes,
@@ -13,7 +15,7 @@ import {
 
 type AgentStartError = AgentTypeNotFound | AgentNotMappedForBackend;
 
-async function expectStructuredError(error: AgentStartError) {
+async function expectToolError(error: AgentStartError) {
 	const response = await Effect.runPromise(
 		startTool.handle(
 			{
@@ -25,26 +27,19 @@ async function expectStructuredError(error: AgentStartError) {
 			{
 				jobs: {
 					getStartTimeoutMs: () => 1,
-					start: () => error,
 					wait: () =>
 						Effect.die(new Error('wait must not run after start fails')),
-				},
-				waitUrlBase: undefined,
-				mcpSessionId: undefined,
+				} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>,
+				sessions: { start: () => error },
+				mcpSessionId: 'mcp-session',
 			},
 		),
 	);
 
 	expect(response).toEqual({
-		content: [
-			{
-				type: 'text',
-				text: JSON.stringify({
-					error: { code: error._tag, message: error.message },
-				}),
-			},
-		],
+		content: [{ type: 'text', text: `Status: error\n---\n${error.message}` }],
 	});
+	expect(response).not.toHaveProperty('structuredContent');
 }
 
 describe('start tool descriptions', () => {
@@ -99,19 +94,19 @@ Configured agent types (use as \`agent_type\`):
 		expect(formatMcpInstructions([], [])).toBeUndefined();
 	});
 
-	test('keeps the start tool description focused', () => {
+	test('describes session continuation and read handles', () => {
 		expect(buildDescription()).toBe(
-			'Launch or continue a coding-agent session and return its result. If it returns `{ status: "running", jobId }`, run `oagent jobs wait <jobId>` as a background command or use the `result` tool; pass a returned `sessionId` to a later call to resume the session.',
+			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. If it returns a running status, call `read` with the session ID or run `oagent jobs wait <jobId>` in the background.',
 		);
 	});
 
-	test('accepts agent_type in the shared input schema', () => {
+	test('accepts optional cwd and a fork ID in the shared input schema', () => {
 		const parsed = z.object(inputSchema).parse({
 			prompt: 'Review this change',
-			cwd: '/repo',
-			agent_type: 'reviewer',
+			forkId: 'job-or-session-id',
 		});
-		expect(parsed.agent_type).toBe('reviewer');
+		expect(parsed.forkId).toBe('job-or-session-id');
+		expect(parsed.cwd).toBeUndefined();
 	});
 
 	test('adds worktree fields only to the enabled schema', () => {
@@ -122,14 +117,12 @@ Configured agent types (use as \`agent_type\`):
 				cwd: '/repo',
 				worktree: true,
 			}),
-		).toMatchObject({
-			worktree: true,
-		});
+		).toMatchObject({ worktree: true });
 		expect(Object.hasOwn(worktreeInputSchema, 'worktree_branch')).toBe(false);
 	});
 
-	test('returns a structured unknown-agent response', async () => {
-		await expectStructuredError(
+	test('returns an error as plain markdown text for unknown agents', async () => {
+		await expectToolError(
 			new AgentTypeNotFound({
 				agentType: 'missing',
 				configuredAgentTypes: ['reviewer'],
@@ -137,12 +130,50 @@ Configured agent types (use as \`agent_type\`):
 		);
 	});
 
-	test('returns a structured unmapped-agent response', async () => {
-		await expectStructuredError(
+	test('returns an error as plain markdown text for unmapped agents', async () => {
+		await expectToolError(
 			new AgentNotMappedForBackend({
 				agentType: 'reviewer',
 				backend: 'cursor',
 			}),
 		);
+	});
+
+	test('returns a background handle as markdown text with the session and job IDs', async () => {
+		const response = await Effect.runPromise(
+			startTool.handle(
+				{
+					prompt: 'Run tests',
+					cwd: '/repo',
+					background: true,
+				},
+				{
+					jobs: {
+						getStartTimeoutMs: () => 100,
+						wait: () => Effect.die(new Error('background starts do not wait')),
+					} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>,
+					sessions: {
+						start: () =>
+							Effect.succeed({
+								sessionId: 'session-1',
+								jobId: 'job-1',
+								worktreePath: '/repo-worktree',
+								worktreeBranch: 'oagent/1234abcd',
+							}),
+					} as Pick<Sessions['Service'], 'start'>,
+					mcpSessionId: 'mcp-1',
+				},
+			),
+		);
+
+		expect(response).toEqual({
+			content: [
+				{
+					type: 'text',
+					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `read` with session ID `session-1` or run `oagent jobs wait job-1` in the background.',
+				},
+			],
+		});
+		expect(response).not.toHaveProperty('structuredContent');
 	});
 });

@@ -16,6 +16,7 @@ import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
+import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { SideChats } from './side-chats.ts';
 
@@ -41,6 +42,7 @@ type ServerOptions = {
 export class Engine extends Context.Service<Engine>()('engine', {
 	make: Effect.gen(function* () {
 		const jobs = yield* Jobs;
+		const sessionService = yield* Sessions;
 		const settings = yield* Settings;
 		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
@@ -61,11 +63,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		return {
 			mcp: {
 				getInstructions: getMcpInstructions,
-				registerTools: (
-					server: McpServer,
-					services: Context.Context<never>,
-					waitUrlBase: string | undefined,
-				) => registerTools(server, jobs, settings, services, waitUrlBase),
+				registerTools: (server: McpServer, services: Context.Context<never>) =>
+					registerTools(server, jobs, sessionService, settings, services),
 			},
 			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
 				Effect.gen(function* () {
@@ -84,8 +83,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							server: McpServer;
 						}
 					>();
-
-					let portlessPublicBase: string | undefined;
 
 					const fetchHandler = async (request: Request) => {
 						const url = new URL(request.url);
@@ -122,9 +119,9 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							registerTools(
 								mcpServer,
 								jobs,
+								sessionService,
 								settings,
 								services,
-								portlessPublicBase ?? url.origin,
 							);
 
 							await mcpServer.connect(transport);
@@ -255,7 +252,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 								catch: (cause) => new PortlessRegistrationError({ cause }),
 							});
 							if (exitCode === 0) {
-								portlessPublicBase = PORTLESS_PUBLIC_BASE;
 								process.on('exit', () => {
 									Bun.spawnSync([
 										portlessBin,
@@ -282,6 +278,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(Sessions.layer),
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(HarnessRegistry.layer),

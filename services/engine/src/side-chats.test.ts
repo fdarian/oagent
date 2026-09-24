@@ -1,74 +1,106 @@
-import { Database } from 'bun:sqlite';
 import { describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Effect, Fiber } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
-import { runMigrations } from './db/migrate.ts';
 import * as schema from './db/schema.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import type { OpenCode } from './opencode.ts';
+import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { SIDE_CHAT_FIRST_PROMPT_REMINDER, SideChats } from './side-chats.ts';
+import { connectTestDatabase, createTestDatabase } from './test-database.ts';
 import { Worktrees } from './worktree.ts';
 
-const TEST_SCHEMA = `
-	CREATE TABLE jobs (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		uuid TEXT NOT NULL,
-		status TEXT NOT NULL,
-		prompt TEXT NOT NULL,
-		cwd TEXT NOT NULL,
-		worktree_path TEXT,
-		worktree_branch TEXT,
-		model TEXT,
-		agent_type TEXT,
-		backend TEXT NOT NULL,
-		created_at INTEGER NOT NULL,
-		terminated_at INTEGER,
-		session_id TEXT,
-		mcp_session_id TEXT,
-		text TEXT,
-		stop_reason TEXT,
-		error_message TEXT,
-		side_chat_id INTEGER
-	);
-	CREATE UNIQUE INDEX jobs_side_chat_running_uq
-		ON jobs (side_chat_id)
-		WHERE status = 'running';
-	CREATE TABLE side_chats (
-		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		uuid TEXT NOT NULL,
-		source_job_id INTEGER NOT NULL,
-		session_id TEXT,
-		first_turn_dispatched_at INTEGER,
-		created_at INTEGER NOT NULL
-	);
-`;
+type TestDatabase = ReturnType<typeof createTestDatabase>;
 
-function createTestDatabase() {
-	const sqlite = new Database(':memory:');
-	sqlite.exec(TEST_SCHEMA);
-	return { sqlite, db: drizzle(sqlite, { schema }) };
+function insertSession(
+	database: TestDatabase,
+	input: {
+		uuid: string;
+		cwd: string;
+		backend?: string;
+		harnessSessionId?: string;
+		mcpSessionId?: string;
+		worktreePath?: string;
+		worktreeBranch?: string;
+	},
+) {
+	const session = database.db
+		.insert(schema.sessions)
+		.values({
+			uuid: input.uuid,
+			backend: input.backend ?? 'opencode',
+			harness_session_id: input.harnessSessionId,
+			cwd: input.cwd,
+			mcp_session_id: input.mcpSessionId,
+			worktree_path: input.worktreePath,
+			worktree_branch: input.worktreeBranch,
+		})
+		.returning()
+		.get();
+	if (session === undefined) throw new Error('Expected inserted session');
+	return session;
+}
+
+function insertJob(
+	database: TestDatabase,
+	input: {
+		uuid: string;
+		status: 'running' | 'done' | 'error' | 'cancelled';
+		prompt: string;
+		cwd: string;
+		model?: string;
+		backend?: string;
+		harnessSessionId?: string;
+		session?: typeof schema.sessions.$inferSelect;
+		sideChatId?: number;
+		text?: string;
+		errorMessage?: string;
+	},
+) {
+	const session =
+		input.session ??
+		insertSession(database, {
+			uuid: `session-${input.uuid}`,
+			backend: input.backend,
+			cwd: input.cwd,
+			harnessSessionId: input.harnessSessionId,
+		});
+	const job = database.db
+		.insert(schema.jobs)
+		.values({
+			uuid: input.uuid,
+			status: input.status,
+			prompt: input.prompt,
+			model: input.model,
+			session_id: session.id,
+			side_chat_id: input.sideChatId,
+			text: input.text,
+			error_message: input.errorMessage,
+		})
+		.returning()
+		.get();
+	if (job === undefined) throw new Error('Expected inserted job');
+	return job;
 }
 
 function createSharedTestDatabases() {
 	const directory = mkdtempSync(join(tmpdir(), 'oagent-side-chats-'));
 	const databasePath = join(directory, 'sqlite.db');
-	const firstSqlite = new Database(databasePath);
-	firstSqlite.exec(TEST_SCHEMA);
+	const first = createTestDatabase(databasePath);
+	const firstSqlite = first.sqlite;
 	firstSqlite.exec('PRAGMA journal_mode = WAL;');
 	firstSqlite.exec('PRAGMA busy_timeout = 5000;');
-	const secondSqlite = new Database(databasePath);
-	secondSqlite.exec('PRAGMA busy_timeout = 5000;');
+	const second = connectTestDatabase(databasePath);
+	const secondSqlite = second.sqlite;
 	return {
-		first: { sqlite: firstSqlite, db: drizzle(firstSqlite, { schema }) },
-		second: { sqlite: secondSqlite, db: drizzle(secondSqlite, { schema }) },
+		first,
+		second,
 		close: () => {
 			secondSqlite.close();
 			firstSqlite.close();
@@ -94,7 +126,7 @@ function createHarnessRegistry(
 }
 
 async function createSideChatServices(
-	database: ReturnType<typeof createTestDatabase>,
+	database: TestDatabase,
 	opencode: OpenCode['Service'],
 ) {
 	const dbService = {
@@ -110,14 +142,50 @@ async function createSideChatServices(
 			Effect.provideService(Worktrees, {} as Worktrees['Service']),
 		),
 	);
+	const harnessRegistry = createHarnessRegistry(opencode);
+	const sessions = await Effect.runPromise(
+		Sessions.make.pipe(
+			Effect.provideService(Db, dbService),
+			Effect.provideService(Jobs, jobs),
+			Effect.provideService(HarnessRegistry, harnessRegistry),
+		),
+	);
 	const sideChats = await Effect.runPromise(
 		SideChats.make.pipe(
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Jobs, jobs),
-			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
+			Effect.provideService(HarnessRegistry, harnessRegistry),
+			Effect.provideService(Sessions, sessions),
 		),
 	);
 	return { jobs, sideChats };
+}
+
+async function createSideChatService(
+	database: TestDatabase,
+	jobs: Jobs['Service'],
+	opencode: OpenCode['Service'],
+) {
+	const dbService = {
+		db: database.db,
+		sqlite: database.sqlite,
+	} as unknown as Db['Service'];
+	const harnessRegistry = createHarnessRegistry(opencode);
+	const sessions = await Effect.runPromise(
+		Sessions.make.pipe(
+			Effect.provideService(Db, dbService),
+			Effect.provideService(Jobs, jobs),
+			Effect.provideService(HarnessRegistry, harnessRegistry),
+		),
+	);
+	return Effect.runPromise(
+		SideChats.make.pipe(
+			Effect.provideService(Db, dbService),
+			Effect.provideService(Jobs, jobs),
+			Effect.provideService(HarnessRegistry, harnessRegistry),
+			Effect.provideService(Sessions, sessions),
+		),
+	);
 }
 
 function createOpenCodeService(input: {
@@ -138,14 +206,48 @@ function createOpenCodeService(input: {
 }
 
 function createMigratedDatabase() {
-	const sqlite = new Database(':memory:');
-	sqlite.exec('PRAGMA foreign_keys = ON;');
-	const db = drizzle(sqlite, { schema });
-	Effect.runSync(runMigrations(db));
-	return { sqlite, db };
+	return createTestDatabase();
 }
 
 describe('side chats', () => {
+	test('runs a side-chat turn in its own session while the source turn is active', async () => {
+		const database = createTestDatabase();
+		const services = await createSideChatServices(
+			database,
+			createOpenCodeService({
+				forkSession: () => Effect.succeed({ sessionId: 'ses_side_chat' }),
+			}),
+		);
+		const sourceJob = insertJob(database, {
+			uuid: 'running-source-job',
+			status: 'running',
+			prompt: 'Main turn',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_main',
+		});
+		const sideChat = await Effect.runPromise(
+			services.sideChats.create(sourceJob.uuid),
+		);
+		const sideChatTurn = await Effect.runPromise(
+			services.sideChats.send({
+				sideChatId: sideChat.id,
+				prompt: 'Side-chat turn',
+			}),
+		);
+		const sideChatResult = await Effect.runPromise(
+			services.jobs.wait({ jobId: sideChatTurn.jobId, timeoutMs: 1_000 }),
+		);
+		const sourceMetadata = services.jobs.getJobMetadata(sourceJob.uuid);
+		const sideChatMetadata = services.jobs.getJobMetadata(sideChatTurn.jobId);
+
+		expect(sideChatResult).toMatchObject({ status: 'done' });
+		expect(sourceMetadata?.status).toBe('running');
+		expect(sideChatMetadata?.status).toBe('done');
+		expect(sideChatMetadata?.sessionId).not.toBe(sourceMetadata?.sessionId);
+		database.sqlite.close();
+	});
+
 	test('keeps the reminder through pre-dispatch failures and reuses the forked session', async () => {
 		const database = createTestDatabase();
 		const startedInputs: Array<{
@@ -166,40 +268,40 @@ describe('side chats', () => {
 		let turnCount = 0;
 		const jobs = {
 			reserve: (input: {
+				session: typeof schema.sessions.$inferSelect;
 				prompt: string;
-				sessionId?: string;
 				sideChatId?: number;
-				cwd: string;
 				model?: string;
 			}) =>
 				Effect.sync(() => {
 					turnCount += 1;
-					reservedInputs.push(input);
+					reservedInputs.push({
+						prompt: input.prompt,
+						sessionId: input.session.harness_session_id ?? undefined,
+						sideChatId: input.sideChatId,
+						cwd: input.session.cwd,
+						model: input.model,
+					});
 					const jobId = `turn-${turnCount}`;
-					const job = database.db
-						.insert(schema.jobs)
-						.values({
-							uuid: jobId,
-							status: 'running',
-							prompt: input.prompt,
-							cwd: input.cwd,
-							model: 'model',
-							backend: 'opencode',
-							session_id: input.sessionId,
-							side_chat_id: input.sideChatId,
-						})
-						.returning({ id: schema.jobs.id })
-						.get();
-					if (job === undefined) throw new Error('Expected reserved job');
+					const job = insertJob(database, {
+						uuid: jobId,
+						status: 'running',
+						prompt: input.prompt,
+						cwd: input.session.cwd,
+						model: 'model',
+						session: input.session,
+						sideChatId: input.sideChatId,
+					});
 					return {
 						internalId: job.id,
 						jobId,
 						prompt: input.prompt,
-						cwd: input.cwd,
+						cwd: input.session.cwd,
 						backend: 'opencode',
 						model: 'provider/model',
 						reasoningEffort: undefined,
-						sessionId: input.sessionId,
+						agentTarget: undefined,
+						session: input.session,
 					};
 				}),
 			runReserved: (input: {
@@ -207,15 +309,21 @@ describe('side chats', () => {
 					jobId: string;
 					cwd: string;
 					model: string;
+					session: typeof schema.sessions.$inferSelect;
 				};
 				agentPrompt?: string;
-				sessionId?: string;
+				harnessSessionId?: string;
 				onPromptDispatch?: () => void;
 			}) =>
 				Effect.sync(() => {
+					database.db
+						.update(schema.sessions)
+						.set({ harness_session_id: input.harnessSessionId })
+						.where(eq(schema.sessions.id, input.reservation.session.id))
+						.run();
 					startedInputs.push({
 						agentPrompt: input.agentPrompt,
-						sessionId: input.sessionId,
+						sessionId: input.harnessSessionId,
 						cwd: input.reservation.cwd,
 						model: input.reservation.model,
 						onPromptDispatch: input.onPromptDispatch,
@@ -231,30 +339,20 @@ describe('side chats', () => {
 					return { sessionId: 'ses_forked' };
 				}),
 		} as unknown as OpenCode['Service'];
-		const dbService = {
-			db: database.db,
-			sqlite: database.sqlite,
-		} as unknown as Db['Service'];
-		const sideChats = await Effect.runPromise(
-			SideChats.make.pipe(
-				Effect.provideService(Db, dbService),
-				Effect.provideService(Jobs, jobs),
-				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
-			),
+		const sideChats = await createSideChatService(
+			database,
+			jobs as unknown as Jobs['Service'],
+			opencode,
 		);
 
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 
 		const sideChat = await Effect.runPromise(sideChats.create('source-job'));
 		expect(sideChat.turns).toEqual([]);
@@ -373,18 +471,14 @@ describe('side chats', () => {
 			secondOpenCode,
 		);
 
-		databases.first.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(databases.first, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 		const sideChat = await Effect.runPromise(
 			first.sideChats.create('source-job'),
 		);
@@ -429,18 +523,14 @@ describe('side chats', () => {
 			forkSession: () => Effect.fail(new Error('fork failed')),
 		});
 		const services = await createSideChatServices(database, opencode);
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 		const sideChat = await Effect.runPromise(
 			services.sideChats.create('source-job'),
 		);
@@ -491,18 +581,14 @@ describe('side chats', () => {
 			},
 		});
 		const services = await createSideChatServices(database, opencode);
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 		const sideChat = await Effect.runPromise(
 			services.sideChats.create('source-job'),
 		);
@@ -567,18 +653,14 @@ describe('side chats', () => {
 				}),
 		} as unknown as OpenCode['Service'];
 		const services = await createSideChatServices(database, opencode);
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 		const sideChat = await Effect.runPromise(
 			services.sideChats.create('source-job'),
 		);
@@ -588,13 +670,17 @@ describe('side chats', () => {
 			.where(eq(schema.sideChats.uuid, sideChat.id))
 			.get();
 		if (storedSideChat === undefined) throw new Error('Expected side chat');
+		const sideChatSession = insertSession(database, {
+			uuid: 'session-handed-off',
+			cwd: '/workspace',
+			harnessSessionId: 'ses_side_chat',
+		});
 		const reservation = await Effect.runPromise(
 			services.jobs.reserve({
+				session: sideChatSession,
 				prompt: 'Detached message',
 				model: 'opencode:provider/model',
-				sessionId: 'ses_side_chat',
 				sideChatId: storedSideChat.id,
-				cwd: '/workspace',
 			}),
 		);
 
@@ -619,18 +705,12 @@ describe('side chats', () => {
 
 	test('cascades child turns when migrated side chats or source jobs are deleted', () => {
 		const database = createMigratedDatabase();
-		const sourceJob = database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				backend: 'opencode',
-			})
-			.returning({ id: schema.jobs.id })
-			.get();
-		if (sourceJob === undefined) throw new Error('Expected source job');
+		const sourceJob = insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+		});
 
 		const firstSideChat = database.db
 			.insert(schema.sideChats)
@@ -638,17 +718,13 @@ describe('side chats', () => {
 			.returning({ id: schema.sideChats.id })
 			.get();
 		if (firstSideChat === undefined) throw new Error('Expected side chat');
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'turn-1',
-				status: 'done',
-				prompt: 'First turn',
-				cwd: '/workspace',
-				backend: 'opencode',
-				side_chat_id: firstSideChat.id,
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'turn-1',
+			status: 'done',
+			prompt: 'First turn',
+			cwd: '/workspace',
+			sideChatId: firstSideChat.id,
+		});
 		database.db
 			.delete(schema.sideChats)
 			.where(eq(schema.sideChats.id, firstSideChat.id))
@@ -667,17 +743,13 @@ describe('side chats', () => {
 			.returning({ id: schema.sideChats.id })
 			.get();
 		if (secondSideChat === undefined) throw new Error('Expected side chat');
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'turn-2',
-				status: 'done',
-				prompt: 'Second turn',
-				cwd: '/workspace',
-				backend: 'opencode',
-				side_chat_id: secondSideChat.id,
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'turn-2',
+			status: 'done',
+			prompt: 'Second turn',
+			cwd: '/workspace',
+			sideChatId: secondSideChat.id,
+		});
 		database.db
 			.delete(schema.jobs)
 			.where(eq(schema.jobs.id, sourceJob.id))
@@ -707,18 +779,12 @@ describe('side chats', () => {
 				forkSession: () => Effect.succeed({ sessionId: 'ses_forked' }),
 			}),
 		);
-		const sourceJob = database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				backend: 'opencode',
-			})
-			.returning({ id: schema.jobs.id })
-			.get();
-		if (sourceJob === undefined) throw new Error('Expected source job');
+		const sourceJob = insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+		});
 
 		database.db
 			.insert(schema.events)
@@ -736,17 +802,13 @@ describe('side chats', () => {
 			.returning({ id: schema.sideChats.id })
 			.get();
 		if (sideChat === undefined) throw new Error('Expected side chat');
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'side-chat-turn',
-				status: 'done',
-				prompt: 'Child prompt',
-				cwd: '/workspace',
-				backend: 'opencode',
-				side_chat_id: sideChat.id,
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'side-chat-turn',
+			status: 'done',
+			prompt: 'Child prompt',
+			cwd: '/workspace',
+			sideChatId: sideChat.id,
+		});
 
 		const rootMetadata = services.jobs.getRootJobMetadata('source-job');
 		expect(rootMetadata).toMatchObject({
@@ -775,30 +837,16 @@ describe('side chats', () => {
 		const opencode = {
 			forkSession: () => Effect.succeed({ sessionId: 'ses_forked' }),
 		} as unknown as OpenCode['Service'];
-		const dbService = {
-			db: database.db,
-			sqlite: database.sqlite,
-		} as unknown as Db['Service'];
-		const sideChats = await Effect.runPromise(
-			SideChats.make.pipe(
-				Effect.provideService(Db, dbService),
-				Effect.provideService(Jobs, jobs),
-				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
-			),
-		);
+		const sideChats = await createSideChatService(database, jobs, opencode);
 
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-				session_id: 'ses_source',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+			harnessSessionId: 'ses_source',
+		});
 		const sideChat = await Effect.runPromise(sideChats.create('source-job'));
 
 		await expect(
@@ -811,23 +859,13 @@ describe('side chats', () => {
 
 	test('enforces one running turn per side chat in SQLite', () => {
 		const database = createTestDatabase();
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'source-job',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'provider/model',
-				backend: 'opencode',
-			})
-			.run();
-		const sourceJob = database.db
-			.select()
-			.from(schema.jobs)
-			.where(eq(schema.jobs.uuid, 'source-job'))
-			.get();
-		if (sourceJob === undefined) throw new Error('Expected source job');
+		const sourceJob = insertJob(database, {
+			uuid: 'source-job',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'provider/model',
+		});
 		database.db
 			.insert(schema.sideChats)
 			.values({ uuid: 'side-chat', source_job_id: sourceJob.id })
@@ -839,29 +877,21 @@ describe('side chats', () => {
 			.get();
 		if (sideChat === undefined) throw new Error('Expected side chat');
 
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'turn-1',
-				status: 'running',
-				prompt: 'First message',
-				cwd: '/workspace',
-				backend: 'opencode',
-				side_chat_id: sideChat.id,
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'turn-1',
+			status: 'running',
+			prompt: 'First message',
+			cwd: '/workspace',
+			sideChatId: sideChat.id,
+		});
 		expect(() =>
-			database.db
-				.insert(schema.jobs)
-				.values({
-					uuid: 'turn-2',
-					status: 'running',
-					prompt: 'Second message',
-					cwd: '/workspace',
-					backend: 'opencode',
-					side_chat_id: sideChat.id,
-				})
-				.run(),
+			insertJob(database, {
+				uuid: 'turn-2',
+				status: 'running',
+				prompt: 'Second message',
+				cwd: '/workspace',
+				sideChatId: sideChat.id,
+			}),
 		).toThrow('UNIQUE constraint failed: jobs.side_chat_id');
 		database.sqlite.close();
 	});
@@ -872,30 +902,17 @@ describe('side chats', () => {
 			readEventsPage: () => ({ events: [], nextCursor: null }),
 		} as unknown as Jobs['Service'];
 		const opencode = {} as OpenCode['Service'];
-		const dbService = {
-			db: database.db,
-			sqlite: database.sqlite,
-		} as unknown as Db['Service'];
-		const sideChats = await Effect.runPromise(
-			SideChats.make.pipe(
-				Effect.provideService(Db, dbService),
-				Effect.provideService(Jobs, jobs),
-				Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
-			),
-		);
+		const sideChats = await createSideChatService(database, jobs, opencode);
 
-		database.db
-			.insert(schema.jobs)
-			.values({
-				uuid: 'cursor-source',
-				status: 'done',
-				prompt: 'Source prompt',
-				cwd: '/workspace',
-				model: 'model',
-				backend: 'cursor',
-				session_id: 'session',
-			})
-			.run();
+		insertJob(database, {
+			uuid: 'cursor-source',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'model',
+			backend: 'cursor',
+			harnessSessionId: 'session',
+		});
 
 		await expect(
 			Effect.runPromise(sideChats.create('cursor-source')),

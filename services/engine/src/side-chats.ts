@@ -9,6 +9,7 @@ import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
+import { Sessions } from './sessions.ts';
 
 export const SIDE_CHAT_FIRST_PROMPT_REMINDER =
 	"<system-reminder>You are in a forked side chat. This conversation is separate from the main session. Do not continue the main session's task unless the user explicitly asks you to do so here. Messages in this side chat are not sent back to the main session, though both sessions share the same working directory and filesystem.</system-reminder>";
@@ -41,6 +42,8 @@ export class SideChatError extends Schema.TaggedError<SideChatError>()(
 
 type SideChatRow = typeof schema.sideChats.$inferSelect;
 type JobRow = typeof schema.jobs.$inferSelect;
+type SessionRow = typeof schema.sessions.$inferSelect;
+type SourceJob = { job: JobRow; session: typeof schema.sessions.$inferSelect };
 
 function firstSideChatPrompt(prompt: string): string {
 	return `${prompt}\n\n${SIDE_CHAT_FIRST_PROMPT_REMINDER}`;
@@ -59,14 +62,19 @@ export class SideChats extends Context.Service<SideChats>()(
 			const db = dbService.db;
 			const jobs = yield* Jobs;
 			const harnessRegistry = yield* HarnessRegistry;
+			const sessions = yield* Sessions;
 
 			const findSourceJob = (
 				sourceJobId: string,
-			): Effect.Effect<JobRow, JobNotFound, never> =>
+			): Effect.Effect<SourceJob, JobNotFound, never> =>
 				Effect.sync(() =>
 					db
-						.select()
+						.select({ job: schema.jobs, session: schema.sessions })
 						.from(schema.jobs)
+						.innerJoin(
+							schema.sessions,
+							eq(schema.jobs.session_id, schema.sessions.id),
+						)
 						.where(eq(schema.jobs.uuid, sourceJobId))
 						.limit(1)
 						.get(),
@@ -97,15 +105,15 @@ export class SideChats extends Context.Service<SideChats>()(
 				);
 
 			const validateSource = (
-				sourceJob: JobRow,
-			): Effect.Effect<JobRow, SideChatError, never> => {
-				if (sourceJob.backend !== 'opencode') {
+				sourceJob: SourceJob,
+			): Effect.Effect<SourceJob, SideChatError, never> => {
+				if (sourceJob.session.backend !== 'opencode') {
 					return new SideChatError({
 						code: 'UNSUPPORTED_HARNESS',
-						message: `Side chats are only supported for OpenCode jobs. This job uses the ${sourceJob.backend} harness.`,
+						message: `Side chats are only supported for OpenCode jobs. This job uses the ${sourceJob.session.backend} harness.`,
 					});
 				}
-				if (sourceJob.side_chat_id !== null) {
+				if (sourceJob.job.side_chat_id !== null) {
 					return new SideChatError({
 						code: 'SOURCE_NOT_READY',
 						message:
@@ -163,7 +171,7 @@ export class SideChats extends Context.Service<SideChats>()(
 					const sideChats = db
 						.select()
 						.from(schema.sideChats)
-						.where(eq(schema.sideChats.source_job_id, sourceJob.id))
+						.where(eq(schema.sideChats.source_job_id, sourceJob.job.id))
 						.orderBy(schema.sideChats.created_at, schema.sideChats.id)
 						.all();
 					return sideChats.map(toSideChat);
@@ -177,7 +185,7 @@ export class SideChats extends Context.Service<SideChats>()(
 						.insert(schema.sideChats)
 						.values({
 							uuid: randomUUIDv7(),
-							source_job_id: sourceJob.id,
+							source_job_id: sourceJob.job.id,
 						})
 						.returning()
 						.get();
@@ -191,8 +199,12 @@ export class SideChats extends Context.Service<SideChats>()(
 				Effect.gen(function* () {
 					const sideChat = yield* findSideChat(input.sideChatId);
 					const sourceJob = db
-						.select()
+						.select({ job: schema.jobs, session: schema.sessions })
 						.from(schema.jobs)
+						.innerJoin(
+							schema.sessions,
+							eq(schema.jobs.session_id, schema.sessions.id),
+						)
 						.where(eq(schema.jobs.id, sideChat.source_job_id))
 						.limit(1)
 						.get();
@@ -205,7 +217,7 @@ export class SideChats extends Context.Service<SideChats>()(
 					}
 					yield* validateSource(sourceJob);
 
-					const sourceSessionId = sourceJob.session_id;
+					const sourceSessionId = sourceJob.session.harness_session_id;
 					if (sourceSessionId === null) {
 						return yield* new SideChatError({
 							code: 'SESSION_NOT_READY',
@@ -213,7 +225,7 @@ export class SideChats extends Context.Service<SideChats>()(
 								'The source OpenCode session is not ready yet. Wait for the job to create its session, then try again.',
 						});
 					}
-					const sourceModel = sourceJob.model;
+					const sourceModel = sourceJob.job.model;
 					if (sourceModel === null) {
 						return yield* new SideChatError({
 							code: 'SOURCE_NOT_READY',
@@ -222,37 +234,73 @@ export class SideChats extends Context.Service<SideChats>()(
 						});
 					}
 
-					const acquireReservation = jobs
-						.reserve({
-							prompt: input.prompt,
-							model: `opencode:${sourceModel}`,
-							sessionId:
-								sideChat.session_id === null ? undefined : sideChat.session_id,
-							sideChatId: sideChat.id,
-							cwd: sourceJob.cwd,
-						})
-						.pipe(
-							Effect.mapError((error) => {
-								if (
-									error instanceof JobStartError &&
-									error.code === 'SIDE_CHAT_TURN_IN_PROGRESS'
-								) {
-									return new SideChatError({
-										code: 'TURN_IN_PROGRESS',
-										message: error.message,
-									});
-								}
-								return new SideChatError({
-									code: 'SOURCE_NOT_READY',
-									message: `Could not reserve the side-chat turn: ${error.message}`,
-								});
-							}),
-							Effect.flatMap((reservation) =>
-								Ref.make(false).pipe(
-									Effect.map((handedOff) => ({ reservation, handedOff })),
+					const createSideChatSession = (): Effect.Effect<
+						SessionRow,
+						SideChatError,
+						never
+					> => {
+						if (sideChat.session_id !== null) {
+							return sessions.findSideChatSession(sideChat.session_id).pipe(
+								Effect.flatMap((session) =>
+									session === undefined
+										? new SideChatError({
+												code: 'SESSION_NOT_READY',
+												message: 'The side-chat session record is unavailable.',
+											})
+										: Effect.succeed(session),
 								),
-							),
-						);
+							);
+						}
+						return sessions
+							.createSideChatSession({ sourceJobId: sourceJob.job.id })
+							.pipe(
+								Effect.mapError(
+									(error) =>
+										new SideChatError({
+											code: 'SOURCE_NOT_READY',
+											message: error.message,
+										}),
+								),
+							);
+					};
+
+					const acquireReservation = createSideChatSession().pipe(
+						Effect.flatMap((session) =>
+							jobs
+								.reserve({
+									session,
+									prompt: input.prompt,
+									model: `opencode:${sourceModel}`,
+									sideChatId: sideChat.id,
+								})
+								.pipe(
+									Effect.mapError((error) => {
+										if (
+											error instanceof JobStartError &&
+											error.code === 'SIDE_CHAT_TURN_IN_PROGRESS'
+										) {
+											return new SideChatError({
+												code: 'TURN_IN_PROGRESS',
+												message: error.message,
+											});
+										}
+										return new SideChatError({
+											code: 'SOURCE_NOT_READY',
+											message: `Could not reserve the side-chat turn: ${error.message}`,
+										});
+									}),
+									Effect.flatMap((reservation) =>
+										Ref.make(false).pipe(
+											Effect.map((handedOff) => ({
+												reservation,
+												handedOff,
+												session,
+											})),
+										),
+									),
+								),
+						),
+					);
 
 					return yield* Effect.acquireUseRelease(
 						acquireReservation,
@@ -290,40 +338,42 @@ export class SideChats extends Context.Service<SideChats>()(
 									);
 
 								const forkSession = harnessRegistry.get('opencode').forkSession;
-								if (forkSession === undefined) {
-									return yield* new SideChatError({
-										code: 'FORK_NOT_SUPPORTED',
-										message:
-											'The OpenCode harness does not support session forking.',
-									});
-								}
-								const forkedSession = forkSession({
-									sessionId: sourceSessionId,
-									cwd: sourceJob.cwd,
-								})
-									.pipe(
-										Effect.mapError((error) =>
-											error instanceof AcpForkNotSupportedError
-												? new SideChatError({
+								const forkedSession =
+									sideChat.session_id !== null
+										? Effect.succeed(sideChat.session_id)
+										: forkSession === undefined
+											? Effect.fail(
+													new SideChatError({
 														code: 'FORK_NOT_SUPPORTED',
-														message: error.message,
-													})
-												: new SideChatError({
-														code: 'FORK_FAILED',
-														message: `Could not fork the source OpenCode session: ${error.message}`,
+														message:
+															'The OpenCode harness does not support session forking.',
 													}),
-										),
-									)
-									.pipe(
-										Effect.flatMap((fork) =>
-											persistForkedSession(fork.sessionId).pipe(
-												Effect.map(() => fork.sessionId),
-											),
-										),
-									);
-								const sessionId = yield* sideChat.session_id === null
-									? forkedSession
-									: Effect.succeed(sideChat.session_id);
+												)
+											: forkSession({
+													sessionId: sourceSessionId,
+													cwd: sourceJob.session.cwd,
+												})
+													.pipe(
+														Effect.mapError((error) =>
+															error instanceof AcpForkNotSupportedError
+																? new SideChatError({
+																		code: 'FORK_NOT_SUPPORTED',
+																		message: error.message,
+																	})
+																: new SideChatError({
+																		code: 'FORK_FAILED',
+																		message: `Could not fork the source OpenCode session: ${error.message}`,
+																	}),
+														),
+													)
+													.pipe(
+														Effect.flatMap((fork) =>
+															persistForkedSession(fork.sessionId).pipe(
+																Effect.map(() => fork.sessionId),
+															),
+														),
+													);
+								const sessionId = yield* forkedSession;
 
 								const isFirstTurn = sideChat.first_turn_dispatched_at === null;
 								const agentPrompt = isFirstTurn
@@ -333,7 +383,7 @@ export class SideChats extends Context.Service<SideChats>()(
 									.runReserved({
 										reservation: turn.reservation,
 										agentPrompt,
-										sessionId,
+										harnessSessionId: sessionId,
 										onPromptDispatch: isFirstTurn
 											? () => {
 													db.update(schema.sideChats)
@@ -394,6 +444,7 @@ export class SideChats extends Context.Service<SideChats>()(
 	},
 ) {
 	static readonly layer = Layer.effect(SideChats, SideChats.make).pipe(
+		Layer.provide(Sessions.layer),
 		Layer.provide(Jobs.layer),
 		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Db.layer),

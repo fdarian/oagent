@@ -8,24 +8,25 @@ import {
 	Option,
 } from 'effect';
 import type { Jobs } from '../jobs.ts';
+import type { Sessions } from '../sessions.ts';
 import type { Settings } from '../settings.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
-import { resultTool } from './tools/result.ts';
+import { readTool } from './tools/read.ts';
+import { sendMessageTool } from './tools/send-message.ts';
 import {
 	buildDescription,
 	inputSchema,
 	startTool,
 	worktreeInputSchema,
 } from './tools/start.ts';
-import { steerTool } from './tools/steer.ts';
 
 export function registerTools(
 	server: McpServer,
 	jobs: Jobs['Service'],
+	sessions: Sessions['Service'],
 	settings: Settings['Service'],
 	services: Context.Context<never>,
-	waitUrlBase: string | undefined,
 ): void {
 	const runHandler = async <A, E>(
 		eff: EffectType.Effect<A, E, never>,
@@ -57,19 +58,19 @@ export function registerTools(
 			runHandler(
 				startTool.handle(args, {
 					jobs,
-					waitUrlBase,
+					sessions,
 					mcpSessionId: extra.sessionId,
 				}),
 			),
 	);
 
 	server.registerTool(
-		'result',
+		'read',
 		{
-			description: resultTool.description,
-			inputSchema: resultTool.inputSchema,
+			description: readTool.description,
+			inputSchema: readTool.inputSchema,
 		},
-		(args) => runHandler(resultTool.handle(args, { jobs })),
+		(args) => runHandler(readTool.handle(args, { sessions })),
 	);
 
 	server.registerTool(
@@ -78,16 +79,16 @@ export function registerTools(
 			description: cancelTool.description,
 			inputSchema: cancelTool.inputSchema,
 		},
-		(args) => runHandler(cancelTool.handle(args, { jobs })),
+		(args) => runHandler(cancelTool.handle(args, { sessions })),
 	);
 
 	server.registerTool(
-		'steer',
+		'send_message',
 		{
-			description: steerTool.description,
-			inputSchema: steerTool.inputSchema,
+			description: sendMessageTool.description,
+			inputSchema: sendMessageTool.inputSchema,
 		},
-		(args) => runHandler(steerTool.handle(args, { jobs })),
+		(args) => runHandler(sendMessageTool.handle(args, { jobs, sessions })),
 	);
 
 	server.registerTool(
@@ -98,7 +99,7 @@ export function registerTools(
 		},
 		(args, extra) =>
 			runHandler(
-				listTool.handle(args, { jobs, mcpSessionId: extra.sessionId }),
+				listTool.handle(args, { sessions, mcpSessionId: extra.sessionId }),
 			),
 	);
 }

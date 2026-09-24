@@ -15,7 +15,8 @@ const base = {
 	cwd: '/Users/dev/project/apps/api',
 	backend: 'opencode' as const,
 	model: 'opencode-go/kimi-k2.6',
-	sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
+	sessionId: '01a0d126-0000-7000-8000-000000000001',
+	harnessSessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 	createdAt: Date.now() - 120_000,
 };
 

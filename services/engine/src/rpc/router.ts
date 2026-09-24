@@ -10,12 +10,14 @@ import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
+import { Sessions } from '../sessions.ts';
 import { Settings } from '../settings.ts';
 import { SideChats } from '../side-chats.ts';
 import { validateWorktreeTemplate } from '../worktree.ts';
 
 export type EngineServices =
 	| Jobs
+	| Sessions
 	| SideChats
 	| Harnesses
 	| Settings
@@ -164,6 +166,7 @@ const router = procedure.router({
 					model: job.model,
 					agentType: job.agentType,
 					sessionId: job.sessionId,
+					harnessSessionId: job.harnessSessionId,
 					worktreePath: job.worktreePath,
 					worktreeBranch: job.worktreeBranch,
 				};
@@ -180,15 +183,20 @@ const router = procedure.router({
 				}),
 			)
 			.effect(function* (options) {
-				const jobs = yield* Jobs;
-				const result = yield* jobs.start({
-					prompt: options.input.prompt,
-					cwd: options.input.cwd,
-					model: options.input.model,
-					agentType: options.input.agent_type,
-					sessionId: options.input.sessionId,
-					worktree: options.input.worktree,
-				});
+				const sessions = yield* Sessions;
+				const result =
+					options.input.sessionId === undefined
+						? yield* sessions.start({
+								prompt: options.input.prompt,
+								cwd: options.input.cwd,
+								model: options.input.model,
+								agentType: options.input.agent_type,
+								worktree: options.input.worktree,
+							})
+						: yield* sessions.sendMessage({
+								sessionId: options.input.sessionId,
+								prompt: options.input.prompt,
+							});
 				yield* Effect.logInfo(
 					`RPC start accepted ${requestLogFields({
 						jobId: result.jobId,
@@ -244,6 +252,61 @@ const router = procedure.router({
 						}),
 					),
 				);
+			}),
+	},
+	sessions: {
+		start: procedure
+			.input(
+				v.object({
+					prompt: v.string(),
+					cwd: v.optional(v.string()),
+					model: v.optional(v.string()),
+					agent_type: v.optional(v.string()),
+					forkId: v.optional(v.string()),
+					worktree: v.optional(v.boolean()),
+					mcpSessionId: v.optional(v.string()),
+				}),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.start({
+					prompt: options.input.prompt,
+					cwd: options.input.cwd,
+					model: options.input.model,
+					agentType: options.input.agent_type,
+					forkId: options.input.forkId,
+					worktree: options.input.worktree,
+					mcpSessionId: options.input.mcpSessionId,
+				});
+			}),
+		sendMessage: procedure
+			.input(v.object({ sessionId: v.string(), prompt: v.string() }))
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.sendMessage(options.input);
+			}),
+		read: procedure
+			.input(
+				v.object({
+					sessionId: v.string(),
+					timeoutMs: v.optional(v.number()),
+				}),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.read(options.input);
+			}),
+		cancel: procedure
+			.input(v.object({ sessionId: v.string() }))
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.cancel(options.input);
+			}),
+		list: procedure
+			.input(v.object({ mcpSessionId: v.string() }))
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.list(options.input);
 			}),
 	},
 	sideChats: {

@@ -1,29 +1,43 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
-import type { Jobs } from '../../jobs.ts';
+import {
+	formatCancellation,
+	formatSessionError,
+} from '../../format/turn-result.ts';
+import type { Sessions } from '../../sessions.ts';
 
 const description = `\
-Cancel an agent job. Returns \`{ ok: true }\` when the job exists or \`{ ok: false }\` \
-when it does not; cancelling a terminal job is a no-op.`;
+Cancel a running turn in a session. If the session is idle, this is a no-op.`;
 
 const inputSchema = {
-	jobId: z.string().describe('The jobId returned by `start`.'),
+	sessionId: z.string().describe('The sessionId returned by `start`.'),
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type CancelSessions = Pick<Sessions['Service'], 'cancel'>;
+
+function textResponse(text: string) {
+	return { content: [{ type: 'text' as const, text }] };
+}
 
 export const cancelTool = {
 	description,
 	inputSchema,
-	handle(args: Args, ctx: { jobs: Jobs['Service'] }) {
-		return Effect.map(
-			ctx.jobs.cancel(args).pipe(
-				Effect.map(() => ({ ok: true })),
-				Effect.catchTag('JobNotFound', () => Effect.succeed({ ok: false })),
+	handle(args: Args, ctx: { sessions: CancelSessions }) {
+		return ctx.sessions.cancel(args).pipe(
+			Effect.map((result) =>
+				textResponse(
+					result.ok
+						? formatCancellation({
+								sessionId: args.sessionId,
+								status: result.status,
+							})
+						: formatSessionError(
+								args.sessionId,
+								`Session not found: ${args.sessionId}`,
+							),
+				),
 			),
-			(result) => ({
-				content: [{ type: 'text' as const, text: JSON.stringify(result) }],
-			}),
 		);
 	},
 };

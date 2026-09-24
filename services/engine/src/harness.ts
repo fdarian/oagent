@@ -150,6 +150,12 @@ export type HarnessForkSession = (input: {
 	never
 >;
 
+export type HarnessForkSessionBefore = (input: {
+	sessionId: string;
+	cwd: string;
+	before: string;
+}) => Effect.Effect<{ sessionId: string }, Error, never>;
+
 export type Harness = {
 	backend: Backend;
 	runTurn: AcpAgent['Service']['runTurn'];
@@ -173,4 +179,12 @@ export type Harness = {
 	auth?: HarnessAuth;
 	steer?: HarnessSteer;
 	forkSession?: HarnessForkSession;
+	forkSessionBefore?: HarnessForkSessionBefore;
+	getLatestMessageId?: (
+		sessionId: string,
+	) => Effect.Effect<string, Error, never>;
+	getFirstMessageAfter?: (input: {
+		sessionId: string;
+		messageId: string;
+	}) => Effect.Effect<string, Error, never>;
 };

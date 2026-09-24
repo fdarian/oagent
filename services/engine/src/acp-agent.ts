@@ -431,6 +431,9 @@ export function runAcpTurn(
 				recovery: input.recovery,
 				onEvent: (update) => {
 					if (input.onEvent !== undefined) input.onEvent(update);
+					if (update.sessionUpdate === 'tool_call') {
+						turnState.buffer = '';
+					}
 					if (
 						update.sessionUpdate === 'agent_message_chunk' &&
 						update.content.type === 'text'

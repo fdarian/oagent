@@ -1,14 +1,15 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
 import type { AgentDefinition } from '../../agents.ts';
+import { formatToolError, formatTurnResult } from '../../format/turn-result.ts';
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
+import type { Sessions } from '../../sessions.ts';
 
 const BASE_DESCRIPTION = `\
-Launch or continue a coding-agent session and return its result. If it returns \
-\`{ status: "running", jobId }\`, run \`oagent jobs wait <jobId>\` as a \
-background command or use the \`result\` tool; pass a returned \`sessionId\` to \
-a later call to resume the session.`;
+Start a coding-agent session or fork an existing session/job. Pass its returned \
+session ID to \`send_message\` to continue. If it returns a running status, call \
+\`read\` with the session ID or run \`oagent jobs wait <jobId>\` in the background.`;
 
 export type AliasPreset = {
 	name: string;
@@ -135,7 +136,10 @@ export function buildDescription(): string {
 
 export const inputSchema = {
 	prompt: z.string().describe('Task instructions for the agent.'),
-	cwd: z.string().describe('Absolute working directory for the agent.'),
+	cwd: z
+		.string()
+		.optional()
+		.describe('Absolute working directory; optional when forkId is set.'),
 	model: z
 		.string()
 		.optional()
@@ -146,12 +150,10 @@ export const inputSchema = {
 		.string()
 		.optional()
 		.describe('Optional configured agent type from the server instructions.'),
-	sessionId: z
+	forkId: z
 		.string()
 		.optional()
-		.describe(
-			'Session ID from a previous `start` result to resume that session.',
-		),
+		.describe('Session ID or job ID whose state should be forked.'),
 	background: z
 		.boolean()
 		.optional()
@@ -169,17 +171,11 @@ export const worktreeInputSchema = {
 };
 
 type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
-type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'start' | 'wait'>;
+type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+type StartSessions = Pick<Sessions['Service'], 'start'>;
 
-function errorResponse(code: string, message: string) {
-	return {
-		content: [
-			{
-				type: 'text' as const,
-				text: JSON.stringify({ error: { code, message } }),
-			},
-		],
-	};
+function textResponse(text: string) {
+	return { content: [{ type: 'text' as const, text }] };
 }
 
 export const startTool = {
@@ -188,79 +184,66 @@ export const startTool = {
 		args: Args,
 		ctx: {
 			jobs: StartJobs;
-			waitUrlBase: string | undefined;
+			sessions: StartSessions;
 			mcpSessionId: string | undefined;
 		},
 	) {
-		const runningResponse = (jobId: string) => ({
-			status: 'running' as const,
-			jobId,
-		});
 		const timeoutMs = ctx.jobs.getStartTimeoutMs();
-
-		return ctx.jobs
+		return ctx.sessions
 			.start({
 				prompt: args.prompt,
 				cwd: args.cwd,
 				model: args.model,
 				agentType: args.agent_type,
-				sessionId: args.sessionId,
+				forkId: args.forkId,
 				mcpSessionId: ctx.mcpSessionId,
 				worktree: args.worktree,
 			})
 			.pipe(
 				Effect.tap((result) =>
 					Effect.logInfo(
-						`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: args.sessionId })}`,
+						`MCP start accepted ${requestLogFields({ jobId: result.jobId, sessionId: result.sessionId })}`,
 					),
 				),
-				Effect.flatMap((result) => {
-					const worktree =
-						result.worktreePath === undefined
-							? {}
-							: {
-									worktreePath: result.worktreePath,
-									worktreeBranch: result.worktreeBranch,
-								};
+				Effect.flatMap((started) => {
 					if (args.background === true) {
-						return Effect.succeed({
-							...runningResponse(result.jobId),
-							...worktree,
-						});
-					}
-					return ctx.jobs
-						.wait({
-							jobId: result.jobId,
-							timeoutMs,
-						})
-						.pipe(
-							Effect.map((wait) =>
-								wait.status === 'running'
-									? { ...runningResponse(result.jobId), ...worktree }
-									: { ...wait, ...worktree },
-							),
-							Effect.catchTag('JobNotFound', (err) =>
-								Effect.succeed({
-									status: 'error' as const,
-									message: `Job not found: ${err.jobId}`,
+						return Effect.succeed(
+							textResponse(
+								formatTurnResult({
+									sessionId: started.sessionId,
+									jobId: started.jobId,
+									result: { status: 'running' },
+									worktreePath: started.worktreePath,
+									worktreeBranch: started.worktreeBranch,
 								}),
 							),
 						);
+					}
+					return ctx.jobs.wait({ jobId: started.jobId, timeoutMs }).pipe(
+						Effect.map((result) =>
+							textResponse(
+								formatTurnResult({
+									sessionId: started.sessionId,
+									jobId: started.jobId,
+									result,
+									worktreePath: started.worktreePath,
+									worktreeBranch: started.worktreeBranch,
+								}),
+							),
+						),
+						Effect.catchTag('JobNotFound', (error) =>
+							Effect.succeed(textResponse(formatToolError(error.message))),
+						),
+					);
 				}),
-				Effect.map((response) => ({
-					content: [{ type: 'text' as const, text: JSON.stringify(response) }],
-				})),
-				Effect.catchTag('ModelResolutionError', (err) =>
-					Effect.succeed(errorResponse(err.code, err.message)),
-				),
-				Effect.catchTag('AgentTypeNotFound', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
-				),
-				Effect.catchTag('AgentNotMappedForBackend', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
-				),
-				Effect.catchTag('WorktreeError', (err) =>
-					Effect.succeed(errorResponse(err._tag, err.message)),
+				Effect.catch((error) =>
+					Effect.succeed(
+						textResponse(
+							formatToolError(
+								error instanceof Error ? error.message : String(error),
+							),
+						),
+					),
 				),
 			);
 	},

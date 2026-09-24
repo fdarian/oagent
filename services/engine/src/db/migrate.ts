@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { sql } from 'drizzle-orm';
 import type { BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { Effect, Schema } from 'effect';
 import bundle from '../../.gen/migrations.gen.ts';
@@ -31,8 +32,21 @@ export const runMigrations = (db: BunSQLiteDatabase<Record<string, unknown>>) =>
 					};
 				},
 			);
-			// biome-ignore lint/suspicious/noExplicitAny: internal drizzle API
-			(db as any).dialect.migrate(migrations, (db as any).session);
+			// Drizzle wraps every migration in a transaction, where PRAGMA foreign_keys=OFF
+			// cannot take effect. Rebuilding jobs with it enabled cascades deletes to events.
+			db.run(sql`PRAGMA foreign_keys=OFF`);
+			try {
+				// biome-ignore lint/suspicious/noExplicitAny: internal drizzle API
+				(db as any).dialect.migrate(migrations, (db as any).session);
+				const violations = db.values(sql`PRAGMA foreign_key_check`);
+				if (violations.length > 0) {
+					throw new Error(
+						`Migration broke foreign keys: ${JSON.stringify(violations)}`,
+					);
+				}
+			} finally {
+				db.run(sql`PRAGMA foreign_keys=ON`);
+			}
 		},
 		catch: (cause) => new MigrationError({ cause }),
 	});

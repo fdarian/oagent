@@ -17,6 +17,27 @@ import {
 	uniqueIndex,
 } from 'drizzle-orm/sqlite-core';
 
+export const sessions = sqliteTable(
+	'sessions',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		uuid: text().notNull(),
+		backend: text().notNull(),
+		harness_session_id: text(),
+		cwd: text().notNull(),
+		worktree_path: text(),
+		worktree_branch: text(),
+		mcp_session_id: text(),
+		forked_from_job_id: integer({ mode: 'number' }).references(
+			(): AnySQLiteColumn => jobs.id,
+		),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [uniqueIndex('sessions_uuid_uq').on(table.uuid)],
+);
+
 export const jobs = sqliteTable(
 	'jobs',
 	{
@@ -24,18 +45,16 @@ export const jobs = sqliteTable(
 		uuid: text().notNull(),
 		status: text({ enum: ['running', 'done', 'error', 'cancelled'] }).notNull(),
 		prompt: text().notNull(),
-		cwd: text().notNull(),
-		worktree_path: text(),
-		worktree_branch: text(),
 		model: text(),
 		agent_type: text(),
-		backend: text().notNull(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),
 		terminated_at: integer({ mode: 'timestamp_ms' }),
-		session_id: text(),
-		mcp_session_id: text(),
+		session_id: integer({ mode: 'number' })
+			.notNull()
+			.references(() => sessions.id),
+		harness_last_message_id: text(),
 		text: text(),
 		stop_reason: text(),
 		error_message: text(),
@@ -53,6 +72,9 @@ export const jobs = sqliteTable(
 		),
 		uniqueIndex('jobs_side_chat_running_uq')
 			.on(table.side_chat_id)
+			.where(sql`${table.status} = 'running'`),
+		uniqueIndex('jobs_session_running_uq')
+			.on(table.session_id)
 			.where(sql`${table.status} = 'running'`),
 	],
 );

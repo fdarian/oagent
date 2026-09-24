@@ -2,6 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import type {
 	ClientSideConnection,
 	SessionConfigOption,
+	SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect } from 'effect';
 import {
@@ -23,6 +24,55 @@ const SESSION_MODE_CONFIG_OPTIONS: Array<SessionConfigOption> = [
 		],
 	},
 ];
+
+test('returns only assistant text after the last tool call', async () => {
+	type NewSessionResult = Awaited<
+		ReturnType<ClientSideConnection['newSession']>
+	>;
+	type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
+	const state = {
+		listener: undefined as ((update: SessionUpdate) => void) | undefined,
+	};
+	const conn = {
+		newSession: async (): Promise<NewSessionResult> =>
+			({ sessionId: 'ses_test' }) as NewSessionResult,
+		prompt: async (): Promise<PromptResult> => {
+			const listener = state.listener;
+			if (listener === undefined)
+				throw new Error('session listener was not set');
+			listener({
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'I will inspect the change.' },
+			});
+			listener({
+				sessionUpdate: 'tool_call',
+				toolCallId: 'tool-1',
+				title: 'Inspect change',
+			});
+			listener({
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'The final answer' },
+			});
+			return { stopReason: 'end_turn' } as PromptResult;
+		},
+	} as unknown as ClientSideConnection;
+
+	const result = await Effect.runPromise(
+		runAcpTurn(
+			{
+				conn,
+				registerListener: (_sessionId, listener) => {
+					state.listener = listener;
+					return () => {};
+				},
+				extNotificationHandlers: new Map(),
+			},
+			{ prompt: 'continue', cwd: '/tmp' },
+		),
+	);
+
+	expect(result.text).toBe('The final answer');
+});
 
 describe('ACP pre-prompt ordering', () => {
 	test('uses model config options when the session omits top-level models', async () => {
