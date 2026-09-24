@@ -1,4 +1,5 @@
 import { Button as ButtonPrimitive } from '@base-ui/react/button';
+import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';
 import * as React from 'react';
 
@@ -45,25 +46,35 @@ function Button(
 	const variant = props.variant ?? 'default';
 	const size = props.size ?? 'default';
 	const buttonProps = { ...props };
-	delete buttonProps.asChild;
 	delete buttonProps.variant;
 	delete buttonProps.size;
-	if (props.asChild) buttonProps.children = undefined;
-	if (props.asChild && !React.isValidElement(props.children))
+	delete buttonProps.asChild;
+	if (props.asChild && !React.isValidElement(props.children)) {
 		throw new Error('asChild requires one React element');
+	}
 
+	const button = useRender({
+		enabled: props.asChild === true,
+		defaultTagName: 'button',
+		render: props.asChild ? (props.children as React.ReactElement) : undefined,
+		props: {
+			...buttonProps,
+			children: props.asChild ? undefined : props.children,
+			type: props.asChild ? props.type : (props.type ?? 'button'),
+			'data-slot': 'button',
+			'data-variant': variant,
+			'data-size': size,
+			className: cn(buttonVariants({ variant, size }), props.className),
+		},
+	});
+	if (button !== null) return button;
 	return (
 		<ButtonPrimitive
 			{...buttonProps}
-			render={
-				props.asChild ? (props.children as React.ReactElement) : props.render
-			}
 			data-slot="button"
 			data-variant={variant}
 			data-size={size}
-			className={cn(
-				buttonVariants({ variant, size, className: props.className }),
-			)}
+			className={cn(buttonVariants({ variant, size }), props.className)}
 		/>
 	);
 }

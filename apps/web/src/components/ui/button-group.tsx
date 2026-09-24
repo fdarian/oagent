@@ -1,6 +1,6 @@
 import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';
-import * as React from 'react';
+import type * as React from 'react';
 
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
@@ -26,6 +26,7 @@ function ButtonGroup(
 	props: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>,
 ) {
 	return (
+		// biome-ignore lint/a11y/useSemanticElements: A fieldset would change form layout and default styling.
 		<div
 			role="group"
 			data-slot="button-group"
