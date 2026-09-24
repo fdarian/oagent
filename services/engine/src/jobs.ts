@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { Context, Effect, Fiber, Layer, Schema } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
 	Agents,
@@ -664,6 +664,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					);
 				}
 
+				const current = db
+					.select({ status: schema.jobs.status })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.id, input.reservation.internalId))
+					.get();
+				if (current?.status !== 'running') {
+					return { jobId: input.reservation.jobId };
+				}
+
 				const emitter = new EventEmitter();
 				emitter.setMaxListeners(0);
 				liveEmitters.set(input.reservation.jobId, emitter);
@@ -706,11 +715,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						),
 						Effect.catch(() => Effect.succeed(undefined)),
 					);
-					if (messageId === undefined) return;
-					db.update(schema.jobs)
-						.set({ harness_last_message_id: messageId })
-						.where(eq(schema.jobs.id, input.reservation.internalId))
-						.run();
+					return messageId;
 				});
 
 				const onSessionId = (sessionId: string): void => {
@@ -741,52 +746,75 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
-							Effect.try({
-								try: () => {
-									const completed = db.transaction((tx) => {
-										tx.update(schema.sessions)
-											.set({ harness_session_id: result.sessionId })
-											.where(
-												eq(schema.sessions.id, input.reservation.session.id),
-											)
-											.run();
-										return tx
-											.update(schema.jobs)
-											.set({
-												status: 'done',
-												text: result.text,
-												stop_reason: result.stopReason ?? null,
-												terminated_at: new Date(),
-											})
-											.where(
-												and(
-													eq(schema.jobs.id, input.reservation.internalId),
-													eq(schema.jobs.status, 'running'),
-												),
-											)
-											.returning({ id: schema.jobs.id })
-											.get();
-									});
-									if (completed !== undefined) {
-										jobsEmitter.emit('change', {
-											type: 'status',
-											jobId: input.reservation.jobId,
-											status: 'done',
+							Effect.gen(function* () {
+								const messageId = yield* captureLastMessageId;
+								yield* Effect.try({
+									try: () => {
+										const completed = db.transaction((tx) => {
+											tx.update(schema.sessions)
+												.set({ harness_session_id: result.sessionId })
+												.where(
+													eq(schema.sessions.id, input.reservation.session.id),
+												)
+												.run();
+											return tx
+												.update(schema.jobs)
+												.set({
+													status: 'done',
+													harness_last_message_id: messageId ?? null,
+													text: result.text,
+													stop_reason: result.stopReason ?? null,
+													terminated_at: new Date(),
+												})
+												.where(
+													and(
+														eq(schema.jobs.id, input.reservation.internalId),
+														eq(schema.jobs.status, 'running'),
+													),
+												)
+												.returning({ id: schema.jobs.id })
+												.get();
 										});
-									}
-								},
-								catch: (cause) =>
-									new JobStartError({
-										code: 'PERSISTENCE_FAILED',
-										message: 'Could not record the completed job.',
-										cause,
-									}),
+										if (completed !== undefined) {
+											jobsEmitter.emit('change', {
+												type: 'status',
+												jobId: input.reservation.jobId,
+												status: 'done',
+											});
+										}
+									},
+									catch: (cause) =>
+										new JobStartError({
+											code: 'PERSISTENCE_FAILED',
+											message: 'Could not record the completed job.',
+											cause,
+										}),
+								});
 							}),
 						),
 						Effect.tapError((error) => failReserved(input.reservation, error)),
-						Effect.ensuring(
-							captureLastMessageId.pipe(Effect.andThen(closeResources)),
+						Effect.onExit((exit) =>
+							Exit.isFailure(exit)
+								? captureLastMessageId.pipe(
+										Effect.flatMap((messageId) =>
+											messageId === undefined
+												? Effect.void
+												: Effect.sync(() => {
+														db.update(schema.jobs)
+															.set({ harness_last_message_id: messageId })
+															.where(
+																eq(
+																	schema.jobs.id,
+																	input.reservation.internalId,
+																),
+															)
+															.run();
+													}),
+										),
+									)
+								: Effect.void,
 						),
+						Effect.ensuring(closeResources),
 					),
 					// The handoff can be masked, but the detached turn must stay interruptible.
 					{ uninterruptible: false },
@@ -795,6 +823,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				liveFibers.set(input.reservation.jobId, fiber);
 				return { jobId: input.reservation.jobId };
 			}).pipe(
+				Effect.uninterruptible,
 				Effect.catchTag('JobStartError', (error) =>
 					failReserved(input.reservation, error).pipe(
 						Effect.andThen(Effect.fail(error)),
@@ -877,10 +906,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						worktreeBranch: worktree?.branch,
 					};
 				}).pipe(
-					Effect.catch((error) =>
-						failReserved(reservation, error).pipe(
-							Effect.flatMap(() => Effect.fail(error)),
-						),
+					Effect.onExit((exit) =>
+						Exit.isFailure(exit)
+							? failReserved(reservation, exit.cause)
+							: Effect.void,
 					),
 				);
 			});
