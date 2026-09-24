@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `reasoning_effort` text;
