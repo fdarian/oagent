@@ -34,6 +34,7 @@ export type JobHeaderProps = {
 	model?: string;
 	agentType?: string;
 	sessionId?: string;
+	harnessSessionId?: string;
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
@@ -50,21 +51,95 @@ const moreMenuItemClassName =
 type HarnessSessionPopoverProps = {
 	backend: Backend;
 	sessionId?: string;
+	harnessSessionId?: string;
 };
+
+type SessionIdRowProps = {
+	label: string;
+	id?: string;
+};
+
+function SessionIdRow(props: SessionIdRowProps) {
+	const [copied, setCopied] = useState(false);
+	const copyTimeout = useRef<number | undefined>(undefined);
+
+	useEffect(
+		() => () => {
+			if (copyTimeout.current !== undefined) {
+				window.clearTimeout(copyTimeout.current);
+			}
+		},
+		[],
+	);
+
+	const handleCopy = () => {
+		if (props.id === undefined) return;
+		if (typeof navigator.clipboard === 'undefined') {
+			console.error('Clipboard API unavailable');
+			return;
+		}
+
+		void navigator.clipboard.writeText(props.id).then(
+			() => {
+				setCopied(true);
+				if (copyTimeout.current !== undefined) {
+					window.clearTimeout(copyTimeout.current);
+				}
+				copyTimeout.current = window.setTimeout(() => {
+					copyTimeout.current = undefined;
+					setCopied(false);
+				}, 1500);
+			},
+			(error: unknown) => {
+				console.error(`Failed to copy ${props.label.toLowerCase()}`, error);
+			},
+		);
+	};
+
+	return (
+		<div className="flex flex-col gap-1">
+			<span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
+				{props.label}
+			</span>
+			{props.id === undefined ? (
+				<span className="text-caption text-muted-foreground">
+					Not available yet
+				</span>
+			) : (
+				<div className="flex min-w-0 items-center gap-10 border border-border px-10 py-1">
+					<code
+						className="min-w-0 flex-1 truncate font-mono text-caption text-foreground"
+						title={props.id}
+					>
+						{props.id}
+					</code>
+					<button
+						type="button"
+						aria-label={`Copy ${props.label.toLowerCase()}`}
+						title={`Copy ${props.label.toLowerCase()}`}
+						onClick={handleCopy}
+						className="flex size-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+					>
+						{copied ? (
+							<CheckIcon className="size-3 text-verdant-accent" />
+						) : (
+							<CopyIcon className="size-3" />
+						)}
+					</button>
+				</div>
+			)}
+		</div>
+	);
+}
 
 function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	const [open, setOpen] = useState(false);
-	const [copied, setCopied] = useState(false);
 	const closeTimeout = useRef<number | undefined>(undefined);
-	const copyTimeout = useRef<number | undefined>(undefined);
 
 	useEffect(
 		() => () => {
 			if (closeTimeout.current !== undefined) {
 				window.clearTimeout(closeTimeout.current);
-			}
-			if (copyTimeout.current !== undefined) {
-				window.clearTimeout(copyTimeout.current);
 			}
 		},
 		[],
@@ -94,30 +169,6 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 		setOpen(nextOpen);
 	};
 
-	const handleCopySessionId = () => {
-		if (props.sessionId === undefined) return;
-		if (typeof navigator.clipboard === 'undefined') {
-			console.error('Clipboard API unavailable');
-			return;
-		}
-
-		void navigator.clipboard.writeText(props.sessionId).then(
-			() => {
-				setCopied(true);
-				if (copyTimeout.current !== undefined) {
-					window.clearTimeout(copyTimeout.current);
-				}
-				copyTimeout.current = window.setTimeout(() => {
-					copyTimeout.current = undefined;
-					setCopied(false);
-				}, 1500);
-			},
-			(error: unknown) => {
-				console.error('Failed to copy session ID', error);
-			},
-		);
-	};
-
 	return (
 		<Popover open={open} onOpenChange={handleOpenChange}>
 			<PopoverTrigger asChild>
@@ -128,7 +179,7 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 				>
 					<button
 						type="button"
-						aria-label={`${HARNESS_NAMES[props.backend]} harness; show session ID`}
+						aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
 						onPointerEnter={handleOpen}
 						onPointerLeave={handleClose}
 						onFocus={handleOpen}
@@ -141,7 +192,7 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 			<PopoverContent
 				align="start"
 				sideOffset={8}
-				aria-label="Harness session details"
+				aria-label="Session details"
 				className="w-[min(24rem,calc(100vw-2rem))] rounded-none p-15"
 				onPointerEnter={handleOpen}
 				onPointerLeave={handleClose}
@@ -151,39 +202,17 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 				<div className="flex flex-col gap-10">
 					<div className="flex items-center justify-between gap-15">
 						<span className="text-caption font-medium uppercase tracking-wide text-muted-foreground">
-							Harness session
+							Session IDs
 						</span>
 						<span className="text-caption text-muted-foreground">
 							{HARNESS_NAMES[props.backend]}
 						</span>
 					</div>
-					{props.sessionId === undefined ? (
-						<span className="text-caption text-muted-foreground">
-							Session ID not available yet
-						</span>
-					) : (
-						<div className="flex min-w-0 items-center gap-10 border border-border px-10 py-1">
-							<code
-								className="min-w-0 flex-1 truncate font-mono text-caption text-foreground"
-								title={props.sessionId}
-							>
-								{props.sessionId}
-							</code>
-							<button
-								type="button"
-								aria-label="Copy session ID"
-								title="Copy session ID"
-								onClick={handleCopySessionId}
-								className="flex size-6 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-							>
-								{copied ? (
-									<CheckIcon className="size-3 text-verdant-accent" />
-								) : (
-									<CopyIcon className="size-3" />
-								)}
-							</button>
-						</div>
-					)}
+					<SessionIdRow label="Oagent session ID" id={props.sessionId} />
+					<SessionIdRow
+						label="Harness session ID"
+						id={props.harnessSessionId}
+					/>
 				</div>
 			</PopoverContent>
 		</Popover>
@@ -257,6 +286,7 @@ export function JobHeader(props: JobHeaderProps) {
 							<HarnessSessionPopover
 								backend={props.backend}
 								sessionId={props.sessionId}
+								harnessSessionId={props.harnessSessionId}
 							/>
 						</span>
 					</div>

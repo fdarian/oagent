@@ -1053,6 +1053,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			model?: string;
 			agentType?: string;
 			sessionId: string;
+			harnessSessionId?: string;
 			mcpSessionId?: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
@@ -1072,6 +1073,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			model: row.job.model ?? undefined,
 			agentType: row.job.agent_type ?? undefined,
 			sessionId: row.session.uuid,
+			harnessSessionId: row.session.harness_session_id ?? undefined,
 			mcpSessionId: row.session.mcp_session_id ?? undefined,
 			worktreePath: row.session.worktree_path ?? undefined,
 			worktreeBranch: row.session.worktree_branch ?? undefined,

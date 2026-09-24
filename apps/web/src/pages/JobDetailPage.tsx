@@ -409,6 +409,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 											model={selectedJob.model}
 											agentType={selectedJob.agentType}
 											sessionId={selectedJob.sessionId}
+											harnessSessionId={selectedJob.harnessSessionId}
 											createdAt={selectedJob.createdAt}
 											terminatedAt={selectedJob.terminatedAt}
 											onCancel={() => {

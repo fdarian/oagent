@@ -166,6 +166,7 @@ const router = procedure.router({
 					model: job.model,
 					agentType: job.agentType,
 					sessionId: job.sessionId,
+					harnessSessionId: job.harnessSessionId,
 					worktreePath: job.worktreePath,
 					worktreeBranch: job.worktreeBranch,
 				};
