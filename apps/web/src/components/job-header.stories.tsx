@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { fn } from 'storybook/test';
 import { JobHeader } from './job-header';
 
 const meta: Meta<typeof JobHeader> = {
@@ -26,7 +27,7 @@ export const Running: Story = {
 		status: 'running',
 		terminatedAt: undefined,
 		onCancel: () => {},
-		onNewSideChat: () => {},
+		onNewSideChat: fn(),
 	},
 };
 
@@ -36,7 +37,7 @@ export const Completed: Story = {
 		status: 'done',
 		terminatedAt: Date.now() - 30_000,
 		onCancel: undefined,
-		onNewSideChat: () => {},
+		onNewSideChat: fn(),
 	},
 };
 
@@ -46,8 +47,8 @@ export const WithSideChats: Story = {
 		status: 'done',
 		terminatedAt: Date.now() - 30_000,
 		onCancel: undefined,
-		onNewSideChat: () => {},
-		onOpenSideChats: () => {},
+		onNewSideChat: fn(),
+		onOpenSideChats: fn(),
 	},
 };
 
@@ -57,6 +58,6 @@ export const Errored: Story = {
 		status: 'error',
 		terminatedAt: Date.now() - 15_000,
 		onCancel: undefined,
-		onNewSideChat: () => {},
+		onNewSideChat: fn(),
 	},
 };
