@@ -10,6 +10,7 @@ import type {
 	HarnessLoginResult,
 } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import { OpenCodeServiceClient } from './opencode-service-client.ts';
 
 export type HarnessRecord = {
 	backend: Backend;
@@ -40,6 +41,25 @@ export class Harnesses extends Context.Service<Harnesses>()(
 		make: Effect.gen(function* () {
 			const dbService = yield* Db;
 			const harnessRegistry = yield* HarnessRegistry;
+			const serviceClient = yield* OpenCodeServiceClient;
+			const serviceControl = (action: 'start' | 'stop') =>
+				Effect.gen(function* () {
+					const binary = harnessRegistry.get('opencode').resolveBinary();
+					if (binary === undefined)
+						return yield* new HarnessesError({
+							operation: `service ${action}`,
+							cause: new Error('OpenCode binary not detected'),
+						});
+					yield* serviceClient
+						.serviceControl(binary, action)
+						.pipe(
+							Effect.mapError(
+								(cause) =>
+									new HarnessesError({ operation: `service ${action}`, cause }),
+							),
+						);
+					return { ok: true as const };
+				});
 
 			const readList = (): ReadonlyArray<HarnessRecord> => {
 				const rows = dbService.db.select().from(schema.harnesses).all();
@@ -163,13 +183,14 @@ export class Harnesses extends Context.Service<Harnesses>()(
 
 					return yield* behavior.check().pipe(
 						Effect.tap((result) =>
-							result.ok
+							result.ok && 'agentVersion' in result
 								? Effect.try({
 										try: () =>
 											dbService.db
 												.update(schema.harnesses)
 												.set({
 													version:
+														!('agentVersion' in result) ||
 														result.agentVersion === undefined
 															? null
 															: result.agentVersion,
@@ -257,6 +278,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 				login,
 				cancelLogin,
 				logout,
+				serviceControl,
 			};
 		}),
 	},
@@ -264,5 +286,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 	static readonly layer = Layer.effect(Harnesses, Harnesses.make).pipe(
 		Layer.provide(Db.layer),
 		Layer.provideMerge(HarnessRegistry.layer),
+		Layer.provide(OpenCodeServiceClient.layer),
 	);
 }

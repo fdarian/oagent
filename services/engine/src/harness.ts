@@ -80,6 +80,13 @@ export type HarnessError =
 
 export type HarnessCheckResult =
 	| {
+			backend: 'opencode';
+			ok: true;
+			running: boolean;
+			url?: string;
+			version?: string;
+	  }
+	| {
 			backend: Backend;
 			ok: true;
 			agentName?: string;

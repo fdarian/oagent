@@ -13,6 +13,7 @@ import {
 } from './acp-agent.ts';
 import { type Harness, HarnessSteerError } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
+import { runOpenCodeApiTurn } from './opencode-api-turn.ts';
 import { OpenCodeServiceClient } from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
@@ -367,7 +368,37 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 		const createConfig = () =>
 			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode'));
-		const check = () => checkAcpConnection('opencode', createConfig());
+		const check = () =>
+			settings.getHarnessTransport('opencode') === 'acp'
+				? checkAcpConnection('opencode', createConfig())
+				: resolveOpenCodeVersion(binary).pipe(
+						Effect.flatMap((detected) => {
+							const major = parseOpenCodeMajor(detected);
+							return major !== undefined && major >= 2
+								? serviceClient.serviceStatus(binary).pipe(
+										Effect.map((status) => ({
+											backend: 'opencode' as const,
+											ok: true as const,
+											...status,
+										})),
+										Effect.catch((cause) =>
+											Effect.succeed({
+												backend: 'opencode' as const,
+												ok: false as const,
+												message: cause.message,
+											}),
+										),
+									)
+								: checkAcpConnection('opencode', createConfig());
+						}),
+						Effect.catch((cause) =>
+							Effect.succeed({
+								backend: 'opencode' as const,
+								ok: false as const,
+								message: cause.message,
+							}),
+						),
+					);
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -408,7 +439,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				),
 			);
 
-		const runTurn = (input: Parameters<typeof acpAgent.runTurn>[0]) =>
+		const acpRunTurn: typeof acpAgent.runTurn = (input) =>
 			acpAgent.runTurn({
 				...input,
 				model: undefined,
@@ -448,9 +479,38 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 						),
 				} satisfies AcpTurnRecovery,
 			});
+		const runTurn: typeof acpAgent.runTurn = (input) =>
+			settings.getHarnessTransport('opencode') === 'api'
+				? version().pipe(
+						Effect.flatMap((detected) => {
+							const major =
+								detected === undefined
+									? undefined
+									: parseOpenCodeMajor(detected);
+							return major !== undefined && major >= 2
+								? runOpenCodeApiTurn(serviceClient, binary, input)
+								: acpRunTurn(input);
+						}),
+					)
+				: acpRunTurn(input);
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
-			acpAgent.forkSession(input);
+			settings.getHarnessTransport('opencode') === 'api'
+				? version().pipe(
+						Effect.flatMap((detected) => {
+							const major =
+								detected === undefined
+									? undefined
+									: parseOpenCodeMajor(detected);
+							return major !== undefined && major >= 2
+								? serviceClient.forkSession(binary, input).pipe(
+										Effect.map((sessionId) => ({ sessionId })),
+										Effect.mapError((cause) => new AcpSessionError({ cause })),
+									)
+								: acpAgent.forkSession(input);
+						}),
+					)
+				: acpAgent.forkSession(input);
 
 		const forkSessionBefore = (input: {
 			sessionId: string;

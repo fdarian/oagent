@@ -513,7 +513,7 @@ const router = procedure.router({
 					}
 					const registry = yield* HarnessRegistry;
 					const version = yield* registry.get('opencode').version();
-					if (version === undefined || !/^[2-9]\d*\./.test(version)) {
+					if (version === undefined || Number.parseInt(version, 10) < 2) {
 						return yield* Effect.fail(
 							new Error(
 								`OpenCode API transport requires v2 or newer (detected: ${String(version)})`,
@@ -531,6 +531,14 @@ const router = procedure.router({
 			}),
 	},
 	harnesses: {
+		serviceStart: procedure.input(v.void_()).effect(function* () {
+			const harnesses = yield* Harnesses;
+			return yield* harnesses.serviceControl('start');
+		}),
+		serviceStop: procedure.input(v.void_()).effect(function* () {
+			const harnesses = yield* Harnesses;
+			return yield* harnesses.serviceControl('stop');
+		}),
 		list: procedure.input(v.void_()).effect(function* () {
 			const harnesses = yield* Harnesses;
 			return (yield* harnesses.list()).map(toHarnessDto);

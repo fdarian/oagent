@@ -50,6 +50,21 @@ const MessagesResponse = Schema.Struct({
 	),
 });
 
+const ApiSessionResponse = Schema.Struct({
+	data: Schema.Struct({
+		id: Schema.String,
+		agent: Schema.optional(Schema.String),
+		model: Schema.optional(
+			Schema.Struct({
+				id: Schema.String,
+				providerID: Schema.String,
+				variant: Schema.optional(Schema.String),
+			}),
+		),
+	}),
+});
+const ServiceInfoResponse = Schema.Struct({ version: Schema.String });
+
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -582,6 +597,116 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 					}
 				});
 
+			const request = (
+				binaryPath: string,
+				method: 'GET' | 'POST',
+				path: string,
+				body?: unknown,
+			) =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL(path, service.url);
+					const authenticated = (
+						method === 'GET'
+							? HttpClientRequest.get(url)
+							: HttpClientRequest.post(url)
+					).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+					);
+					const req =
+						body === undefined
+							? authenticated
+							: yield* HttpClientRequest.bodyJson(authenticated, body).pipe(
+									Effect.mapError(
+										(cause) =>
+											new OpenCodeSessionRestError({
+												operation: path,
+												sessionId: path,
+												cause,
+											}),
+									),
+								);
+					const response = yield* httpClient.execute(req).pipe(
+						Effect.mapError(
+							(cause) =>
+								new OpenCodeSessionRestError({
+									operation: path,
+									sessionId: path,
+									cause,
+								}),
+						),
+					);
+					if (response.status < 200 || response.status >= 300)
+						return yield* new OpenCodeSessionRestError({
+							operation: path,
+							sessionId: path,
+							cause: new Error(
+								`OpenCode service returned HTTP ${response.status}`,
+							),
+						});
+					return response;
+				});
+
+			const apiSession = (
+				binaryPath: string,
+				sessionId: string | undefined,
+				cwd: string,
+			) =>
+				Effect.gen(function* () {
+					const response = yield* request(
+						binaryPath,
+						sessionId === undefined ? 'POST' : 'GET',
+						sessionId === undefined
+							? '/api/session'
+							: `/api/session/${encodeURIComponent(sessionId)}`,
+						sessionId === undefined
+							? { location: { directory: cwd } }
+							: undefined,
+					);
+					return yield* HttpClientResponse.schemaBodyJson(ApiSessionResponse)(
+						response,
+					).pipe(Effect.map((body) => body.data));
+				});
+
+			const serviceStatus = (binaryPath: string) =>
+				Effect.gen(function* () {
+					const status = yield* runServiceCommand(
+						binaryPath,
+						['service', 'status'],
+						'checking service status',
+					);
+					if (status.exitCode !== 0) return { running: false as const };
+					const service = yield* discover(binaryPath);
+					const response = yield* request(binaryPath, 'GET', '/api/info');
+					const info =
+						yield* HttpClientResponse.schemaBodyJson(ServiceInfoResponse)(
+							response,
+						);
+					return {
+						running: true as const,
+						url: service.url,
+						version: info.version,
+					};
+				});
+
+			const serviceControl = (binaryPath: string, action: 'start' | 'stop') =>
+				Effect.gen(function* () {
+					const result = yield* runServiceCommand(
+						binaryPath,
+						['service', action],
+						`running service ${action}`,
+					);
+					if (result.exitCode !== 0)
+						return yield* commandExitError(
+							`running service ${action}`,
+							`opencode service ${action}`,
+							result,
+						);
+				});
+
 			return {
 				steer,
 				disableQuestion,
@@ -589,6 +714,10 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 				forkSession,
 				getLatestMessageId,
 				getFirstMessageAfter,
+				request,
+				apiSession,
+				serviceStatus,
+				serviceControl,
 			};
 		}),
 	},
