@@ -28,8 +28,38 @@ export function HarnessSettingsPage() {
 			enabled: backend === 'codex',
 		}),
 	);
+	const transportQuery = useQuery(
+		orpc.settings.getHarnessTransport.queryOptions({
+			input: { backend: 'opencode' },
+			enabled: backend === 'opencode',
+		}),
+	);
+	const transportMutation = useMutation(
+		orpc.settings.setHarnessTransport.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: orpc.settings.getHarnessTransport.key(),
+				});
+				checkMutation.reset();
+			},
+		}),
+	);
 
 	const checkMutation = useMutation(orpc.harnesses.check.mutationOptions());
+	const startMutation = useMutation(
+		orpc.harnesses.serviceStart.mutationOptions({
+			onSuccess: () => checkMutation.mutate({ backend: 'opencode' }),
+		}),
+	);
+	const stopMutation = useMutation(
+		orpc.harnesses.serviceStop.mutationOptions({
+			onSuccess: () => checkMutation.mutate({ backend: 'opencode' }),
+		}),
+	);
+	useEffect(() => {
+		if (backend === 'opencode' && transportQuery.data?.transport === 'api')
+			checkMutation.mutate({ backend: 'opencode' });
+	}, [backend, transportQuery.data?.transport, checkMutation.mutate]);
 	const codexHomeMutation = useMutation(
 		orpc.settings.setCodexHome.mutationOptions({
 			onSuccess: () => {
@@ -104,6 +134,11 @@ export function HarnessSettingsPage() {
 	const trimmedCodexHome = codexHome.trim();
 	const draftCodexHome = trimmedCodexHome === '' ? undefined : trimmedCodexHome;
 	const isCodexHomeChanged = draftCodexHome !== codexHomeQuery.data?.home;
+	const apiSupported =
+		backend === 'opencode' &&
+		harness.version !== undefined &&
+		Number.parseInt(harness.version, 10) >= 2;
+	const apiMode = apiSupported && transportQuery.data?.transport === 'api';
 
 	function saveCodexHome() {
 		if (!canSaveCodexHome || !isCodexHomeChanged) return;
@@ -131,9 +166,7 @@ export function HarnessSettingsPage() {
 								className="font-mono text-xs"
 								onFocus={(event) => event.currentTarget.select()}
 							/>
-							<FieldDescription>
-								Detected executable used for ACP sessions.
-							</FieldDescription>
+							<FieldDescription>Detected harness executable.</FieldDescription>
 						</Field>
 						<Field>
 							<FieldLabel htmlFor="harness-version">Version</FieldLabel>
@@ -152,53 +185,150 @@ export function HarnessSettingsPage() {
 								Version captured from the detected harness binary.
 							</FieldDescription>
 						</Field>
+						{backend === 'opencode' ? (
+							<Field>
+								<FieldLabel>Transport</FieldLabel>
+								<fieldset
+									className="flex gap-2"
+									aria-label="OpenCode transport"
+								>
+									{(['acp', 'api'] as const).map((transport) => (
+										<Button
+											key={transport}
+											type="button"
+											variant={
+												(apiMode ? 'api' : 'acp') === transport
+													? 'default'
+													: 'outline'
+											}
+											disabled={
+												transportQuery.isLoading ||
+												transportMutation.isPending ||
+												(transport === 'api' && !apiSupported)
+											}
+											onClick={() =>
+												transportMutation.mutate({
+													backend: 'opencode',
+													transport,
+												})
+											}
+										>
+											{transport.toUpperCase()}
+										</Button>
+									))}
+								</fieldset>
+								{!apiSupported ? (
+									<FieldDescription>
+										API transport requires OpenCode v2 or newer.
+									</FieldDescription>
+								) : null}
+								{transportQuery.isError ? (
+									<p className="text-sm text-destructive">
+										{transportQuery.error.message}
+									</p>
+								) : null}
+								{transportMutation.isError ? (
+									<p className="text-sm text-destructive">
+										{transportMutation.error.message}
+									</p>
+								) : null}
+							</Field>
+						) : null}
 
-						<div className="flex flex-col items-start gap-3">
-							<Button
-								type="button"
-								disabled={checkMutation.isPending}
-								onClick={() => {
-									checkMutation.mutate({ backend });
-								}}
-							>
-								{checkMutation.isPending ? (
-									<>
-										<Spinner />
-										Checking…
-									</>
-								) : (
-									'Check connection'
-								)}
-							</Button>
+						{apiMode ? (
+							<div className="flex flex-col items-start gap-3">
+								<p className="text-sm">
+									{checkMutation.data?.ok && 'running' in checkMutation.data
+										? checkMutation.data.running
+											? `Running at ${checkMutation.data.url} · v${checkMutation.data.version}`
+											: 'Stopped'
+										: 'Status not checked'}
+								</p>
+								<div className="flex gap-2">
+									<Button
+										type="button"
+										disabled={startMutation.isPending}
+										onClick={() => startMutation.mutate()}
+									>
+										Start
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										disabled={stopMutation.isPending}
+										onClick={() => stopMutation.mutate()}
+									>
+										Stop
+									</Button>
+									<Button
+										type="button"
+										variant="outline"
+										disabled={checkMutation.isPending}
+										onClick={() => checkMutation.mutate({ backend })}
+									>
+										Refresh
+									</Button>
+								</div>
+								{startMutation.isError ||
+								stopMutation.isError ||
+								checkMutation.isError ? (
+									<p className="text-sm text-destructive">
+										{startMutation.error?.message ||
+											stopMutation.error?.message ||
+											checkMutation.error?.message}
+									</p>
+								) : null}
+							</div>
+						) : (
+							<div className="flex flex-col items-start gap-3">
+								<Button
+									type="button"
+									disabled={checkMutation.isPending}
+									onClick={() => {
+										checkMutation.mutate({ backend });
+									}}
+								>
+									{checkMutation.isPending ? (
+										<>
+											<Spinner />
+											Checking…
+										</>
+									) : (
+										'Check connection'
+									)}
+								</Button>
 
-							{checkMutation.isSuccess && checkMutation.data.ok ? (
-								<Alert className="border-verdant-accent/40">
-									<AlertTitle>Connection successful</AlertTitle>
-									<AlertDescription>
-										{checkMutation.data.agentName !== undefined
-											? checkMutation.data.agentName
-											: 'ACP handshake completed'}
-										{checkMutation.data.agentVersion !== undefined
-											? ` · ${checkMutation.data.agentVersion}`
-											: null}
-									</AlertDescription>
-								</Alert>
-							) : checkMutation.isSuccess && !checkMutation.data.ok ? (
-								<Alert variant="destructive">
-									<AlertTitle>Connection failed</AlertTitle>
-									<AlertDescription>
-										{checkMutation.data.message}
-									</AlertDescription>
-								</Alert>
-							) : checkMutation.isError ? (
-								<Alert variant="destructive">
-									<AlertTitle>Connection check failed</AlertTitle>
-									<AlertDescription>
-										{checkMutation.error.message}
-									</AlertDescription>
-								</Alert>
-							) : null}
-						</div>
+								{checkMutation.isSuccess && checkMutation.data.ok ? (
+									<Alert className="border-verdant-accent/40">
+										<AlertTitle>Connection successful</AlertTitle>
+										<AlertDescription>
+											{'agentName' in checkMutation.data &&
+											checkMutation.data.agentName !== undefined
+												? checkMutation.data.agentName
+												: 'ACP handshake completed'}
+											{'agentVersion' in checkMutation.data &&
+											checkMutation.data.agentVersion !== undefined
+												? ` · ${checkMutation.data.agentVersion}`
+												: null}
+										</AlertDescription>
+									</Alert>
+								) : checkMutation.isSuccess && !checkMutation.data.ok ? (
+									<Alert variant="destructive">
+										<AlertTitle>Connection failed</AlertTitle>
+										<AlertDescription>
+											{checkMutation.data.message}
+										</AlertDescription>
+									</Alert>
+								) : checkMutation.isError ? (
+									<Alert variant="destructive">
+										<AlertTitle>Connection check failed</AlertTitle>
+										<AlertDescription>
+											{checkMutation.error.message}
+										</AlertDescription>
+									</Alert>
+								) : null}
+							</div>
+						)}
 					</div>
 
 					{backend === 'codex' ? (
@@ -265,7 +395,9 @@ export function HarnessSettingsPage() {
 						</div>
 					) : null}
 
-					<HarnessEnvSection key={backend} backend={backend} />
+					{!apiMode ? (
+						<HarnessEnvSection key={backend} backend={backend} />
+					) : null}
 				</div>
 			</main>
 		</div>
