@@ -9,21 +9,22 @@ export function WorktreeSettingsPage() {
 	const queryClient = useQueryClient();
 	const [enabled, setEnabled] = useState(false);
 	const [createCommand, setCreateCommand] = useState('');
-	const setting = useQuery({
-		queryKey: ['settings', 'worktree'],
-		queryFn: () => orpc.settings.getWorktree(),
-	});
+	const setting = useQuery(orpc.settings.getWorktree.queryOptions());
 	useEffect(() => {
 		if (setting.data !== undefined) {
 			setEnabled(setting.data.enabled);
 			setCreateCommand(setting.data.createCommand);
 		}
 	}, [setting.data]);
-	const save = useMutation({
-		mutationFn: () => orpc.settings.setWorktree({ enabled, createCommand }),
-		onSuccess: () =>
-			queryClient.invalidateQueries({ queryKey: ['settings', 'worktree'] }),
-	});
+	const save = useMutation(
+		orpc.settings.setWorktree.mutationOptions({
+			onSuccess: () => {
+				queryClient.invalidateQueries({
+					queryKey: orpc.settings.getWorktree.key(),
+				});
+			},
+		}),
+	);
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -72,7 +73,7 @@ export function WorktreeSettingsPage() {
 									disabled={
 										save.isPending || (enabled && createCommand.trim() === '')
 									}
-									onClick={() => save.mutate()}
+									onClick={() => save.mutate({ enabled, createCommand })}
 								>
 									{save.isPending ? 'Saving…' : 'Save'}
 								</Button>
