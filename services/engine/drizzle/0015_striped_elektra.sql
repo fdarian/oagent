@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` DROP COLUMN `mcp_session_id`;
