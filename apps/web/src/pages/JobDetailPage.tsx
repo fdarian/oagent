@@ -11,8 +11,8 @@ import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
 import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
 import { SubagentHeader } from '@/components/subagent-header';
-import { client, orpc } from '@/lib/orpc';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { client, orpc } from '@/lib/orpc';
 import {
 	isCurrentSideChatCreation,
 	type SideChatCreation,
