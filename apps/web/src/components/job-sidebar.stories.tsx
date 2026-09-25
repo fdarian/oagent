@@ -24,6 +24,7 @@ export const Empty: Story = {
 
 const denseItems = Array.from({ length: 12 }).map((_, i) => ({
 	id: `job-${i}`,
+	title: `Session task ${i}`,
 	status: i % 3 === 0 ? 'running' : i % 3 === 1 ? 'done' : 'error',
 	createdAt: Date.now() - i * 60_000,
 	prompt: `Task ${i}: analyze codebase`,
@@ -47,6 +48,7 @@ export const Dense: Story = {
 const mixedItems = [
 	{
 		id: 'job-a',
+		title: 'Refactor auth middleware',
 		status: 'running',
 		createdAt: Date.now() - 30_000,
 		prompt: 'Refactor auth middleware',
@@ -57,6 +59,7 @@ const mixedItems = [
 	},
 	{
 		id: 'job-b',
+		title: 'Refactor auth middleware',
 		status: 'done',
 		createdAt: Date.now() - 300_000,
 		prompt: 'List files in src/',
@@ -66,6 +69,7 @@ const mixedItems = [
 	},
 	{
 		id: 'job-c',
+		title: 'Deploy infrastructure',
 		status: 'error',
 		createdAt: Date.now() - 600_000,
 		prompt: 'Deploy to production',
@@ -74,6 +78,7 @@ const mixedItems = [
 	},
 	{
 		id: 'job-d',
+		title: 'Refactor auth middleware',
 		status: 'done',
 		createdAt: Date.now() - 86_400_000,
 		prompt: 'Write tests for utils',
@@ -105,6 +110,8 @@ export const MixedStatuses: Story = {
 
 const longItem = {
 	id: 'job-long',
+	title:
+		'A session title that is intentionally very long to verify sidebar truncation',
 	status: 'running',
 	createdAt: Date.now() - 10_000,
 	prompt:

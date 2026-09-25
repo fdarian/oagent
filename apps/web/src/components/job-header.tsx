@@ -1,10 +1,4 @@
-import {
-	CheckIcon,
-	CopyIcon,
-	EllipsisIcon,
-	MaximizeIcon,
-	XCircleIcon,
-} from 'lucide-react';
+import { CheckIcon, CopyIcon, EllipsisIcon, XCircleIcon } from 'lucide-react';
 import { type RefObject, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -26,7 +20,7 @@ import { ActionRow } from './ui/action-row';
 export type JobHeaderProps = {
 	id: string;
 	status: string;
-	prompt: string;
+	title: string;
 	cwd: string;
 	worktreePath?: string;
 	worktreeBranch?: string;
@@ -38,7 +32,6 @@ export type JobHeaderProps = {
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
-	onExpandPrompt?: () => void;
 	onNewSideChat?: () => void;
 	onOpenSideChats?: () => void;
 	isCreatingSideChat?: boolean;
@@ -229,7 +222,6 @@ export function JobHeader(props: JobHeaderProps) {
 		});
 	};
 
-	const promptLines = props.prompt.split('\n').slice(0, 2).join('\n');
 	const elapsed = formatElapsed(props.createdAt, props.terminatedAt);
 
 	const statusDot =
@@ -241,28 +233,13 @@ export function JobHeader(props: JobHeaderProps) {
 			<span className="inline-block h-[6px] w-[6px] bg-destructive" />
 		);
 
-	const isPromptTruncated =
-		props.prompt.split('\n').length > 2 || props.prompt !== promptLines;
-
 	return (
 		<div className="flex flex-col gap-15 border-b border-border pb-22">
 			<div className="flex flex-wrap items-start justify-between gap-15">
 				<div className="flex min-w-0 flex-1 flex-col gap-15">
-					<div className="group relative">
-						<pre className="whitespace-pre-wrap text-body font-light text-foreground">
-							{promptLines}
-						</pre>
-						{isPromptTruncated && props.onExpandPrompt !== undefined && (
-							<button
-								type="button"
-								onClick={props.onExpandPrompt}
-								className="mt-1 flex items-center gap-1 text-caption text-muted-foreground transition-colors hover:text-foreground"
-							>
-								<MaximizeIcon className="h-3 w-3" />
-								View full prompt
-							</button>
-						)}
-					</div>
+					<h1 className="text-subheading font-light text-foreground">
+						{props.title}
+					</h1>
 					<div className="flex flex-wrap items-center gap-x-15 gap-y-1 text-caption text-muted-foreground">
 						<span className="min-w-0 max-w-full truncate">{props.cwd}</span>
 						<span>·</span>

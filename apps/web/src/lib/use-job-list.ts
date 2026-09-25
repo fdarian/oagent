@@ -7,6 +7,7 @@ import { useJobListStream } from './use-job-list-stream.ts';
 
 export type JobListItem = {
 	id: string;
+	title: string;
 	status: string;
 	createdAt: number;
 	terminatedAt?: number;

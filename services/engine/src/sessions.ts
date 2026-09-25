@@ -65,6 +65,7 @@ export class SessionPersistenceError extends Schema.TaggedError<SessionPersisten
 ) {}
 
 type StartInput = {
+	title: string;
 	prompt: string;
 	cwd?: string;
 	model?: string;
@@ -81,6 +82,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		const harnessRegistry = yield* HarnessRegistry;
 
 		const insertSession = (input: {
+			title: string;
 			backend: Backend;
 			harnessSessionId?: string;
 			cwd: string;
@@ -94,6 +96,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						.insert(schema.sessions)
 						.values({
 							uuid: randomUUIDv7(),
+							title: input.title,
 							backend: input.backend,
 							harness_session_id: input.harnessSessionId,
 							cwd: input.cwd,
@@ -339,6 +342,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					yield* jobs.validateStart({ model, backend, agentType });
 				}
 				const session = yield* insertSession({
+					title: input.title,
 					backend,
 					harnessSessionId: fork?.harnessSessionId,
 					cwd,
@@ -504,6 +508,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.all();
 				const sessions: Array<{
 					id: string;
+					title: string;
 					jobId: string;
 					status: JobRow['status'];
 					prompt: string;
@@ -514,6 +519,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					if (job === undefined) continue;
 					sessions.push({
 						id: session.uuid,
+						title: session.title,
 						jobId: job.uuid,
 						status: job.status,
 						prompt: job.prompt,
@@ -552,6 +558,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					});
 				}
 				return yield* insertSession({
+					title: sourceSession.title,
 					backend: parseBackend(sourceSession.backend),
 					cwd: sourceSession.cwd,
 					worktreePath: sourceSession.worktree_path ?? undefined,

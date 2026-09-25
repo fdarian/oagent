@@ -24,7 +24,6 @@ export function JobSidebarItem({
 	selectedId?: string;
 }) {
 	const isSelected = job.id === selectedId;
-	const promptPreview = job.prompt.split('\n')[0]?.slice(0, 80) ?? job.id;
 	return (
 		<Link
 			to="/jobs/$jobId"
@@ -45,7 +44,7 @@ export function JobSidebarItem({
 					)}
 				/>
 				<span className="truncate text-caption font-light text-foreground">
-					{promptPreview}
+					{job.title}
 				</span>
 			</div>
 			<div className="flex items-center gap-15 text-caption text-muted-foreground">

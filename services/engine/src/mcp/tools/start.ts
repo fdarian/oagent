@@ -136,6 +136,7 @@ export function buildDescription(): string {
 }
 
 export const inputSchema = z.object({
+	title: z.string().describe('A short (3-5 word) title for the session'),
 	prompt: z.string().describe('Task instructions for the agent.'),
 	cwd: z
 		.string()
@@ -193,6 +194,7 @@ export const startTool = {
 	) {
 		return ctx.sessions
 			.start({
+				title: args.title,
 				prompt: args.prompt,
 				cwd: args.cwd,
 				model: args.model,

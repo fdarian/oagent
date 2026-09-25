@@ -157,6 +157,7 @@ const router = procedure.router({
 				if (job === undefined) return undefined;
 				return {
 					id: job.id,
+					title: job.title,
 					status: job.status,
 					createdAt: job.createdAt,
 					terminatedAt: job.terminatedAt,
@@ -173,30 +174,46 @@ const router = procedure.router({
 			}),
 		start: procedure
 			.input(
-				v.object({
-					prompt: v.string(),
-					cwd: v.string(),
-					model: v.optional(v.string()),
-					agent_type: v.optional(v.string()),
-					sessionId: v.optional(v.string()),
-					worktree: v.optional(v.boolean()),
-				}),
+				v.pipe(
+					v.object({
+						prompt: v.string(),
+						cwd: v.string(),
+						model: v.optional(v.string()),
+						agent_type: v.optional(v.string()),
+						title: v.optional(v.string()),
+						sessionId: v.optional(v.string()),
+						worktree: v.optional(v.boolean()),
+					}),
+					v.check(
+						(input) =>
+							input.sessionId !== undefined || input.title !== undefined,
+						'title is required when creating a session',
+					),
+				),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				const result =
-					options.input.sessionId === undefined
-						? yield* sessions.start({
-								prompt: options.input.prompt,
-								cwd: options.input.cwd,
-								model: options.input.model,
-								agentType: options.input.agent_type,
-								worktree: options.input.worktree,
-							})
-						: yield* sessions.sendMessage({
-								sessionId: options.input.sessionId,
-								prompt: options.input.prompt,
-							});
+				const result = yield* Effect.gen(function* () {
+					if (options.input.sessionId !== undefined) {
+						return yield* sessions.sendMessage({
+							sessionId: options.input.sessionId,
+							prompt: options.input.prompt,
+						});
+					}
+					if (options.input.title === undefined) {
+						return yield* Effect.fail(
+							new Error('title is required when creating a session'),
+						);
+					}
+					return yield* sessions.start({
+						title: options.input.title,
+						prompt: options.input.prompt,
+						cwd: options.input.cwd,
+						model: options.input.model,
+						agentType: options.input.agent_type,
+						worktree: options.input.worktree,
+					});
+				});
 				yield* Effect.logInfo(
 					`RPC start accepted ${requestLogFields({
 						jobId: result.jobId,
@@ -258,6 +275,7 @@ const router = procedure.router({
 		start: procedure
 			.input(
 				v.object({
+					title: v.string(),
 					prompt: v.string(),
 					cwd: v.optional(v.string()),
 					model: v.optional(v.string()),
@@ -269,6 +287,7 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.start({
+					title: options.input.title,
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
 					model: options.input.model,

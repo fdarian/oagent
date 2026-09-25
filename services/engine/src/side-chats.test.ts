@@ -22,6 +22,7 @@ function insertSession(
 	database: TestDatabase,
 	input: {
 		uuid: string;
+		title: string;
 		cwd: string;
 		backend?: string;
 		harnessSessionId?: string;
@@ -33,6 +34,7 @@ function insertSession(
 		.insert(schema.sessions)
 		.values({
 			uuid: input.uuid,
+			title: input.title,
 			backend: input.backend ?? 'opencode',
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
@@ -65,6 +67,7 @@ function insertJob(
 		input.session ??
 		insertSession(database, {
 			uuid: `session-${input.uuid}`,
+			title: 'Side chat source',
 			backend: input.backend,
 			cwd: input.cwd,
 			harnessSessionId: input.harnessSessionId,
@@ -670,6 +673,7 @@ describe('side chats', () => {
 		if (storedSideChat === undefined) throw new Error('Expected side chat');
 		const sideChatSession = insertSession(database, {
 			uuid: 'session-handed-off',
+			title: 'Side chat session',
 			cwd: '/workspace',
 			harnessSessionId: 'ses_side_chat',
 		});

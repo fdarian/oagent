@@ -82,6 +82,7 @@ function insertSession(
 	database: TestDatabase,
 	input: {
 		uuid: string;
+		title: string;
 		backend: Backend;
 		harnessSessionId: string;
 		cwd: string;
@@ -91,6 +92,7 @@ function insertSession(
 		.insert(schema.sessions)
 		.values({
 			uuid: input.uuid,
+			title: input.title,
 			backend: input.backend,
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
@@ -161,7 +163,12 @@ describe('session turns', () => {
 			},
 		);
 		const started = await Effect.runPromise(
-			services.sessions.start({ prompt: 'first', cwd: '/repo', model: 'deep' }),
+			services.sessions.start({
+				title: 'First session',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'deep',
+			}),
 		);
 		await Effect.runPromise(
 			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
@@ -176,7 +183,11 @@ describe('session turns', () => {
 			services.jobs.wait({ jobId: continued.jobId, timeoutMs: 1_000 }),
 		);
 		const forked = await Effect.runPromise(
-			services.sessions.start({ prompt: 'fork', forkId: started.sessionId }),
+			services.sessions.start({
+				title: 'Forked session',
+				prompt: 'fork',
+				forkId: started.sessionId,
+			}),
 		);
 		await Effect.runPromise(
 			services.jobs.wait({ jobId: forked.jobId, timeoutMs: 1_000 }),
@@ -216,6 +227,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Original session',
 				prompt: 'first',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -227,6 +239,7 @@ describe('session turns', () => {
 		await expect(
 			Effect.runPromise(
 				services.sessions.start({
+					title: 'Fork attempt',
 					prompt: 'fork',
 					forkId: started.sessionId,
 					model: 'codex:model',
@@ -259,6 +272,7 @@ describe('session turns', () => {
 		await expect(
 			Effect.runPromise(
 				services.sessions.start({
+					title: 'Missing agent',
 					prompt: 'first',
 					cwd: '/repo',
 					model: 'opencode:model',
@@ -299,6 +313,7 @@ describe('session turns', () => {
 
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'First prompt',
 				prompt: 'first prompt',
 				cwd: '/repo',
 				model: 'opencode:model-id',
@@ -311,6 +326,7 @@ describe('session turns', () => {
 			.where(eq(schema.sessions.uuid, started.sessionId))
 			.get();
 		expect(stored).toMatchObject({
+			title: 'First prompt',
 			backend: 'opencode',
 			cwd: '/repo',
 		});
@@ -363,6 +379,7 @@ describe('session turns', () => {
 		).toMatchObject([
 			{
 				id: started.sessionId,
+				title: 'First prompt',
 				jobId: continued.jobId,
 				status: 'done',
 				prompt: 'second prompt',
@@ -441,6 +458,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Work session',
 				prompt: 'work',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -497,6 +515,7 @@ describe('session turns', () => {
 		);
 		const cursorSession = await Effect.runPromise(
 			cursor.sessions.start({
+				title: 'Cursor work',
 				prompt: 'work',
 				cwd: '/repo',
 				model: 'cursor:model',
@@ -556,6 +575,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'First session',
 				prompt: 'first',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -600,6 +620,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Long task',
 				prompt: 'long task',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -668,6 +689,7 @@ describe('session turns', () => {
 		);
 		const sourceSession = insertSession(database, {
 			uuid: 'session-source',
+			title: 'Source session',
 			backend: 'opencode',
 			harnessSessionId: 'ses_source',
 			cwd: '/repo',
@@ -689,6 +711,7 @@ describe('session turns', () => {
 
 		const forkedBySession = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Continue full state',
 				prompt: 'continue full state',
 				forkId: sourceSession.uuid,
 			}),
@@ -703,6 +726,7 @@ describe('session turns', () => {
 			.get();
 		const forkedByEarlierJob = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Continue earlier state',
 				prompt: 'continue earlier state',
 				forkId: earlierJob.uuid,
 			}),
@@ -723,7 +747,9 @@ describe('session turns', () => {
 				.where(eq(schema.jobs.uuid, 'job-latest'))
 				.get()?.id,
 		);
+		expect(forkedSession?.title).toBe('Continue full state');
 		expect(earlierForkSession?.forked_from_job_id).toBe(earlierJob.id);
+		expect(earlierForkSession?.title).toBe('Continue earlier state');
 		expect(firstMessageLookups).toEqual(['msg-last-first-turn']);
 		expect(beforeForks).toEqual(['msg-after-first-turn']);
 		expect(calls).toEqual([
@@ -744,6 +770,7 @@ describe('session turns', () => {
 		);
 		const sourceSession = insertSession(database, {
 			uuid: 'session-no-checkpoint',
+			title: 'Source without checkpoint',
 			backend: 'opencode',
 			harnessSessionId: 'ses_source',
 			cwd: '/repo',
@@ -764,6 +791,7 @@ describe('session turns', () => {
 		await expect(
 			Effect.runPromise(
 				services.sessions.start({
+					title: 'Fork without checkpoint',
 					prompt: 'fork without checkpoint',
 					forkId: 'job-no-checkpoint',
 				}),

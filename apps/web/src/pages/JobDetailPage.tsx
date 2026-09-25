@@ -7,12 +7,12 @@ import {
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { JobHeader } from '@/components/job-header';
-import { JobPromptView } from '@/components/job-prompt-view';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
 import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
 import { SubagentHeader } from '@/components/subagent-header';
 import { client, orpc } from '@/lib/orpc';
+import type { TimelinePart } from '@/lib/event-adapter';
 import {
 	isCurrentSideChatCreation,
 	type SideChatCreation,
@@ -45,7 +45,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const jobId = props.jobId;
 	const search = useSearch({ from: '/console/jobs/$jobId' });
 	const navigate = useNavigate({ from: '/jobs/$jobId' });
-	const [isPromptExpanded, setIsPromptExpanded] = useState(false);
 	const activeChildState = useState<
 		{ jobId: string; sessionId: string } | undefined
 	>(undefined);
@@ -345,6 +344,16 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 					? 'error'
 					: 'done'
 				: selectedJob.status;
+	const initialPrompt: TimelinePart = {
+		kind: 'user',
+		id: 'initial-prompt',
+		text: selectedJob.prompt,
+		createdAt: selectedJob.createdAt,
+	};
+	const parts =
+		activeChild === undefined
+			? [initialPrompt, ...events.parts]
+			: activeChild.parts;
 
 	return (
 		<>
@@ -362,82 +371,72 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 					}
 				/>
 			</div>
-			{isPromptExpanded ? (
-				<JobPromptView
-					prompt={selectedJob.prompt}
-					onClose={() => setIsPromptExpanded(false)}
-				/>
-			) : (
-				<div className="flex min-h-0 flex-1 flex-col">
-					<JobTimeline
-						key={
-							activeChildSessionId === undefined
-								? 'parent'
-								: activeChildSessionId
-						}
-						parts={activeChild === undefined ? events.parts : activeChild.parts}
-						streamingTail={
-							activeChild === undefined
-								? events.streamingTail
-								: activeChild.streamingTail
-						}
-						cwd={selectedJob.cwd}
-						childSessions={events.children}
-						currentChild={activeChild}
-						activeChildSessionId={activeChildSessionId}
-						onChildSelect={selectChild}
-						isChildTimeline={activeChild !== undefined}
-						isLoading={
-							events.isLoading &&
-							(activeChild === undefined
-								? events.parts.length === 0 && events.streamingTail === null
-								: activeChild.parts.length === 0 &&
-									activeChild.streamingTail === null)
-						}
-						header={
-							activeChild === undefined ? (
-								<div className="px-33 py-22">
-									<div className="mx-auto max-w-[900px]">
-										<JobHeader
-											id={selectedJob.id}
-											status={status}
-											prompt={selectedJob.prompt}
-											cwd={selectedJob.cwd}
-											worktreePath={selectedJob.worktreePath}
-											worktreeBranch={selectedJob.worktreeBranch}
-											backend={selectedJob.backend}
-											model={selectedJob.model}
-											agentType={selectedJob.agentType}
-											sessionId={selectedJob.sessionId}
-											harnessSessionId={selectedJob.harnessSessionId}
-											createdAt={selectedJob.createdAt}
-											terminatedAt={selectedJob.terminatedAt}
-											onCancel={() => {
-												cancelJob.mutate({ jobId: selectedJob.id });
-											}}
-											onExpandPrompt={() => setIsPromptExpanded(true)}
-											onNewSideChat={handleNewSideChat}
-											isCreatingSideChat={isCreatingSideChat}
-											onOpenSideChats={
-												sideChats === undefined || sideChats.length === 0
-													? undefined
-													: handleOpenSideChats
-											}
-											moreTriggerRef={moreTriggerRef}
-										/>
-									</div>
+			<div className="flex min-h-0 flex-1 flex-col">
+				<JobTimeline
+					key={
+						activeChildSessionId === undefined ? 'parent' : activeChildSessionId
+					}
+					parts={parts}
+					streamingTail={
+						activeChild === undefined
+							? events.streamingTail
+							: activeChild.streamingTail
+					}
+					cwd={selectedJob.cwd}
+					childSessions={events.children}
+					currentChild={activeChild}
+					activeChildSessionId={activeChildSessionId}
+					onChildSelect={selectChild}
+					isChildTimeline={activeChild !== undefined}
+					isLoading={
+						events.isLoading &&
+						(activeChild === undefined
+							? events.parts.length === 0 && events.streamingTail === null
+							: activeChild.parts.length === 0 &&
+								activeChild.streamingTail === null)
+					}
+					header={
+						activeChild === undefined ? (
+							<div className="px-33 py-22">
+								<div className="mx-auto max-w-[900px]">
+									<JobHeader
+										id={selectedJob.id}
+										status={status}
+										title={selectedJob.title}
+										cwd={selectedJob.cwd}
+										worktreePath={selectedJob.worktreePath}
+										worktreeBranch={selectedJob.worktreeBranch}
+										backend={selectedJob.backend}
+										model={selectedJob.model}
+										agentType={selectedJob.agentType}
+										sessionId={selectedJob.sessionId}
+										harnessSessionId={selectedJob.harnessSessionId}
+										createdAt={selectedJob.createdAt}
+										terminatedAt={selectedJob.terminatedAt}
+										onCancel={() => {
+											cancelJob.mutate({ jobId: selectedJob.id });
+										}}
+										onNewSideChat={handleNewSideChat}
+										isCreatingSideChat={isCreatingSideChat}
+										onOpenSideChats={
+											sideChats === undefined || sideChats.length === 0
+												? undefined
+												: handleOpenSideChats
+										}
+										moreTriggerRef={moreTriggerRef}
+									/>
 								</div>
-							) : (
-								<SubagentHeader
-									child={activeChild}
-									sessions={events.children}
-									onNavigate={navigateChild}
-								/>
-							)
-						}
-					/>
-				</div>
-			)}
+							</div>
+						) : (
+							<SubagentHeader
+								child={activeChild}
+								sessions={events.children}
+								onNavigate={navigateChild}
+							/>
+						)
+					}
+				/>
+			</div>
 			<SideChatDrawer
 				key={jobId}
 				open={drawerOpen}

@@ -3,8 +3,8 @@ import { z } from 'zod';
 import type { Sessions } from '../../sessions.ts';
 
 const description = `\
-List recent sessions, including their latest job status, prompt, and creation \
-time. Pass cwd to limit results to that working directory.`;
+List recent sessions, including their title, latest job status, prompt, and \
+creation time. Pass cwd to limit results to that working directory.`;
 
 const inputSchema = z.object({
 	cwd: z
@@ -16,6 +16,7 @@ const inputSchema = z.object({
 type Args = z.infer<typeof inputSchema>;
 type SessionSummary = {
 	id: string;
+	title: string;
 	jobId: string;
 	status: 'running' | 'done' | 'error' | 'cancelled';
 	prompt: string;
@@ -35,7 +36,7 @@ function formatSessions(sessions: ReadonlyArray<SessionSummary>): string {
 			const promptSummary =
 				oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
 			const created = new Date(session.createdAt).toISOString();
-			return `- **${session.id}** [${session.status}] ${created} · latest job \`${session.jobId}\`\n  ${promptSummary}`;
+			return `- **${session.title}** (\`${session.id}\`) [${session.status}] ${created} · latest job \`${session.jobId}\`\n  ${promptSummary}`;
 		}),
 	];
 	return lines.join('\n');

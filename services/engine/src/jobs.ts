@@ -1111,6 +1111,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		type JobSummary = {
 			id: string;
+			title: string;
 			status: 'running' | 'done' | 'error' | 'cancelled';
 			createdAt: number;
 			terminatedAt?: number;
@@ -1130,6 +1131,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			session: typeof schema.sessions.$inferSelect;
 		}): JobSummary => ({
 			id: row.job.uuid,
+			title: row.session.title,
 			status: row.job.status,
 			createdAt: row.job.created_at.getTime(),
 			terminatedAt: row.job.terminated_at?.getTime(),
