@@ -488,6 +488,47 @@ const router = procedure.router({
 				settings.setHarnessEnv(options.input.backend, env);
 				return toHarnessEnvOutput(env);
 			}),
+		getHarnessTransport: procedure
+			.input(v.object({ backend: backendSchema }))
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				return {
+					transport: settings.getHarnessTransport(options.input.backend),
+				};
+			}),
+		setHarnessTransport: procedure
+			.input(
+				v.object({
+					backend: backendSchema,
+					transport: v.picklist(['acp', 'api']),
+				}),
+			)
+			.effect(function* (options) {
+				const settings = yield* Settings;
+				if (options.input.transport === 'api') {
+					if (options.input.backend !== 'opencode') {
+						return yield* Effect.fail(
+							new Error('API transport is only supported for OpenCode'),
+						);
+					}
+					const registry = yield* HarnessRegistry;
+					const version = yield* registry.get('opencode').version();
+					if (version === undefined || !/^[2-9]\d*\./.test(version)) {
+						return yield* Effect.fail(
+							new Error(
+								`OpenCode API transport requires v2 or newer (detected: ${String(version)})`,
+							),
+						);
+					}
+				}
+				settings.setHarnessTransport(
+					options.input.backend,
+					options.input.transport,
+				);
+				return {
+					transport: settings.getHarnessTransport(options.input.backend),
+				};
+			}),
 	},
 	harnesses: {
 		list: procedure.input(v.void_()).effect(function* () {

@@ -9,6 +9,11 @@ import type { Backend } from './harness.ts';
 const CODEX_HOME_KEY = 'codex_home';
 const WORKTREE_KEY = 'worktree';
 const HARNESS_ENV_KEY_PREFIX = 'harness_env:';
+const HARNESS_TRANSPORT_KEY_PREFIX = 'harness_transport:';
+const HarnessTransportSchema = Schema.Literals(['acp', 'api']);
+export type HarnessTransport = Schema.Schema.Type<
+	typeof HarnessTransportSchema
+>;
 const HarnessEnvSchema = Schema.Record(Schema.String, Schema.String);
 const HarnessEnvJsonSchema = Schema.fromJsonString(HarnessEnvSchema);
 const WorktreeJsonSchema = Schema.fromJsonString(
@@ -97,6 +102,20 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setSetting(harnessEnvKey(backend), value);
 		};
 
+		const getHarnessTransport = (backend: Backend): HarnessTransport => {
+			const value = getSetting(`${HARNESS_TRANSPORT_KEY_PREFIX}${backend}`);
+			return value === undefined
+				? 'acp'
+				: Schema.decodeUnknownSync(HarnessTransportSchema)(value);
+		};
+
+		const setHarnessTransport = (
+			backend: Backend,
+			transport: HarnessTransport,
+		) => {
+			setSetting(`${HARNESS_TRANSPORT_KEY_PREFIX}${backend}`, transport);
+		};
+
 		const getWorktree = (): WorktreeSetting => {
 			const value = getSetting(WORKTREE_KEY);
 			return value === undefined
@@ -115,6 +134,8 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setCodexHome,
 			getHarnessEnv,
 			setHarnessEnv,
+			getHarnessTransport,
+			setHarnessTransport,
 			getWorktree,
 			setWorktree,
 		};
