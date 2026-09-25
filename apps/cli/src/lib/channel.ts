@@ -1,5 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer, type ServerContext } from '@modelcontextprotocol/server';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import {
 	type AgentTypePreset,
 	type AliasPreset,
@@ -10,38 +10,29 @@ import {
 	formatSessionError,
 	formatToolError,
 	formatTurnResult,
+	progressMessage,
+	progressReporter,
 	readTool,
 	sendMessageTool,
 	startInputSchema,
 	startWorktreeInputSchema,
 } from '@oagent/engine';
-import { Effect } from 'effect';
+import { Effect, Schema } from 'effect';
 import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
 
 type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
-
-/** Short timeout for the single post-terminal jobs.wait fetch (job is already terminal). */
-const TERMINAL_FETCH_TIMEOUT_MS = 5_000;
-const READ_TIMEOUT_DEFAULT_MS = 50_000;
-/**
- * Max wait for a read tool call. Cap is a deliberate poll-style
- * responsiveness choice — returns {status:"running"} so the caller can re-poll or do
- * other work. NOT a harness limit: Claude Code's MCP tool-call timeout defaults to
- * ~27.7h (see getStartTimeoutMs in services/engine/src/jobs.ts).
- */
-const READ_TIMEOUT_MAX_MS = 55_000;
 
 function channelInstructions(source: string) {
 	return `Background coding-agent turns finish with a <channel source="${source}" job_id="..." status="..." session_id="..."> notification. Its body is the final assistant message (or an error / cancellation note). Continue your task; no reply is expected. Pass session_id to send_message to continue that session.`;
 }
 
 function channelStartDescription(source: string) {
-	return `Start a coding-agent session or fork an existing session/job. Pass its session ID to send_message to continue. Foreground calls wait for the result; set background to return immediately and receive a <channel source="${source}" job_id="..." status="..." session_id="..."> notification when the turn finishes. If it returns a running status, call read with the session ID or run oagent jobs wait <jobId> in the background. cwd is an absolute working directory, optional when forkId is set.`;
+	return `Start a coding-agent session or fork an existing session/job. Pass its session ID to send_message to continue. Foreground calls wait for the result; set background to return immediately and receive a <channel source="${source}" job_id="..." status="..." session_id="..."> notification when the turn finishes. Use read to check a background turn. cwd is an absolute working directory, optional when forkId is set.`;
 }
 
 function channelReadDescription() {
-	return 'Read the latest turn in a session, waiting briefly if it is still running. If it remains running, call again later or run oagent jobs wait <jobId> as a background command.';
+	return 'Read the latest turn in a session. Set wait to block until it finishes.';
 }
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
@@ -87,11 +78,87 @@ function channelEventFor(jobId: string, sessionId: string, result: WaitResult) {
 	};
 }
 
-/**
- * Listens to the engine's SSE event stream for the job until the terminal sentinel
- * arrives, fetches the final result once, and pushes the outcome into the session.
- * Fire-and-forget: callers do not await it so start can return immediately.
- */
+async function listenForTerminal(
+	engineUrl: string,
+	jobId: string,
+	signal: AbortSignal,
+	onEvent: (event: unknown) => Promise<void>,
+) {
+	for (;;) {
+		const sseUrl = new URL(`/jobs/${jobId}/events`, engineUrl);
+		const res = await fetch(sseUrl, { signal });
+		if (!res.ok)
+			throw new Error(`Job event stream returned HTTP ${res.status}`);
+		if (!res.body) {
+			throw new Error('SSE stream has no body');
+		}
+
+		const reader = res.body.getReader();
+		const decoder = new TextDecoder();
+		let buffer = '';
+		let gotTerminal = false;
+
+		while (!gotTerminal) {
+			const chunk = await reader.read();
+			if (chunk.done) break;
+
+			buffer += decoder.decode(chunk.value, { stream: true });
+			const frames = buffer.split('\n\n');
+			const tail = frames.pop();
+			buffer = tail === undefined ? '' : tail;
+
+			for (const frame of frames) {
+				const lines = frame.split('\n');
+				let payload: string | undefined;
+				for (const line of lines) {
+					if (line.startsWith('data:')) {
+						payload = line.slice('data:'.length).trim();
+						break;
+					}
+				}
+				if (payload === undefined) continue;
+				if (payload === '"__terminal__"') {
+					gotTerminal = true;
+					break;
+				}
+				await onEvent(
+					await Effect.runPromise(
+						Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
+							payload,
+						),
+					),
+				);
+			}
+		}
+
+		await reader.cancel().catch(() => {});
+
+		if (gotTerminal) return;
+		// Stream ended without terminal sentinel; reconnect and resume listening.
+	}
+}
+
+async function waitForChannelJob(
+	client: EngineClient,
+	engineUrl: string,
+	jobId: string,
+	ctx: ServerContext,
+) {
+	const report = progressReporter(ctx);
+	await report('Agent is working');
+	await listenForTerminal(
+		engineUrl,
+		jobId,
+		ctx.mcpReq.signal,
+		async (event) => {
+			const message = progressMessage(event);
+			if (message !== undefined) await report(message);
+		},
+	);
+	return client.jobs.wait({ jobId, timeoutMs: 0 });
+}
+
+/** Pushes a channel event when a background turn completes. */
 async function waitAndNotify(
 	server: McpServer,
 	client: EngineClient,
@@ -101,57 +168,10 @@ async function waitAndNotify(
 ) {
 	const ac = new AbortController();
 	try {
-		for (;;) {
-			const sseUrl = new URL(`/jobs/${jobId}/events`, engineUrl);
-			const res = await fetch(sseUrl, { signal: ac.signal });
-			if (!res.body) {
-				throw new Error('SSE stream has no body');
-			}
-
-			const reader = res.body.getReader();
-			const decoder = new TextDecoder();
-			let buffer = '';
-			let gotTerminal = false;
-
-			while (!gotTerminal) {
-				const chunk = await reader.read();
-				if (chunk.done) break;
-
-				buffer += decoder.decode(chunk.value, { stream: true });
-				const frames = buffer.split('\n\n');
-				const tail = frames.pop();
-				buffer = tail === undefined ? '' : tail;
-
-				for (const frame of frames) {
-					const lines = frame.split('\n');
-					let payload: string | undefined;
-					for (const line of lines) {
-						if (line.startsWith('data:')) {
-							payload = line.slice('data:'.length).trim();
-							break;
-						}
-					}
-					if (payload === undefined) continue;
-					if (payload === '"__terminal__"') {
-						gotTerminal = true;
-						break;
-					}
-				}
-			}
-
-			await reader.cancel().catch(() => {});
-
-			if (gotTerminal) {
-				const result = await client.jobs.wait({
-					jobId,
-					timeoutMs: TERMINAL_FETCH_TIMEOUT_MS,
-				});
-				const event = channelEventFor(jobId, sessionId, result);
-				await pushChannelEvent(server, event.content, event.meta);
-				return;
-			}
-			// Stream ended without terminal sentinel; reconnect and resume listening.
-		}
+		await listenForTerminal(engineUrl, jobId, ac.signal, async () => {});
+		const result = await client.jobs.wait({ jobId, timeoutMs: 0 });
+		const event = channelEventFor(jobId, sessionId, result);
+		await pushChannelEvent(server, event.content, event.meta);
 	} catch (cause) {
 		ac.abort();
 		await pushChannelEvent(
@@ -210,16 +230,15 @@ function registerChannelTools(
 			description: channelStartDescription(mcpName),
 			inputSchema: startInputSchema,
 		},
-		async (args, extra) => {
+		async (args, ctx) => {
 			try {
-				const startTimeout = await client.settings.getStartTimeout();
 				const started = await client.sessions.start({
+					title: args.title,
 					prompt: args.prompt,
 					cwd: args.cwd,
 					model: args.model,
 					agent_type: args.agent_type,
 					forkId: args.forkId,
-					mcpSessionId: extra.sessionId,
 					worktree: 'worktree' in args && args.worktree === true,
 				});
 				if (args.background === true) {
@@ -240,19 +259,12 @@ function registerChannelTools(
 						}),
 					);
 				}
-				const result = await client.sessions.read({
-					sessionId: started.sessionId,
-					timeoutMs: startTimeout.minutes * 60_000,
-				});
-				if (result.status === 'running') {
-					void waitAndNotify(
-						server,
-						client,
-						engineUrl,
-						started.sessionId,
-						started.jobId,
-					);
-				}
+				const result = await waitForChannelJob(
+					client,
+					engineUrl,
+					started.jobId,
+					ctx,
+				);
 				return textContent(
 					formatTurnResult({
 						sessionId: started.sessionId,
@@ -263,6 +275,7 @@ function registerChannelTools(
 					}),
 				);
 			} catch (cause) {
+				if (ctx.mcpReq.signal.aborted) throw cause;
 				return textContent(formatToolError(errorMessage(cause)));
 			}
 		},
@@ -274,9 +287,8 @@ function registerChannelTools(
 			description: sendMessageTool.description,
 			inputSchema: sendMessageTool.inputSchema,
 		},
-		async (args) => {
+		async (args, ctx) => {
 			try {
-				const startTimeout = await client.settings.getStartTimeout();
 				const started = await client.sessions.sendMessage({
 					sessionId: args.sessionId,
 					prompt: args.prompt,
@@ -307,19 +319,12 @@ function registerChannelTools(
 						}),
 					);
 				}
-				const result = await client.sessions.read({
-					sessionId: started.sessionId,
-					timeoutMs: startTimeout.minutes * 60_000,
-				});
-				if (result.status === 'running') {
-					void waitAndNotify(
-						server,
-						client,
-						engineUrl,
-						started.sessionId,
-						started.jobId,
-					);
-				}
+				const result = await waitForChannelJob(
+					client,
+					engineUrl,
+					started.jobId,
+					ctx,
+				);
 				return textContent(
 					formatTurnResult({
 						sessionId: started.sessionId,
@@ -328,6 +333,7 @@ function registerChannelTools(
 					}),
 				);
 			} catch (cause) {
+				if (ctx.mcpReq.signal.aborted) throw cause;
 				return textContent(
 					formatSessionError(args.sessionId, errorMessage(cause)),
 				);
@@ -341,15 +347,23 @@ function registerChannelTools(
 			description: channelReadDescription(),
 			inputSchema: readTool.inputSchema,
 		},
-		async (args) => {
+		async (args, ctx) => {
 			try {
-				const result = await client.sessions.read({
+				const current = await client.sessions.read({
 					sessionId: args.sessionId,
-					timeoutMs: Math.min(
-						args.timeoutMs ?? READ_TIMEOUT_DEFAULT_MS,
-						READ_TIMEOUT_MAX_MS,
-					),
 				});
+				const result =
+					args.wait === true && current.status === 'running'
+						? {
+								...(await waitForChannelJob(
+									client,
+									engineUrl,
+									current.jobId,
+									ctx,
+								)),
+								jobId: current.jobId,
+							}
+						: current;
 				return textContent(
 					formatTurnResult({
 						sessionId: args.sessionId,
@@ -358,6 +372,7 @@ function registerChannelTools(
 					}),
 				);
 			} catch (cause) {
+				if (ctx.mcpReq.signal.aborted) throw cause;
 				return textContent(
 					formatSessionError(args.sessionId, errorMessage(cause)),
 				);

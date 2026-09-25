@@ -12,6 +12,7 @@ enableGlobalVirtualStore: true
 
 catalog:
   '@effect/platform-bun': 4.0.0-rc.113
+  '@modelcontextprotocol/server': ^2.1.0
   '@orpc/client': 2.0.0-beta.21
   '@orpc/experimental-effect': 2.0.0-beta.21
   '@orpc/server': 2.0.0-beta.21

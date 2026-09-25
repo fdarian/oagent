@@ -22,12 +22,12 @@ export const sessions = sqliteTable(
 	{
 		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
 		uuid: text().notNull(),
+		title: text().notNull(),
 		backend: text().notNull(),
 		harness_session_id: text(),
 		cwd: text().notNull(),
 		worktree_path: text(),
 		worktree_branch: text(),
-		mcp_session_id: text(),
 		forked_from_job_id: integer({ mode: 'number' }).references(
 			(): AnySQLiteColumn => jobs.id,
 		),
@@ -46,6 +46,7 @@ export const jobs = sqliteTable(
 		status: text({ enum: ['running', 'done', 'error', 'cancelled'] }).notNull(),
 		prompt: text().notNull(),
 		model: text(),
+		reasoning_effort: text(),
 		agent_type: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()

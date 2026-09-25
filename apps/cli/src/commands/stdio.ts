@@ -1,5 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
 import { Engine } from '@oagent/engine';
 import { Effect } from 'effect';
 import { Command } from 'effect/unstable/cli';
@@ -10,17 +10,16 @@ function runStdio(version: Version) {
 		const engine = yield* Engine;
 		const services = yield* Effect.context<never>();
 
-		const server = new McpServer(
-			{ name: 'oagent', version: version },
-			{
-				capabilities: { tools: {} },
-				instructions: engine.mcp.getInstructions(),
-			},
-		);
-		engine.mcp.registerTools(server, services);
-
-		yield* Effect.tryPromise({
-			try: () => server.connect(new StdioServerTransport()),
+		yield* Effect.try({
+			try: () =>
+				serveStdio(() => {
+					const server = new McpServer(
+						{ name: 'oagent', version },
+						{ instructions: engine.mcp.getInstructions() },
+					);
+					engine.mcp.registerTools(server, services);
+					return server;
+				}),
 			catch: (cause) =>
 				new Error(
 					`Failed to connect MCP transport: ${cause instanceof Error ? cause.message : String(cause)}`,

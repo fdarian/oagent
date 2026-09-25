@@ -607,7 +607,7 @@ function InteractiveSubagentTimeline() {
 									<JobHeader
 										id="job-subagent-story"
 										status="running"
-										prompt="Review the authentication middleware and delegate the event-model inspection."
+										title="Review authentication middleware"
 										cwd="/Users/dev/project"
 										backend="opencode"
 										model="opencode-go/kimi-k2.6"

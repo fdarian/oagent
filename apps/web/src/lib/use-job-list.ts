@@ -7,6 +7,7 @@ import { useJobListStream } from './use-job-list-stream.ts';
 
 export type JobListItem = {
 	id: string;
+	title: string;
 	status: string;
 	createdAt: number;
 	terminatedAt?: number;
@@ -16,7 +17,6 @@ export type JobListItem = {
 	model?: string;
 	agentType?: string;
 	sessionId?: string;
-	mcpSessionId?: string;
 };
 
 export function useJobList() {

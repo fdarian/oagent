@@ -157,6 +157,7 @@ const router = procedure.router({
 				if (job === undefined) return undefined;
 				return {
 					id: job.id,
+					title: job.title,
 					status: job.status,
 					createdAt: job.createdAt,
 					terminatedAt: job.terminatedAt,
@@ -173,30 +174,46 @@ const router = procedure.router({
 			}),
 		start: procedure
 			.input(
-				v.object({
-					prompt: v.string(),
-					cwd: v.string(),
-					model: v.optional(v.string()),
-					agent_type: v.optional(v.string()),
-					sessionId: v.optional(v.string()),
-					worktree: v.optional(v.boolean()),
-				}),
+				v.pipe(
+					v.object({
+						prompt: v.string(),
+						cwd: v.string(),
+						model: v.optional(v.string()),
+						agent_type: v.optional(v.string()),
+						title: v.optional(v.string()),
+						sessionId: v.optional(v.string()),
+						worktree: v.optional(v.boolean()),
+					}),
+					v.check(
+						(input) =>
+							input.sessionId !== undefined || input.title !== undefined,
+						'title is required when creating a session',
+					),
+				),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				const result =
-					options.input.sessionId === undefined
-						? yield* sessions.start({
-								prompt: options.input.prompt,
-								cwd: options.input.cwd,
-								model: options.input.model,
-								agentType: options.input.agent_type,
-								worktree: options.input.worktree,
-							})
-						: yield* sessions.sendMessage({
-								sessionId: options.input.sessionId,
-								prompt: options.input.prompt,
-							});
+				const result = yield* Effect.gen(function* () {
+					if (options.input.sessionId !== undefined) {
+						return yield* sessions.sendMessage({
+							sessionId: options.input.sessionId,
+							prompt: options.input.prompt,
+						});
+					}
+					if (options.input.title === undefined) {
+						return yield* Effect.fail(
+							new Error('title is required when creating a session'),
+						);
+					}
+					return yield* sessions.start({
+						title: options.input.title,
+						prompt: options.input.prompt,
+						cwd: options.input.cwd,
+						model: options.input.model,
+						agentType: options.input.agent_type,
+						worktree: options.input.worktree,
+					});
+				});
 				yield* Effect.logInfo(
 					`RPC start accepted ${requestLogFields({
 						jobId: result.jobId,
@@ -258,25 +275,25 @@ const router = procedure.router({
 		start: procedure
 			.input(
 				v.object({
+					title: v.string(),
 					prompt: v.string(),
 					cwd: v.optional(v.string()),
 					model: v.optional(v.string()),
 					agent_type: v.optional(v.string()),
 					forkId: v.optional(v.string()),
 					worktree: v.optional(v.boolean()),
-					mcpSessionId: v.optional(v.string()),
 				}),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.start({
+					title: options.input.title,
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
 					model: options.input.model,
 					agentType: options.input.agent_type,
 					forkId: options.input.forkId,
 					worktree: options.input.worktree,
-					mcpSessionId: options.input.mcpSessionId,
 				});
 			}),
 		sendMessage: procedure
@@ -289,7 +306,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					sessionId: v.string(),
-					timeoutMs: v.optional(v.number()),
+					wait: v.optional(v.boolean()),
 				}),
 			)
 			.effect(function* (options) {
@@ -303,7 +320,7 @@ const router = procedure.router({
 				return yield* sessions.cancel(options.input);
 			}),
 		list: procedure
-			.input(v.object({ mcpSessionId: v.string() }))
+			.input(v.object({ cwd: v.optional(v.string()) }))
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.list(options.input);
@@ -433,24 +450,6 @@ const router = procedure.router({
 				const settings = yield* Settings;
 				settings.setWorktree(options.input);
 				return settings.getWorktree();
-			}),
-		getStartTimeout: procedure.input(v.void_()).effect(function* () {
-			const jobs = yield* Jobs;
-			return { minutes: jobs.getStartTimeoutMs() / 60000 };
-		}),
-		setStartTimeout: procedure
-			.input(
-				v.object({
-					minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
-				}),
-			)
-			.effect(function* (options) {
-				const settings = yield* Settings;
-				settings.setSetting(
-					'start_timeout_ms',
-					String(options.input.minutes * 60000),
-				);
-				return { minutes: options.input.minutes };
 			}),
 		getCodexHome: procedure.input(v.void_()).effect(function* () {
 			const settings = yield* Settings;

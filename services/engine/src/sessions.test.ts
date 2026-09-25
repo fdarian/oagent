@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
 import { Effect } from 'effect';
-import { Agents } from './agents.ts';
+import { Agents, AgentTypeNotFound } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import type { Backend, Harness } from './harness.ts';
@@ -26,6 +26,7 @@ function createServices(
 		forkSessionBefore?: Harness['forkSessionBefore'];
 		getFirstMessageAfter?: Harness['getFirstMessageAfter'];
 		getLatestMessageId?: Harness['getLatestMessageId'];
+		agentResolve?: Agents['Service']['resolve'];
 	},
 ) {
 	const harness = {
@@ -50,7 +51,9 @@ function createServices(
 		getSetting: () => undefined,
 	} as unknown as Settings['Service'];
 	const agents = {
-		resolve: (name: string) => Effect.succeed(`${name}-target`),
+		resolve:
+			options?.agentResolve ??
+			((name: string) => Effect.succeed(`${name}-target`)),
 	} as unknown as Agents['Service'];
 	const worktrees = {
 		create: () => Effect.succeed('/tmp/worktree'),
@@ -79,6 +82,7 @@ function insertSession(
 	database: TestDatabase,
 	input: {
 		uuid: string;
+		title: string;
 		backend: Backend;
 		harnessSessionId: string;
 		cwd: string;
@@ -88,6 +92,7 @@ function insertSession(
 		.insert(schema.sessions)
 		.values({
 			uuid: input.uuid,
+			title: input.title,
 			backend: input.backend,
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
@@ -128,6 +133,156 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	test('keeps alias reasoning effort across follow-up turns and forks', async () => {
+		const database = createTestDatabase();
+		database.db
+			.insert(schema.modelAliases)
+			.values({
+				name: 'deep',
+				backend: 'opencode',
+				model_id: 'provider/model',
+				reasoning_effort: 'high',
+			})
+			.run();
+		const calls: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					calls.push(input.reasoningEffort);
+					input.onSessionId?.(input.sessionId ?? 'ses_alias');
+					return {
+						sessionId: input.sessionId ?? 'ses_alias',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				forkSession: () => Effect.succeed({ sessionId: 'ses_alias_fork' }),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'First session',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'deep',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		const continued = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: continued.jobId, timeoutMs: 1_000 }),
+		);
+		const forked = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Forked session',
+				prompt: 'fork',
+				forkId: started.sessionId,
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: forked.jobId, timeoutMs: 1_000 }),
+		);
+		expect(calls).toEqual(['high', 'high', 'high']);
+		expect(
+			database.db
+				.select({ effort: schema.jobs.reasoning_effort })
+				.from(schema.jobs)
+				.all(),
+		).toEqual([{ effort: 'high' }, { effort: 'high' }, { effort: 'high' }]);
+		database.sqlite.close();
+	});
+
+	test('rejects an incompatible fork model before creating a harness fork or session row', async () => {
+		const database = createTestDatabase();
+		let forks = 0;
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					input.onSessionId?.('ses_original');
+					return {
+						sessionId: 'ses_original',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				forkSession: () =>
+					Effect.sync(() => {
+						forks += 1;
+						return { sessionId: 'ses_unwanted' };
+					}),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Original session',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		await expect(
+			Effect.runPromise(
+				services.sessions.start({
+					title: 'Fork attempt',
+					prompt: 'fork',
+					forkId: started.sessionId,
+					model: 'codex:model',
+				}),
+			),
+		).rejects.toMatchObject({ code: 'SESSION_BACKEND_MISMATCH' });
+		expect(forks).toBe(0);
+		expect(database.db.select().from(schema.sessions).all()).toHaveLength(1);
+		database.sqlite.close();
+	});
+
+	test('rejects an unknown agent before inserting a session', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(
+			database,
+			'opencode',
+			() =>
+				Effect.succeed({
+					sessionId: 'ses_unused',
+					text: 'done',
+					stopReason: 'end_turn',
+				}),
+			{
+				agentResolve: (agentType) =>
+					Effect.fail(
+						new AgentTypeNotFound({ agentType, configuredAgentTypes: [] }),
+					),
+			},
+		);
+		await expect(
+			Effect.runPromise(
+				services.sessions.start({
+					title: 'Missing agent',
+					prompt: 'first',
+					cwd: '/repo',
+					model: 'opencode:model',
+					agentType: 'missing',
+				}),
+			),
+		).rejects.toMatchObject({ _tag: 'AgentTypeNotFound' });
+		expect(database.db.select().from(schema.sessions).all()).toHaveLength(0);
+		database.sqlite.close();
+	});
 	test('persists a session before starting and continues idle turns with inherited settings', async () => {
 		const database = createTestDatabase();
 		const calls: Array<{
@@ -158,11 +313,11 @@ describe('session turns', () => {
 
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'First prompt',
 				prompt: 'first prompt',
 				cwd: '/repo',
 				model: 'opencode:model-id',
 				agentType: 'reviewer',
-				mcpSessionId: 'mcp-1',
 			}),
 		);
 		const stored = database.db
@@ -171,12 +326,24 @@ describe('session turns', () => {
 			.where(eq(schema.sessions.uuid, started.sessionId))
 			.get();
 		expect(stored).toMatchObject({
+			title: 'First prompt',
 			backend: 'opencode',
 			cwd: '/repo',
-			mcp_session_id: 'mcp-1',
 		});
 		await turnStarted.promise;
+		const blockingRead = Effect.runPromise(
+			services.sessions.read({ sessionId: started.sessionId, wait: true }),
+		);
+		expect(
+			await Effect.runPromise(
+				services.sessions.read({ sessionId: started.sessionId }),
+			),
+		).toMatchObject({ status: 'running', jobId: started.jobId });
 		releaseTurn.resolve();
+		expect(await blockingRead).toMatchObject({
+			status: 'done',
+			jobId: started.jobId,
+		});
 		expect(
 			await Effect.runPromise(
 				services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
@@ -208,17 +375,39 @@ describe('session turns', () => {
 			text: 'Final: second prompt',
 		});
 		expect(
-			await Effect.runPromise(
-				services.sessions.list({ mcpSessionId: 'mcp-1' }),
-			),
+			await Effect.runPromise(services.sessions.list({ cwd: '/repo' })),
 		).toMatchObject([
 			{
 				id: started.sessionId,
+				title: 'First prompt',
 				jobId: continued.jobId,
 				status: 'done',
 				prompt: 'second prompt',
 			},
 		]);
+		const otherSession = insertSession(database, {
+			uuid: 'other-directory',
+			title: 'Other task',
+			backend: 'opencode',
+			harnessSessionId: 'ses_other',
+			cwd: '/elsewhere',
+		});
+		insertJob(database, otherSession, {
+			uuid: 'other-job',
+			status: 'done',
+			prompt: 'other task',
+			model: 'model-id',
+		});
+		expect(
+			(await Effect.runPromise(services.sessions.list({ cwd: '/repo' }))).map(
+				(session) => session.id,
+			),
+		).toEqual([started.sessionId]);
+		expect(
+			(await Effect.runPromise(services.sessions.list({}))).map(
+				(session) => session.id,
+			),
+		).toContain('other-directory');
 		expect(
 			await Effect.runPromise(
 				services.sessions.cancel({ sessionId: started.sessionId }),
@@ -270,6 +459,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Work session',
 				prompt: 'work',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -326,6 +516,7 @@ describe('session turns', () => {
 		);
 		const cursorSession = await Effect.runPromise(
 			cursor.sessions.start({
+				title: 'Cursor work',
 				prompt: 'work',
 				cwd: '/repo',
 				model: 'cursor:model',
@@ -350,6 +541,69 @@ describe('session turns', () => {
 		cursorDatabase.sqlite.close();
 	});
 
+	test('starts a new turn when the running turn finishes during steering', async () => {
+		const database = createTestDatabase();
+		const firstStarted = Promise.withResolvers<void>();
+		const finishFirst = Promise.withResolvers<void>();
+		const steering = Promise.withResolvers<void>();
+		const finishSteer = Promise.withResolvers<void>();
+		const prompts: string[] = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.promise(async () => {
+					prompts.push(input.prompt);
+					input.onSessionId?.('ses_race');
+					if (prompts.length === 1) {
+						firstStarted.resolve();
+						await finishFirst.promise;
+					}
+					return {
+						sessionId: 'ses_race',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				steer: () =>
+					Effect.promise(async () => {
+						steering.resolve();
+						await finishSteer.promise;
+						return { messageId: 'msg_late', text: 'second' };
+					}),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'First session',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+			}),
+		);
+		await firstStarted.promise;
+		const followUp = Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await steering.promise;
+		finishFirst.resolve();
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		finishSteer.resolve();
+		const result = await followUp;
+		expect(result.delivery).toBe('started');
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: result.jobId, timeoutMs: 1_000 }),
+		);
+		expect(prompts).toEqual(['first', 'second']);
+		database.sqlite.close();
+	});
+
 	test('reads the latest turn and cancels only a running turn', async () => {
 		const database = createTestDatabase();
 		const turnStarted = Promise.withResolvers<void>();
@@ -367,6 +621,7 @@ describe('session turns', () => {
 		);
 		const started = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Long task',
 				prompt: 'long task',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -377,7 +632,6 @@ describe('session turns', () => {
 			await Effect.runPromise(
 				services.sessions.read({
 					sessionId: started.sessionId,
-					timeoutMs: 1,
 				}),
 			),
 		).toMatchObject({ status: 'running', jobId: started.jobId });
@@ -436,6 +690,7 @@ describe('session turns', () => {
 		);
 		const sourceSession = insertSession(database, {
 			uuid: 'session-source',
+			title: 'Source session',
 			backend: 'opencode',
 			harnessSessionId: 'ses_source',
 			cwd: '/repo',
@@ -457,6 +712,7 @@ describe('session turns', () => {
 
 		const forkedBySession = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Continue full state',
 				prompt: 'continue full state',
 				forkId: sourceSession.uuid,
 			}),
@@ -471,6 +727,7 @@ describe('session turns', () => {
 			.get();
 		const forkedByEarlierJob = await Effect.runPromise(
 			services.sessions.start({
+				title: 'Continue earlier state',
 				prompt: 'continue earlier state',
 				forkId: earlierJob.uuid,
 			}),
@@ -491,7 +748,9 @@ describe('session turns', () => {
 				.where(eq(schema.jobs.uuid, 'job-latest'))
 				.get()?.id,
 		);
+		expect(forkedSession?.title).toBe('Continue full state');
 		expect(earlierForkSession?.forked_from_job_id).toBe(earlierJob.id);
+		expect(earlierForkSession?.title).toBe('Continue earlier state');
 		expect(firstMessageLookups).toEqual(['msg-last-first-turn']);
 		expect(beforeForks).toEqual(['msg-after-first-turn']);
 		expect(calls).toEqual([
@@ -512,6 +771,7 @@ describe('session turns', () => {
 		);
 		const sourceSession = insertSession(database, {
 			uuid: 'session-no-checkpoint',
+			title: 'Source without checkpoint',
 			backend: 'opencode',
 			harnessSessionId: 'ses_source',
 			cwd: '/repo',
@@ -532,6 +792,7 @@ describe('session turns', () => {
 		await expect(
 			Effect.runPromise(
 				services.sessions.start({
+					title: 'Fork without checkpoint',
 					prompt: 'fork without checkpoint',
 					forkId: 'job-no-checkpoint',
 				}),

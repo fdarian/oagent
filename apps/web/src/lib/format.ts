@@ -41,12 +41,12 @@ function formatMonthDay(d: Date): string {
 }
 
 export function groupBySession<
-	T extends { createdAt: number; mcpSessionId?: string },
+	T extends { createdAt: number; sessionId?: string },
 >(items: T[]): { sessionId: string | null; items: T[] }[] {
 	const groups = new Map<string | null, T[]>();
 
 	for (const item of items) {
-		const key = item.mcpSessionId ?? null;
+		const key = item.sessionId ?? null;
 		const list = groups.get(key);
 		if (list === undefined) {
 			groups.set(key, [item]);

@@ -27,6 +27,7 @@ export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
 export { Jobs } from './jobs.ts';
+export { progressMessage, progressReporter } from './mcp/progress.ts';
 export { registerTools } from './mcp/register-tools.ts';
 export { cancelTool } from './mcp/tools/cancel.ts';
 export { readTool } from './mcp/tools/read.ts';

@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { Context, Effect, Fiber, Layer, Schema } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
 	Agents,
@@ -16,7 +16,6 @@ import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
-import { Settings } from './settings.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
@@ -94,6 +93,7 @@ type ReserveJobInput = {
 	session: typeof schema.sessions.$inferSelect;
 	prompt: string;
 	model?: string;
+	reasoningEffort?: string;
 	agentType?: string;
 	sideChatId?: number;
 };
@@ -123,10 +123,6 @@ type JobsChange = {
 	jobId: string;
 	status?: string;
 };
-
-const TIMEOUT_DEFAULT_MS = 50_000;
-
-export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
@@ -158,7 +154,6 @@ function isRunningSessionTurnConflict(cause: unknown): boolean {
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
 		const harnessRegistry = yield* HarnessRegistry;
-		const settings = yield* Settings;
 		const worktrees = yield* Worktrees;
 		const agents = yield* Agents;
 		const dbService = yield* Db;
@@ -229,8 +224,28 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
 
+		const validateStart = (input: {
+			model: string;
+			backend: Backend;
+			agentType?: string;
+		}) =>
+			Effect.gen(function* () {
+				const resolved = yield* resolveModel(input.model);
+				if (resolved.backend !== input.backend) {
+					return yield* new JobStartError({
+						code: 'SESSION_BACKEND_MISMATCH',
+						message: `The selected model belongs to ${resolved.backend}, not ${input.backend}.`,
+						cause: new Error('Session backend does not match model backend'),
+					});
+				}
+				if (input.agentType !== undefined) {
+					yield* agents.resolve(input.agentType, input.backend);
+				}
+			});
+
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
+		const closingJobs = new Set<string>();
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
@@ -508,7 +523,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Session backend does not match model backend'),
 					});
 				}
-				const reasoningEffort = resolvedModel.reasoningEffort;
+				const reasoningEffort =
+					input.reasoningEffort ?? resolvedModel.reasoningEffort;
 				const agentTarget =
 					input.agentType === undefined
 						? undefined
@@ -525,6 +541,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 									status: 'running',
 									prompt: input.prompt,
 									model: rest,
+									reasoning_effort: reasoningEffort,
 									agent_type: input.agentType,
 									session_id: input.session.id,
 									side_chat_id: input.sideChatId,
@@ -664,6 +681,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					);
 				}
 
+				const current = db
+					.select({ status: schema.jobs.status })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.id, input.reservation.internalId))
+					.get();
+				if (current?.status !== 'running') {
+					return { jobId: input.reservation.jobId };
+				}
+
 				const emitter = new EventEmitter();
 				emitter.setMaxListeners(0);
 				liveEmitters.set(input.reservation.jobId, emitter);
@@ -677,6 +703,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				};
 
 				const closeResources = Effect.sync(() => {
+					closingJobs.delete(input.reservation.jobId);
 					liveEmitters.delete(input.reservation.jobId);
 					liveFibers.delete(input.reservation.jobId);
 					emitter.emit(TERMINAL_EVENT);
@@ -706,11 +733,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						),
 						Effect.catch(() => Effect.succeed(undefined)),
 					);
-					if (messageId === undefined) return;
-					db.update(schema.jobs)
-						.set({ harness_last_message_id: messageId })
-						.where(eq(schema.jobs.id, input.reservation.internalId))
-						.run();
+					return messageId;
 				});
 
 				const onSessionId = (sessionId: string): void => {
@@ -741,52 +764,76 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
-							Effect.try({
-								try: () => {
-									const completed = db.transaction((tx) => {
-										tx.update(schema.sessions)
-											.set({ harness_session_id: result.sessionId })
-											.where(
-												eq(schema.sessions.id, input.reservation.session.id),
-											)
-											.run();
-										return tx
-											.update(schema.jobs)
-											.set({
-												status: 'done',
-												text: result.text,
-												stop_reason: result.stopReason ?? null,
-												terminated_at: new Date(),
-											})
-											.where(
-												and(
-													eq(schema.jobs.id, input.reservation.internalId),
-													eq(schema.jobs.status, 'running'),
-												),
-											)
-											.returning({ id: schema.jobs.id })
-											.get();
-									});
-									if (completed !== undefined) {
-										jobsEmitter.emit('change', {
-											type: 'status',
-											jobId: input.reservation.jobId,
-											status: 'done',
+							Effect.gen(function* () {
+								closingJobs.add(input.reservation.jobId);
+								const messageId = yield* captureLastMessageId;
+								yield* Effect.try({
+									try: () => {
+										const completed = db.transaction((tx) => {
+											tx.update(schema.sessions)
+												.set({ harness_session_id: result.sessionId })
+												.where(
+													eq(schema.sessions.id, input.reservation.session.id),
+												)
+												.run();
+											return tx
+												.update(schema.jobs)
+												.set({
+													status: 'done',
+													harness_last_message_id: messageId ?? null,
+													text: result.text,
+													stop_reason: result.stopReason ?? null,
+													terminated_at: new Date(),
+												})
+												.where(
+													and(
+														eq(schema.jobs.id, input.reservation.internalId),
+														eq(schema.jobs.status, 'running'),
+													),
+												)
+												.returning({ id: schema.jobs.id })
+												.get();
 										});
-									}
-								},
-								catch: (cause) =>
-									new JobStartError({
-										code: 'PERSISTENCE_FAILED',
-										message: 'Could not record the completed job.',
-										cause,
-									}),
+										if (completed !== undefined) {
+											jobsEmitter.emit('change', {
+												type: 'status',
+												jobId: input.reservation.jobId,
+												status: 'done',
+											});
+										}
+									},
+									catch: (cause) =>
+										new JobStartError({
+											code: 'PERSISTENCE_FAILED',
+											message: 'Could not record the completed job.',
+											cause,
+										}),
+								});
 							}),
 						),
 						Effect.tapError((error) => failReserved(input.reservation, error)),
-						Effect.ensuring(
-							captureLastMessageId.pipe(Effect.andThen(closeResources)),
+						Effect.onExit((exit) =>
+							Exit.isFailure(exit)
+								? captureLastMessageId.pipe(
+										Effect.flatMap((messageId) =>
+											messageId === undefined
+												? Effect.void
+												: Effect.sync(() => {
+														db.update(schema.jobs)
+															.set({ harness_last_message_id: messageId })
+															.where(
+																eq(
+																	schema.jobs.id,
+																	input.reservation.internalId,
+																),
+															)
+															.run();
+													}),
+										),
+									)
+								: Effect.void,
 						),
+						Effect.ensuring(closeResources),
 					),
 					// The handoff can be masked, but the detached turn must stay interruptible.
 					{ uninterruptible: false },
@@ -795,6 +842,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				liveFibers.set(input.reservation.jobId, fiber);
 				return { jobId: input.reservation.jobId };
 			}).pipe(
+				Effect.uninterruptible,
 				Effect.catchTag('JobStartError', (error) =>
 					failReserved(input.reservation, error).pipe(
 						Effect.andThen(Effect.fail(error)),
@@ -877,10 +925,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						worktreeBranch: worktree?.branch,
 					};
 				}).pipe(
-					Effect.catch((error) =>
-						failReserved(reservation, error).pipe(
-							Effect.flatMap(() => Effect.fail(error)),
-						),
+					Effect.onExit((exit) =>
+						Exit.isFailure(exit)
+							? failReserved(reservation, exit.cause)
+							: Effect.void,
 					),
 				);
 			});
@@ -903,7 +951,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (job.status !== 'running') {
 					return;
 				}
-
 				db.update(schema.jobs)
 					.set({ status: 'cancelled', terminated_at: new Date() })
 					.where(eq(schema.jobs.id, job.id))
@@ -948,6 +995,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						message: `Job ${jobId} cannot be steered because it is ${job.status}; only running jobs can be steered.`,
 					});
 				}
+				if (closingJobs.has(jobId)) {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} has finished its harness turn.`,
+					});
+				}
 
 				const backend = parseBackend(session.backend);
 				const harness = harnessRegistry.get(backend);
@@ -978,6 +1031,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							}),
 					),
 				);
+				const current = db
+					.select({ status: schema.jobs.status })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.id, job.id))
+					.get();
+				if (current?.status !== 'running' || closingJobs.has(jobId)) {
+					return yield* new JobSteerError({
+						code: 'NOT_RUNNING',
+						message: `Job ${jobId} finished while steering; start a new turn instead.`,
+					});
+				}
 
 				publishEvent(job.id, jobId, {
 					sessionUpdate: 'user_message_chunk',
@@ -1013,11 +1077,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					return toWaitResult(row.job, row.session.uuid);
 				}
 
-				const cap = input.timeoutMs ?? TIMEOUT_DEFAULT_MS;
 				const fiber = liveFibers.get(input.jobId);
 
 				if (fiber !== undefined) {
-					yield* Fiber.join(fiber).pipe(Effect.exit, Effect.timeoutOption(cap));
+					const joined = Fiber.join(fiber).pipe(Effect.exit);
+					if (input.timeoutMs === undefined) yield* joined;
+					else yield* joined.pipe(Effect.timeoutOption(input.timeoutMs));
 
 					const updated = findJob();
 					if (updated === undefined) {
@@ -1027,9 +1092,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				// Defensive fallback: poll the row at 500ms cadence
-				const startTime = Date.now();
-				const deadline = startTime + cap;
-				while (Date.now() < deadline) {
+				const deadline =
+					input.timeoutMs === undefined
+						? undefined
+						: Date.now() + input.timeoutMs;
+				while (deadline === undefined || Date.now() < deadline) {
 					const latest = findJob();
 					if (latest === undefined) {
 						return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
@@ -1037,13 +1104,14 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					if (latest.job.status !== 'running') {
 						return toWaitResult(latest.job, latest.session.uuid);
 					}
-					Bun.sleepSync(500);
+					yield* Effect.sleep(500);
 				}
 				return { status: 'running' };
 			});
 
 		type JobSummary = {
 			id: string;
+			title: string;
 			status: 'running' | 'done' | 'error' | 'cancelled';
 			createdAt: number;
 			terminatedAt?: number;
@@ -1054,7 +1122,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType?: string;
 			sessionId: string;
 			harnessSessionId?: string;
-			mcpSessionId?: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
 		};
@@ -1064,6 +1131,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			session: typeof schema.sessions.$inferSelect;
 		}): JobSummary => ({
 			id: row.job.uuid,
+			title: row.session.title,
 			status: row.job.status,
 			createdAt: row.job.created_at.getTime(),
 			terminatedAt: row.job.terminated_at?.getTime(),
@@ -1074,7 +1142,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType: row.job.agent_type ?? undefined,
 			sessionId: row.session.uuid,
 			harnessSessionId: row.session.harness_session_id ?? undefined,
-			mcpSessionId: row.session.mcp_session_id ?? undefined,
 			worktreePath: row.session.worktree_path ?? undefined,
 			worktreeBranch: row.session.worktree_branch ?? undefined,
 		});
@@ -1088,29 +1155,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					eq(schema.jobs.session_id, schema.sessions.id),
 				)
 				.where(isNull(schema.jobs.side_chat_id))
-				.orderBy(
-					sql`(${schema.jobs.status} = 'running') DESC`,
-					desc(schema.jobs.created_at),
-				)
-				.all();
-
-			return rows.map(toJobSummary);
-		};
-
-		const listByMcpSession = (mcpSessionId: string): JobSummary[] => {
-			const rows = db
-				.select({ job: schema.jobs, session: schema.sessions })
-				.from(schema.jobs)
-				.innerJoin(
-					schema.sessions,
-					eq(schema.jobs.session_id, schema.sessions.id),
-				)
-				.where(
-					and(
-						eq(schema.sessions.mcp_session_id, mcpSessionId),
-						isNull(schema.jobs.side_chat_id),
-					),
-				)
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
 					desc(schema.jobs.created_at),
@@ -1255,40 +1299,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return true;
 		};
 
-		/**
-		 * Max time the start tool blocks waiting for a job before returning a running handle.
-		 *
-		 * Safe because Claude Code's MCP tool-call timeout defaults to ~27.7h (1e8 ms): from
-		 * the client binary, the per-call limit resolves as `.mcp.json` timeout → MCP_TOOL_TIMEOUT
-		 * env → 1e8 ms default, floored at 1s, ceiled at INT32_MAX (~24.8 days). The server can NOT
-		 * read that value — Claude Code injects no timeout into the MCP subprocess env (only
-		 * CLAUDE_PROJECT_DIR) — and progress notifications do NOT extend it (hard wall-clock). So we
-		 * pick our own conservative cap well under the default and hand back a {status:"running"}
-		 * resume handle if it elapses, rather than trying to detect the client's limit.
-		 */
-		const getStartTimeoutMs = (): number => {
-			const raw = settings.getSetting('start_timeout_ms');
-			if (raw === undefined) {
-				return DEFAULT_START_TIMEOUT_MS;
-			}
-			const parsed = Number.parseInt(raw, 10);
-			if (Number.isNaN(parsed)) {
-				throw new Error(`Corrupt start_timeout_ms setting: ${raw}`);
-			}
-			return parsed;
-		};
-
 		return {
 			start,
 			reserve,
 			resolveBackend,
+			validateStart,
 			runReserved,
 			failReserved,
 			cancel,
 			steer,
 			wait,
 			list,
-			listByMcpSession,
 			getJobMetadata,
 			getRootJobMetadata,
 			subscribe,
@@ -1296,7 +1317,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listAliases,
 			saveAlias,
 			deleteAlias,
-			getStartTimeoutMs,
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
 					.select()
@@ -1312,7 +1332,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 }) {
 	static readonly layer = Layer.effect(Jobs, Jobs.make).pipe(
 		Layer.provide(HarnessRegistry.layer),
-		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),
 		Layer.provide(Worktrees.layer),

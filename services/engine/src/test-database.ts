@@ -8,12 +8,12 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE sessions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	uuid TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL,
 	backend TEXT NOT NULL,
 	harness_session_id TEXT,
 	cwd TEXT NOT NULL,
 	worktree_path TEXT,
 	worktree_branch TEXT,
-	mcp_session_id TEXT,
 	forked_from_job_id INTEGER REFERENCES jobs(id),
 	created_at INTEGER NOT NULL
 );
@@ -33,6 +33,7 @@ CREATE TABLE jobs (
 	status TEXT NOT NULL,
 	prompt TEXT NOT NULL,
 	model TEXT,
+	reasoning_effort TEXT,
 	agent_type TEXT,
 	created_at INTEGER NOT NULL,
 	terminated_at INTEGER,

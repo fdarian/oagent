@@ -15,8 +15,6 @@ type ListJob = ListResult[number];
 
 /** Per-request wait budget. The engine's wait blocks up to this long before returning. */
 const CHUNK_MS = 600_000;
-/** Overall wait budget default: 3 hours — a safe upper bound; most agent jobs run 30s–1hr. */
-const DEFAULT_TIMEOUT_MS = 10_800_000;
 
 /** Transport-retry backoff starting delay (ms). */
 const RETRY_BACKOFF_BASE_MS = 1_000;
@@ -42,7 +40,7 @@ function sleep(ms: number): Promise<void> {
 
 /**
  * Polls the engine's `jobs.wait` in CHUNK_MS slices until the job reaches a terminal
- * state or the overall deadline passes. A single long-lived HTTP request would be
+ * state. A single long-lived HTTP request would be
  * fragile, so we re-issue short waits and re-poll while the job is still running.
  *
  * Transport-level rejections (connection refused, reset, fetch failure) are retried
@@ -58,26 +56,15 @@ function sleep(ms: number): Promise<void> {
 async function pollWait(
 	client: EngineClient,
 	jobId: string,
-	timeoutMs: number,
 ): Promise<WaitResult> {
-	const deadline = Date.now() + timeoutMs;
-
 	let streakStartMs: number | null = null;
 	let backoffMs = RETRY_BACKOFF_BASE_MS;
 
 	for (;;) {
-		const remaining = deadline - Date.now();
-		if (remaining <= 0) {
-			// Deadline passed during a failure streak — surface as timeout.
-			throw new Error(
-				`Transport failures persisted until the overall deadline (jobId: ${jobId})`,
-			);
-		}
-
 		try {
 			const result = await client.jobs.wait({
 				jobId,
-				timeoutMs: Math.min(CHUNK_MS, remaining),
+				timeoutMs: CHUNK_MS,
 			});
 
 			// Successful response: reset failure-streak state.
@@ -85,9 +72,6 @@ async function pollWait(
 			backoffMs = RETRY_BACKOFF_BASE_MS;
 
 			if (result.status !== 'running') {
-				return result;
-			}
-			if (Date.now() >= deadline) {
 				return result;
 			}
 		} catch (caught) {
@@ -104,31 +88,18 @@ async function pollWait(
 				);
 			}
 
-			const deadlineRemaining = deadline - now;
-			if (deadlineRemaining <= 0) {
-				throw new Error(
-					`Transport failures persisted until the overall deadline (jobId: ${jobId})`,
-					{ cause: caught },
-				);
-			}
-
-			await sleep(Math.min(backoffMs, deadlineRemaining));
+			await sleep(backoffMs);
 			backoffMs = Math.min(backoffMs * 2, RETRY_BACKOFF_CAP_MS);
 		}
 	}
 }
 
-function runWait(params: {
-	jobId: string;
-	engineUrl: string;
-	timeoutMs: number;
-	json: boolean;
-}) {
+function runWait(params: { jobId: string; engineUrl: string; json: boolean }) {
 	return Effect.tryPromise(async () => {
 		const client = createEngineClient(params.engineUrl);
 		const job = await client.jobs.get({ jobId: params.jobId });
 		if (job === undefined) throw new Error(`Job not found: ${params.jobId}`);
-		const result = await pollWait(client, params.jobId, params.timeoutMs);
+		const result = await pollWait(client, params.jobId);
 		const output = params.json
 			? JSON.stringify(result)
 			: formatTurnResult({
@@ -163,6 +134,7 @@ function renderToon(
 	const mapped = jobs.map((job) => ({
 		status: job.status,
 		id: job.id,
+		title: job.title,
 		created: new Date(job.createdAt).toISOString(),
 		model: job.model ?? null,
 		cwd: job.cwd,
@@ -181,6 +153,7 @@ function renderJson(
 ) {
 	const mapped = jobs.map((job) => ({
 		id: job.id,
+		title: job.title,
 		status: job.status,
 		createdAt: new Date(job.createdAt).toISOString(),
 		terminatedAt:
@@ -236,12 +209,6 @@ export const jobsCmd = (_version: Version) => {
 					'Base URL of the running oagent engine (default: http://localhost:17777 or $OPENCODE_MCP_PORT).',
 				),
 			),
-			timeoutMs: Flag.Int('timeout-ms').pipe(
-				Flag.withDefault(DEFAULT_TIMEOUT_MS),
-				Flag.withDescription(
-					'Overall wait budget in ms before giving up and returning {status:"running"} (default: 10800000 = 3h; a safe upper bound, most agent jobs run 30s–1hr).',
-				),
-			),
 			json: Flag.Boolean('json').pipe(
 				Flag.withDefault(false),
 				Flag.withDescription(
@@ -253,7 +220,6 @@ export const jobsCmd = (_version: Version) => {
 			runWait({
 				jobId: options.jobId,
 				engineUrl: options.engineUrl,
-				timeoutMs: options.timeoutMs,
 				json: options.json,
 			}),
 	).pipe(

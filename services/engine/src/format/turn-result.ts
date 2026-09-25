@@ -27,9 +27,7 @@ export function formatTurnResult(input: {
 		return lines.join('\n');
 	}
 	if (input.result.status === 'running') {
-		lines.push(
-			`Call \`read\` with session ID \`${input.sessionId}\` or run \`oagent jobs wait ${input.jobId}\` in the background.`,
-		);
+		lines.push(`Call \`read\` with session ID \`${input.sessionId}\`.`);
 		return lines.join('\n');
 	}
 	if (input.result.status === 'done') {

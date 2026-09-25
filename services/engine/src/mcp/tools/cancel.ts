@@ -9,11 +9,11 @@ import type { Sessions } from '../../sessions.ts';
 const description = `\
 Cancel a running turn in a session. If the session is idle, this is a no-op.`;
 
-const inputSchema = {
+const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),
-};
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type Args = z.infer<typeof inputSchema>;
 type CancelSessions = Pick<Sessions['Service'], 'cancel'>;
 
 function textResponse(text: string) {

@@ -1,3 +1,4 @@
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import { z } from 'zod';
 import {
@@ -8,23 +9,27 @@ import {
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
 import type { Sessions } from '../../sessions.ts';
+import { waitWithProgress } from '../progress.ts';
 
 const description = `\
 Send a message to a session. If a turn is running, the message is queued for \
 delivery at the next step boundary; if the session is idle, a new turn starts. \
 Use \`background\` only when starting a new turn.`;
 
-export const inputSchema = {
+export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),
 	prompt: z.string().describe('The instruction to send to the agent.'),
 	background: z
 		.boolean()
 		.optional()
 		.describe('When true, return immediately if this starts a new turn.'),
-};
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
-type SendMessageJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+type Args = z.infer<typeof inputSchema>;
+type SendMessageJobs = Pick<
+	Jobs['Service'],
+	'subscribe' | 'getJobMetadata' | 'readEventsPage' | 'wait'
+>;
 type SendMessageSessions = Pick<Sessions['Service'], 'sendMessage'>;
 
 function textResponse(text: string) {
@@ -36,9 +41,12 @@ export const sendMessageTool = {
 	inputSchema,
 	handle(
 		args: Args,
-		ctx: { jobs: SendMessageJobs; sessions: SendMessageSessions },
+		ctx: {
+			jobs: SendMessageJobs;
+			sessions: SendMessageSessions;
+			mcp: ServerContext;
+		},
 	) {
-		const timeoutMs = ctx.jobs.getStartTimeoutMs();
 		return ctx.sessions
 			.sendMessage({ sessionId: args.sessionId, prompt: args.prompt })
 			.pipe(
@@ -71,7 +79,7 @@ export const sendMessageTool = {
 							),
 						);
 					}
-					return ctx.jobs.wait({ jobId: started.jobId, timeoutMs }).pipe(
+					return waitWithProgress(ctx.jobs, started.jobId, ctx.mcp).pipe(
 						Effect.map((result) =>
 							textResponse(
 								formatTurnResult({
@@ -87,14 +95,16 @@ export const sendMessageTool = {
 					);
 				}),
 				Effect.catch((error) =>
-					Effect.succeed(
-						textResponse(
-							formatSessionError(
-								args.sessionId,
-								error instanceof Error ? error.message : String(error),
+					error instanceof Error && error.name === 'AbortError'
+						? Effect.fail(error)
+						: Effect.succeed(
+								textResponse(
+									formatSessionError(
+										args.sessionId,
+										error instanceof Error ? error.message : String(error),
+									),
+								),
 							),
-						),
-					),
 				),
 			);
 	},
