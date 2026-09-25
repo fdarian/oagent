@@ -492,9 +492,18 @@ const router = procedure.router({
 			.input(v.object({ backend: backendSchema }))
 			.effect(function* (options) {
 				const settings = yield* Settings;
-				return {
-					transport: settings.getHarnessTransport(options.input.backend),
-				};
+				if (options.input.backend !== 'opencode')
+					return {
+						transport: settings.getHarnessTransport(options.input.backend),
+						apiSupported: false,
+					};
+				const registry = yield* HarnessRegistry;
+				const transportStatus = registry.get('opencode').transportStatus;
+				if (transportStatus === undefined)
+					return yield* Effect.die(
+						new Error('OpenCode transport support is unavailable'),
+					);
+				return yield* transportStatus();
 			}),
 		setHarnessTransport: procedure
 			.input(
@@ -504,30 +513,17 @@ const router = procedure.router({
 				}),
 			)
 			.effect(function* (options) {
-				const settings = yield* Settings;
-				if (options.input.transport === 'api') {
-					if (options.input.backend !== 'opencode') {
-						return yield* Effect.fail(
-							new Error('API transport is only supported for OpenCode'),
-						);
-					}
-					const registry = yield* HarnessRegistry;
-					const version = yield* registry.get('opencode').version();
-					if (version === undefined || Number.parseInt(version, 10) < 2) {
-						return yield* Effect.fail(
-							new Error(
-								`OpenCode API transport requires v2 or newer (detected: ${String(version)})`,
-							),
-						);
-					}
-				}
-				settings.setHarnessTransport(
-					options.input.backend,
-					options.input.transport,
-				);
-				return {
-					transport: settings.getHarnessTransport(options.input.backend),
-				};
+				if (options.input.backend !== 'opencode')
+					return yield* Effect.fail(
+						new Error('API transport is only supported for OpenCode'),
+					);
+				const registry = yield* HarnessRegistry;
+				const setTransport = registry.get('opencode').setTransport;
+				if (setTransport === undefined)
+					return yield* Effect.die(
+						new Error('OpenCode transport support is unavailable'),
+					);
+				return yield* setTransport(options.input.transport);
 			}),
 	},
 	harnesses: {

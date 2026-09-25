@@ -190,7 +190,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 												.update(schema.harnesses)
 												.set({
 													version:
-														!('agentVersion' in result) ||
 														result.agentVersion === undefined
 															? null
 															: result.agentVersion,

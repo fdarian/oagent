@@ -134,10 +134,7 @@ export function HarnessSettingsPage() {
 	const trimmedCodexHome = codexHome.trim();
 	const draftCodexHome = trimmedCodexHome === '' ? undefined : trimmedCodexHome;
 	const isCodexHomeChanged = draftCodexHome !== codexHomeQuery.data?.home;
-	const apiSupported =
-		backend === 'opencode' &&
-		harness.version !== undefined &&
-		Number.parseInt(harness.version, 10) >= 2;
+	const apiSupported = transportQuery.data?.apiSupported === true;
 	const apiMode = apiSupported && transportQuery.data?.transport === 'api';
 
 	function saveCodexHome() {

@@ -5,6 +5,7 @@ import type {
 	AcpSessionError,
 	AcpTurnFailed,
 } from './acp-agent.ts';
+import type { HarnessTransport } from './settings.ts';
 
 export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex' | 'claude';
 
@@ -183,6 +184,18 @@ export type Harness = {
 	version: () => Effect.Effect<string | undefined, HarnessError, never>;
 	invalidate: () => Effect.Effect<void, never, never>;
 	check: () => Effect.Effect<HarnessCheckResult, never, never>;
+	transportStatus?: () => Effect.Effect<
+		{ transport: HarnessTransport; apiSupported: boolean },
+		HarnessError,
+		never
+	>;
+	setTransport?: (
+		transport: HarnessTransport,
+	) => Effect.Effect<
+		{ transport: HarnessTransport; apiSupported: boolean },
+		HarnessError,
+		never
+	>;
 	auth?: HarnessAuth;
 	steer?: HarnessSteer;
 	forkSession?: HarnessForkSession;

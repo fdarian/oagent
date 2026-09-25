@@ -65,6 +65,16 @@ export class OpenCodeSteerNotSupportedError extends Schema.TaggedError<OpenCodeS
 }
 
 type OpenCodeService = Harness & {
+	transportStatus: () => Effect.Effect<
+		{ transport: 'acp' | 'api'; apiSupported: boolean },
+		AcpSessionError
+	>;
+	setTransport: (
+		transport: 'acp' | 'api',
+	) => Effect.Effect<
+		{ transport: 'acp' | 'api'; apiSupported: boolean },
+		AcpSessionError
+	>;
 	listSessionCatalog: () => Effect.Effect<
 		AcpSessionCatalog,
 		AcpSessionError,
@@ -368,37 +378,64 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 		const binary = resolveOpenCodeBinary() ?? getOpenCodeBinary();
 		const createConfig = () =>
 			createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode'));
+		const apiSupported = () =>
+			version().pipe(
+				Effect.map((detected) => {
+					const major =
+						detected === undefined ? undefined : parseOpenCodeMajor(detected);
+					return major !== undefined && major >= 2;
+				}),
+			);
+		const isApiTransportActive = () =>
+			settings.getHarnessTransport('opencode') === 'api'
+				? apiSupported()
+				: Effect.succeed(false);
+		const transportStatus = () =>
+			apiSupported().pipe(
+				Effect.map((supported) => ({
+					transport: settings.getHarnessTransport('opencode'),
+					apiSupported: supported,
+				})),
+			);
+		const setTransport = (transport: 'acp' | 'api') =>
+			Effect.gen(function* () {
+				const supported = yield* apiSupported();
+				if (transport === 'api' && !supported) {
+					return yield* new AcpSessionError({
+						cause: new Error('OpenCode API transport requires v2 or newer'),
+					});
+				}
+				settings.setHarnessTransport('opencode', transport);
+				return { transport, apiSupported: supported };
+			});
 		const check = () =>
-			settings.getHarnessTransport('opencode') === 'acp'
-				? checkAcpConnection('opencode', createConfig())
-				: resolveOpenCodeVersion(binary).pipe(
-						Effect.flatMap((detected) => {
-							const major = parseOpenCodeMajor(detected);
-							return major !== undefined && major >= 2
-								? serviceClient.serviceStatus(binary).pipe(
-										Effect.map((status) => ({
-											backend: 'opencode' as const,
-											ok: true as const,
-											...status,
-										})),
-										Effect.catch((cause) =>
-											Effect.succeed({
-												backend: 'opencode' as const,
-												ok: false as const,
-												message: cause.message,
-											}),
-										),
-									)
-								: checkAcpConnection('opencode', createConfig());
-						}),
-						Effect.catch((cause) =>
-							Effect.succeed({
-								backend: 'opencode' as const,
-								ok: false as const,
-								message: cause.message,
-							}),
-						),
-					);
+			isApiTransportActive().pipe(
+				Effect.flatMap((active) =>
+					active
+						? serviceClient.serviceStatus(binary).pipe(
+								Effect.map((status) => ({
+									backend: 'opencode' as const,
+									ok: true as const,
+									...status,
+								})),
+								Effect.catch((cause) =>
+									Effect.succeed({
+										backend: 'opencode' as const,
+										ok: false as const,
+										message: cause.message,
+									}),
+								),
+							)
+						: checkAcpConnection('opencode', createConfig()),
+				),
+				Effect.catch((cause) =>
+					Effect.succeed({
+						backend: 'opencode' as const,
+						ok: false as const,
+						message: cause.message,
+					}),
+				),
+			);
 		const versionRef = yield* Ref.make<VersionState>({
 			loaded: false,
 			value: undefined,
@@ -480,37 +517,25 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				} satisfies AcpTurnRecovery,
 			});
 		const runTurn: typeof acpAgent.runTurn = (input) =>
-			settings.getHarnessTransport('opencode') === 'api'
-				? version().pipe(
-						Effect.flatMap((detected) => {
-							const major =
-								detected === undefined
-									? undefined
-									: parseOpenCodeMajor(detected);
-							return major !== undefined && major >= 2
-								? runOpenCodeApiTurn(serviceClient, binary, input)
-								: acpRunTurn(input);
-						}),
-					)
-				: acpRunTurn(input);
+			isApiTransportActive().pipe(
+				Effect.flatMap((active) =>
+					active
+						? runOpenCodeApiTurn(serviceClient, binary, input)
+						: acpRunTurn(input),
+				),
+			);
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
-			settings.getHarnessTransport('opencode') === 'api'
-				? version().pipe(
-						Effect.flatMap((detected) => {
-							const major =
-								detected === undefined
-									? undefined
-									: parseOpenCodeMajor(detected);
-							return major !== undefined && major >= 2
-								? serviceClient.forkSession(binary, input).pipe(
-										Effect.map((sessionId) => ({ sessionId })),
-										Effect.mapError((cause) => new AcpSessionError({ cause })),
-									)
-								: acpAgent.forkSession(input);
-						}),
-					)
-				: acpAgent.forkSession(input);
+			isApiTransportActive().pipe(
+				Effect.flatMap((active) =>
+					active
+						? serviceClient.forkSession(binary, input).pipe(
+								Effect.map((sessionId) => ({ sessionId })),
+								Effect.mapError((cause) => new AcpSessionError({ cause })),
+							)
+						: acpAgent.forkSession(input),
+				),
+			);
 
 		const forkSessionBefore = (input: {
 			sessionId: string;
@@ -749,6 +774,8 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			version,
 			invalidate,
 			check,
+			transportStatus,
+			setTransport,
 			requireSteerSupport,
 			steer,
 		} satisfies OpenCodeService;
