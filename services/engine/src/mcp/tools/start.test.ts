@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { Effect } from 'effect';
-import { z } from 'zod';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
 import type { Sessions } from '../../sessions.ts';
@@ -31,7 +30,6 @@ async function expectToolError(error: AgentStartError) {
 						Effect.die(new Error('wait must not run after start fails')),
 				} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>,
 				sessions: { start: () => error },
-				mcpSessionId: 'mcp-session',
 			},
 		),
 	);
@@ -101,7 +99,7 @@ Configured agent types (use as \`agent_type\`):
 	});
 
 	test('accepts optional cwd and a fork ID in the shared input schema', () => {
-		const parsed = z.object(inputSchema).parse({
+		const parsed = inputSchema.parse({
 			prompt: 'Review this change',
 			forkId: 'job-or-session-id',
 		});
@@ -110,15 +108,17 @@ Configured agent types (use as \`agent_type\`):
 	});
 
 	test('adds worktree fields only to the enabled schema', () => {
-		expect(Object.hasOwn(inputSchema, 'worktree')).toBe(false);
+		expect(Object.hasOwn(inputSchema.shape, 'worktree')).toBe(false);
 		expect(
-			z.object(worktreeInputSchema).parse({
+			worktreeInputSchema.parse({
 				prompt: 'Run',
 				cwd: '/repo',
 				worktree: true,
 			}),
 		).toMatchObject({ worktree: true });
-		expect(Object.hasOwn(worktreeInputSchema, 'worktree_branch')).toBe(false);
+		expect(Object.hasOwn(worktreeInputSchema.shape, 'worktree_branch')).toBe(
+			false,
+		);
 	});
 
 	test('returns an error as plain markdown text for unknown agents', async () => {
@@ -161,7 +161,6 @@ Configured agent types (use as \`agent_type\`):
 								worktreeBranch: 'oagent/1234abcd',
 							}),
 					} as Pick<Sessions['Service'], 'start'>,
-					mcpSessionId: 'mcp-1',
 				},
 			),
 		);

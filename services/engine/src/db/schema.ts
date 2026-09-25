@@ -27,7 +27,6 @@ export const sessions = sqliteTable(
 		cwd: text().notNull(),
 		worktree_path: text(),
 		worktree_branch: text(),
-		mcp_session_id: text(),
 		forked_from_job_id: integer({ mode: 'number' }).references(
 			(): AnySQLiteColumn => jobs.id,
 		),

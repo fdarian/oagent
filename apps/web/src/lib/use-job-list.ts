@@ -16,7 +16,6 @@ export type JobListItem = {
 	model?: string;
 	agentType?: string;
 	sessionId?: string;
-	mcpSessionId?: string;
 };
 
 export function useJobList() {

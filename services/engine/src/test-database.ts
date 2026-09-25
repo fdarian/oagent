@@ -13,7 +13,6 @@ CREATE TABLE sessions (
 	cwd TEXT NOT NULL,
 	worktree_path TEXT,
 	worktree_branch TEXT,
-	mcp_session_id TEXT,
 	forked_from_job_id INTEGER REFERENCES jobs(id),
 	created_at INTEGER NOT NULL
 );

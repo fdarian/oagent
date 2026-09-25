@@ -71,7 +71,6 @@ type StartInput = {
 	agentType?: string;
 	forkId?: string;
 	worktree?: boolean;
-	mcpSessionId?: string;
 };
 
 export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
@@ -87,7 +86,6 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			cwd: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
-			mcpSessionId?: string;
 			forkedFromJobId?: number;
 		}) =>
 			Effect.try({
@@ -101,7 +99,6 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							cwd: input.cwd,
 							worktree_path: input.worktreePath,
 							worktree_branch: input.worktreeBranch,
-							mcp_session_id: input.mcpSessionId,
 							forked_from_job_id: input.forkedFromJobId,
 						})
 						.returning()
@@ -332,7 +329,6 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					cwd,
 					worktreePath: fork?.sourceSession.worktree_path ?? undefined,
 					worktreeBranch: fork?.sourceSession.worktree_branch ?? undefined,
-					mcpSessionId: input.mcpSessionId,
 					forkedFromJobId: fork?.sourceJob.id,
 				});
 				const result = yield* jobs.start({
@@ -462,13 +458,18 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				return { ok: true as const, status: 'idle' as const };
 			});
 
-		const list = (input: { mcpSessionId: string }) =>
+		const list = (input: { cwd?: string }) =>
 			Effect.sync(() => {
 				const rows = db
 					.select()
 					.from(schema.sessions)
-					.where(eq(schema.sessions.mcp_session_id, input.mcpSessionId))
+					.where(
+						input.cwd === undefined
+							? undefined
+							: eq(schema.sessions.cwd, input.cwd),
+					)
 					.orderBy(desc(schema.sessions.created_at), desc(schema.sessions.id))
+					.limit(100)
 					.all();
 				const sessions: Array<{
 					id: string;

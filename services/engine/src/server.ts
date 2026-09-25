@@ -1,7 +1,5 @@
 /// <reference types="bun" />
-import { randomUUID } from 'node:crypto';
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
+import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { loadConfig } from './config.ts';
@@ -75,57 +73,21 @@ export class Engine extends Context.Service<Engine>()('engine', {
 							? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
 							: port;
 
-					/** Map of MCP session ID → { transport, server } */
-					const sessions = new Map<
-						string,
-						{
-							transport: WebStandardStreamableHTTPServerTransport;
-							server: McpServer;
-						}
-					>();
+					const mcpHandler = createMcpHandler(() => {
+						const server = new McpServer(
+							{ name: serverInfo.name, version: serverInfo.version },
+							{ instructions: getMcpInstructions() },
+						);
+						registerTools(server, jobs, sessionService, settings, services);
+						return server;
+					});
 
 					const fetchHandler = async (request: Request) => {
 						const url = new URL(request.url);
 
 						// 1. MCP endpoint
 						if (url.pathname === '/mcp') {
-							const sessionId = request.headers.get('mcp-session-id');
-
-							if (sessionId !== null) {
-								const session = sessions.get(sessionId);
-								if (session === undefined) {
-									return new Response('Session not found', { status: 404 });
-								}
-								return session.transport.handleRequest(request);
-							}
-
-							const transport = new WebStandardStreamableHTTPServerTransport({
-								sessionIdGenerator: () => randomUUID(),
-								onsessioninitialized: (sid) => {
-									sessions.set(sid, { transport, server: mcpServer });
-								},
-								onsessionclosed: (sid) => {
-									sessions.delete(sid);
-								},
-							});
-
-							const mcpServer = new McpServer(
-								{ name: serverInfo.name, version: serverInfo.version },
-								{
-									capabilities: { tools: {} },
-									instructions: getMcpInstructions(),
-								},
-							);
-							registerTools(
-								mcpServer,
-								jobs,
-								sessionService,
-								settings,
-								services,
-							);
-
-							await mcpServer.connect(transport);
-							return transport.handleRequest(request);
+							return mcpHandler.fetch(request);
 						}
 
 						// 2. oRPC endpoint

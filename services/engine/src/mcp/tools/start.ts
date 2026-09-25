@@ -134,7 +134,7 @@ export function buildDescription(): string {
 	return BASE_DESCRIPTION;
 }
 
-export const inputSchema = {
+export const inputSchema = z.object({
 	prompt: z.string().describe('Task instructions for the agent.'),
 	cwd: z
 		.string()
@@ -160,17 +160,16 @@ export const inputSchema = {
 		.describe(
 			'When true, return immediately with a jobId instead of waiting for the result.',
 		),
-};
+});
 
-export const worktreeInputSchema = {
-	...inputSchema,
+export const worktreeInputSchema = inputSchema.extend({
 	worktree: z
 		.boolean()
 		.optional()
 		.describe('Create a fresh worktree for this job.'),
-};
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof worktreeInputSchema>>>;
+type Args = z.infer<typeof worktreeInputSchema>;
 type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
 type StartSessions = Pick<Sessions['Service'], 'start'>;
 
@@ -185,7 +184,6 @@ export const startTool = {
 		ctx: {
 			jobs: StartJobs;
 			sessions: StartSessions;
-			mcpSessionId: string | undefined;
 		},
 	) {
 		const timeoutMs = ctx.jobs.getStartTimeoutMs();
@@ -196,7 +194,6 @@ export const startTool = {
 				model: args.model,
 				agentType: args.agent_type,
 				forkId: args.forkId,
-				mcpSessionId: ctx.mcpSessionId,
 				worktree: args.worktree,
 			})
 			.pipe(

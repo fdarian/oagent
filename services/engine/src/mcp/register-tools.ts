@@ -1,4 +1,4 @@
-import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { McpServer } from '@modelcontextprotocol/server';
 import {
 	Cause,
 	type Context,
@@ -54,14 +54,7 @@ export function registerTools(
 					? worktreeInputSchema
 					: inputSchema,
 		},
-		(args, extra) =>
-			runHandler(
-				startTool.handle(args, {
-					jobs,
-					sessions,
-					mcpSessionId: extra.sessionId,
-				}),
-			),
+		(args) => runHandler(startTool.handle(args, { jobs, sessions })),
 	);
 
 	server.registerTool(
@@ -97,9 +90,6 @@ export function registerTools(
 			description: listTool.description,
 			inputSchema: listTool.inputSchema,
 		},
-		(args, extra) =>
-			runHandler(
-				listTool.handle(args, { sessions, mcpSessionId: extra.sessionId }),
-			),
+		(args) => runHandler(listTool.handle(args, { sessions })),
 	);
 }

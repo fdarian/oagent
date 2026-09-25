@@ -47,8 +47,7 @@ shell wait.
 
 ## Probe the session tools
 
-Use a single `/mcp` transport session for the full sequence so `list` can return
-the sessions created by these calls. The order below exercises new turns,
+The order below exercises new turns,
 steering, full-session fork, earlier-job OpenCode fork, cancellation, and listing:
 
 1. Call `start` with `prompt`, `cwd`, `model`, and `background=true`. Save the
@@ -63,7 +62,7 @@ steering, full-session fork, earlier-job OpenCode fork, cancellation, and listin
    in the source session. This earlier-job fork requires OpenCode and a recorded
    checkpoint.
 7. Start a background turn and call `cancel` with its session ID.
-8. Call `list` in the same MCP session and confirm the created sessions appear.
+8. Call `list` with `cwd` set to the working directory and confirm the created sessions appear. Omit `cwd` to see recent sessions across directories.
 
 Tool results are markdown in `content[0].text`; the server does not return
 `structuredContent`.

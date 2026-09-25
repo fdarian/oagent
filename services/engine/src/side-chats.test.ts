@@ -25,7 +25,6 @@ function insertSession(
 		cwd: string;
 		backend?: string;
 		harnessSessionId?: string;
-		mcpSessionId?: string;
 		worktreePath?: string;
 		worktreeBranch?: string;
 	},
@@ -37,7 +36,6 @@ function insertSession(
 			backend: input.backend ?? 'opencode',
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
-			mcp_session_id: input.mcpSessionId,
 			worktree_path: input.worktreePath,
 			worktree_branch: input.worktreeBranch,
 		})

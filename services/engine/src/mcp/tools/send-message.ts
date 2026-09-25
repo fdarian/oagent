@@ -14,16 +14,16 @@ Send a message to a session. If a turn is running, the message is queued for \
 delivery at the next step boundary; if the session is idle, a new turn starts. \
 Use \`background\` only when starting a new turn.`;
 
-export const inputSchema = {
+export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),
 	prompt: z.string().describe('The instruction to send to the agent.'),
 	background: z
 		.boolean()
 		.optional()
 		.describe('When true, return immediately if this starts a new turn.'),
-};
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type Args = z.infer<typeof inputSchema>;
 type SendMessageJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
 type SendMessageSessions = Pick<Sessions['Service'], 'sendMessage'>;
 

@@ -1054,7 +1054,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType?: string;
 			sessionId: string;
 			harnessSessionId?: string;
-			mcpSessionId?: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
 		};
@@ -1074,7 +1073,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType: row.job.agent_type ?? undefined,
 			sessionId: row.session.uuid,
 			harnessSessionId: row.session.harness_session_id ?? undefined,
-			mcpSessionId: row.session.mcp_session_id ?? undefined,
 			worktreePath: row.session.worktree_path ?? undefined,
 			worktreeBranch: row.session.worktree_branch ?? undefined,
 		});
@@ -1088,29 +1086,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					eq(schema.jobs.session_id, schema.sessions.id),
 				)
 				.where(isNull(schema.jobs.side_chat_id))
-				.orderBy(
-					sql`(${schema.jobs.status} = 'running') DESC`,
-					desc(schema.jobs.created_at),
-				)
-				.all();
-
-			return rows.map(toJobSummary);
-		};
-
-		const listByMcpSession = (mcpSessionId: string): JobSummary[] => {
-			const rows = db
-				.select({ job: schema.jobs, session: schema.sessions })
-				.from(schema.jobs)
-				.innerJoin(
-					schema.sessions,
-					eq(schema.jobs.session_id, schema.sessions.id),
-				)
-				.where(
-					and(
-						eq(schema.sessions.mcp_session_id, mcpSessionId),
-						isNull(schema.jobs.side_chat_id),
-					),
-				)
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
 					desc(schema.jobs.created_at),
@@ -1288,7 +1263,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			steer,
 			wait,
 			list,
-			listByMcpSession,
 			getJobMetadata,
 			getRootJobMetadata,
 			subscribe,

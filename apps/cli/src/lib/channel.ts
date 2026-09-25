@@ -1,5 +1,5 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
 import {
 	type AgentTypePreset,
 	type AliasPreset,
@@ -210,7 +210,7 @@ function registerChannelTools(
 			description: channelStartDescription(mcpName),
 			inputSchema: startInputSchema,
 		},
-		async (args, extra) => {
+		async (args) => {
 			try {
 				const startTimeout = await client.settings.getStartTimeout();
 				const started = await client.sessions.start({
@@ -219,7 +219,6 @@ function registerChannelTools(
 					model: args.model,
 					agent_type: args.agent_type,
 					forkId: args.forkId,
-					mcpSessionId: extra.sessionId,
 					worktree: 'worktree' in args && args.worktree === true,
 				});
 				if (args.background === true) {

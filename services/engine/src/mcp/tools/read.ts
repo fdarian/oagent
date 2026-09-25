@@ -14,15 +14,15 @@ background command.`;
 const WAIT_TIMEOUT_DEFAULT_MS = 50_000;
 const WAIT_TIMEOUT_MAX_MS = 55_000;
 
-export const inputSchema = {
+export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),
 	timeoutMs: z
 		.number()
 		.optional()
 		.describe('Maximum milliseconds to wait (default 50000, capped at 55000).'),
-};
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type Args = z.infer<typeof inputSchema>;
 type ReadSessions = Pick<Sessions['Service'], 'read'>;
 
 function textResponse(text: string) {

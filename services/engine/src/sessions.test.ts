@@ -162,7 +162,6 @@ describe('session turns', () => {
 				cwd: '/repo',
 				model: 'opencode:model-id',
 				agentType: 'reviewer',
-				mcpSessionId: 'mcp-1',
 			}),
 		);
 		const stored = database.db
@@ -173,7 +172,6 @@ describe('session turns', () => {
 		expect(stored).toMatchObject({
 			backend: 'opencode',
 			cwd: '/repo',
-			mcp_session_id: 'mcp-1',
 		});
 		await turnStarted.promise;
 		releaseTurn.resolve();
@@ -208,9 +206,7 @@ describe('session turns', () => {
 			text: 'Final: second prompt',
 		});
 		expect(
-			await Effect.runPromise(
-				services.sessions.list({ mcpSessionId: 'mcp-1' }),
-			),
+			await Effect.runPromise(services.sessions.list({ cwd: '/repo' })),
 		).toMatchObject([
 			{
 				id: started.sessionId,
@@ -219,6 +215,28 @@ describe('session turns', () => {
 				prompt: 'second prompt',
 			},
 		]);
+		const otherSession = insertSession(database, {
+			uuid: 'other-directory',
+			backend: 'opencode',
+			harnessSessionId: 'ses_other',
+			cwd: '/elsewhere',
+		});
+		insertJob(database, otherSession, {
+			uuid: 'other-job',
+			status: 'done',
+			prompt: 'other task',
+			model: 'model-id',
+		});
+		expect(
+			(await Effect.runPromise(services.sessions.list({ cwd: '/repo' }))).map(
+				(session) => session.id,
+			),
+		).toEqual([started.sessionId]);
+		expect(
+			(await Effect.runPromise(services.sessions.list({}))).map(
+				(session) => session.id,
+			),
+		).toContain('other-directory');
 		expect(
 			await Effect.runPromise(
 				services.sessions.cancel({ sessionId: started.sessionId }),
