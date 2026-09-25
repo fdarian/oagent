@@ -213,6 +213,10 @@ function commandExitError(
 	return discoveryError(step, new Error(detail));
 }
 
+export function isOpenCodeServiceStopped(output: string): boolean {
+	return output.trim() === 'stopped';
+}
+
 export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient>()(
 	'oagent/OpenCodeServiceClient',
 	{
@@ -232,6 +236,12 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 						['service', 'status'],
 						statusStep,
 					);
+					if (isOpenCodeServiceStopped(status.stdout)) {
+						return yield* discoveryError(
+							statusStep,
+							new Error('OpenCode service is not running'),
+						);
+					}
 					if (status.exitCode !== 0) {
 						return yield* commandExitError(
 							statusStep,
@@ -678,7 +688,8 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 						['service', 'status'],
 						'checking service status',
 					);
-					if (status.exitCode !== 0) return { running: false as const };
+					if (status.exitCode !== 0 || isOpenCodeServiceStopped(status.stdout))
+						return { running: false as const };
 					const service = yield* discover(binaryPath);
 					const response = yield* request(binaryPath, 'GET', '/api/info');
 					const info =
