@@ -278,6 +278,11 @@ export function HarnessSettingsPage() {
 											checkMutation.error?.message}
 									</p>
 								) : null}
+								{checkMutation.data?.ok === false ? (
+									<p className="text-sm text-destructive">
+										{checkMutation.data.message}
+									</p>
+								) : null}
 							</div>
 						) : (
 							<div className="flex flex-col items-start gap-3">
