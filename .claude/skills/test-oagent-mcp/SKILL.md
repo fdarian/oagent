@@ -52,11 +52,11 @@ steering, full-session fork, earlier-job OpenCode fork, cancellation, and listin
 
 1. Call `start` with `prompt`, `cwd`, `model`, and `background=true`. Save the
    `Session ID` and `Job ID` from its markdown response.
-2. Call `read` with that `sessionId` until the status is terminal.
+2. Call `read` with that `sessionId` to inspect the current status, or pass `wait=true` to block until terminal.
 3. Call `send_message` on the idle session with `background=true`.
 4. While that turn is running, call `send_message` again on the same session;
-   the response should say the message was queued. Then use `read` to wait for
-   the latest turn to finish.
+   the response should say the message was queued. Then use `read` with `wait=true`
+   to wait for the latest turn to finish.
 5. Call `start` with `forkId` set to the session ID.
 6. Call `start` with `forkId` set to the first job ID, after a later turn exists
    in the source session. This earlier-job fork requires OpenCode and a recorded

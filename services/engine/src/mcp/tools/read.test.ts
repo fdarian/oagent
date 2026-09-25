@@ -4,15 +4,15 @@ import type { Sessions } from '../../sessions.ts';
 import { readTool } from './read.ts';
 
 describe('read tool', () => {
-	test('caps the wait and returns the latest turn as markdown', async () => {
-		let timeoutMs: number | undefined;
+	test('returns the latest status immediately by default', async () => {
+		let wait: boolean | undefined;
 		const response = await Effect.runPromise(
 			readTool.handle(
-				{ sessionId: 'session-1', timeoutMs: 90_000 },
+				{ sessionId: 'session-1' },
 				{
 					sessions: {
 						read: (input) => {
-							timeoutMs = input.timeoutMs;
+							wait = input.wait;
 							return Effect.succeed({
 								status: 'done' as const,
 								sessionId: 'session-1',
@@ -26,7 +26,7 @@ describe('read tool', () => {
 			),
 		);
 
-		expect(timeoutMs).toBe(55_000);
+		expect(wait).toBeUndefined();
 		expect(response).toEqual({
 			content: [
 				{

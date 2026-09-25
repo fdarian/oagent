@@ -1,3 +1,4 @@
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import { z } from 'zod';
 import type { AgentDefinition } from '../../agents.ts';
@@ -5,11 +6,11 @@ import { formatToolError, formatTurnResult } from '../../format/turn-result.ts';
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
 import type { Sessions } from '../../sessions.ts';
+import { waitWithProgress } from '../progress.ts';
 
 const BASE_DESCRIPTION = `\
 Start a coding-agent session or fork an existing session/job. Pass its returned \
-session ID to \`send_message\` to continue. If it returns a running status, call \
-\`read\` with the session ID or run \`oagent jobs wait <jobId>\` in the background.`;
+session ID to \`send_message\` to continue. Use \`read\` to check a background turn.`;
 
 export type AliasPreset = {
 	name: string;
@@ -170,7 +171,10 @@ export const worktreeInputSchema = inputSchema.extend({
 });
 
 type Args = z.infer<typeof worktreeInputSchema>;
-type StartJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+type StartJobs = Pick<
+	Jobs['Service'],
+	'subscribe' | 'getJobMetadata' | 'readEventsPage' | 'wait'
+>;
 type StartSessions = Pick<Sessions['Service'], 'start'>;
 
 function textResponse(text: string) {
@@ -184,9 +188,9 @@ export const startTool = {
 		ctx: {
 			jobs: StartJobs;
 			sessions: StartSessions;
+			mcp?: ServerContext;
 		},
 	) {
-		const timeoutMs = ctx.jobs.getStartTimeoutMs();
 		return ctx.sessions
 			.start({
 				prompt: args.prompt,
@@ -216,7 +220,11 @@ export const startTool = {
 							),
 						);
 					}
-					return ctx.jobs.wait({ jobId: started.jobId, timeoutMs }).pipe(
+					return (
+						ctx.mcp === undefined
+							? ctx.jobs.wait({ jobId: started.jobId })
+							: waitWithProgress(ctx.jobs, started.jobId, ctx.mcp)
+					).pipe(
 						Effect.map((result) =>
 							textResponse(
 								formatTurnResult({
@@ -234,13 +242,15 @@ export const startTool = {
 					);
 				}),
 				Effect.catch((error) =>
-					Effect.succeed(
-						textResponse(
-							formatToolError(
-								error instanceof Error ? error.message : String(error),
+					error instanceof Error && error.name === 'AbortError'
+						? Effect.fail(error)
+						: Effect.succeed(
+								textResponse(
+									formatToolError(
+										error instanceof Error ? error.message : String(error),
+									),
+								),
 							),
-						),
-					),
 				),
 			);
 	},

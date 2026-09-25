@@ -5,7 +5,6 @@ import { SessionNotFound, type Sessions } from '../../sessions.ts';
 import { sendMessageTool } from './send-message.ts';
 
 const jobs = {
-	getStartTimeoutMs: () => 100,
 	wait: () =>
 		Effect.succeed({
 			status: 'done' as const,
@@ -13,7 +12,7 @@ const jobs = {
 			text: 'Finished the follow-up.',
 			stopReason: 'end_turn',
 		}),
-} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+} as unknown as Jobs['Service'];
 
 describe('send_message tool', () => {
 	test('returns the markdown final result for an idle session turn', async () => {
@@ -52,12 +51,11 @@ describe('send_message tool', () => {
 				{ sessionId: 'session-1', prompt: 'also inspect tests' },
 				{
 					jobs: {
-						getStartTimeoutMs: () => 100,
 						wait: () => {
 							waitCalled = true;
 							return Effect.die(new Error('steering must not wait'));
 						},
-					},
+					} as unknown as Jobs['Service'],
 					sessions: {
 						sendMessage: () =>
 							Effect.succeed({

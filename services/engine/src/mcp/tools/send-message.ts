@@ -1,3 +1,4 @@
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import { z } from 'zod';
 import {
@@ -8,6 +9,7 @@ import {
 import type { Jobs } from '../../jobs.ts';
 import { requestLogFields } from '../../request-log.ts';
 import type { Sessions } from '../../sessions.ts';
+import { waitWithProgress } from '../progress.ts';
 
 const description = `\
 Send a message to a session. If a turn is running, the message is queued for \
@@ -24,7 +26,10 @@ export const inputSchema = z.object({
 });
 
 type Args = z.infer<typeof inputSchema>;
-type SendMessageJobs = Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+type SendMessageJobs = Pick<
+	Jobs['Service'],
+	'subscribe' | 'getJobMetadata' | 'readEventsPage' | 'wait'
+>;
 type SendMessageSessions = Pick<Sessions['Service'], 'sendMessage'>;
 
 function textResponse(text: string) {
@@ -36,9 +41,12 @@ export const sendMessageTool = {
 	inputSchema,
 	handle(
 		args: Args,
-		ctx: { jobs: SendMessageJobs; sessions: SendMessageSessions },
+		ctx: {
+			jobs: SendMessageJobs;
+			sessions: SendMessageSessions;
+			mcp?: ServerContext;
+		},
 	) {
-		const timeoutMs = ctx.jobs.getStartTimeoutMs();
 		return ctx.sessions
 			.sendMessage({ sessionId: args.sessionId, prompt: args.prompt })
 			.pipe(
@@ -71,7 +79,11 @@ export const sendMessageTool = {
 							),
 						);
 					}
-					return ctx.jobs.wait({ jobId: started.jobId, timeoutMs }).pipe(
+					return (
+						ctx.mcp === undefined
+							? ctx.jobs.wait({ jobId: started.jobId })
+							: waitWithProgress(ctx.jobs, started.jobId, ctx.mcp)
+					).pipe(
 						Effect.map((result) =>
 							textResponse(
 								formatTurnResult({
@@ -87,14 +99,16 @@ export const sendMessageTool = {
 					);
 				}),
 				Effect.catch((error) =>
-					Effect.succeed(
-						textResponse(
-							formatSessionError(
-								args.sessionId,
-								error instanceof Error ? error.message : String(error),
+					error instanceof Error && error.name === 'AbortError'
+						? Effect.fail(error)
+						: Effect.succeed(
+								textResponse(
+									formatSessionError(
+										args.sessionId,
+										error instanceof Error ? error.message : String(error),
+									),
+								),
 							),
-						),
-					),
 				),
 			);
 	},

@@ -54,7 +54,8 @@ export function registerTools(
 					? worktreeInputSchema
 					: inputSchema,
 		},
-		(args) => runHandler(startTool.handle(args, { jobs, sessions })),
+		(args, ctx) =>
+			runHandler(startTool.handle(args, { jobs, sessions, mcp: ctx })),
 	);
 
 	server.registerTool(
@@ -63,7 +64,8 @@ export function registerTools(
 			description: readTool.description,
 			inputSchema: readTool.inputSchema,
 		},
-		(args) => runHandler(readTool.handle(args, { sessions })),
+		(args, ctx) =>
+			runHandler(readTool.handle(args, { jobs, sessions, mcp: ctx })),
 	);
 
 	server.registerTool(
@@ -81,7 +83,8 @@ export function registerTools(
 			description: sendMessageTool.description,
 			inputSchema: sendMessageTool.inputSchema,
 		},
-		(args) => runHandler(sendMessageTool.handle(args, { jobs, sessions })),
+		(args, ctx) =>
+			runHandler(sendMessageTool.handle(args, { jobs, sessions, mcp: ctx })),
 	);
 
 	server.registerTool(

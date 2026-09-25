@@ -25,10 +25,9 @@ async function expectToolError(error: AgentStartError) {
 			},
 			{
 				jobs: {
-					getStartTimeoutMs: () => 1,
 					wait: () =>
 						Effect.die(new Error('wait must not run after start fails')),
-				} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>,
+				} as unknown as Jobs['Service'],
 				sessions: { start: () => error },
 			},
 		),
@@ -94,7 +93,7 @@ Configured agent types (use as \`agent_type\`):
 
 	test('describes session continuation and read handles', () => {
 		expect(buildDescription()).toBe(
-			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. If it returns a running status, call `read` with the session ID or run `oagent jobs wait <jobId>` in the background.',
+			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. Use `read` to check a background turn.',
 		);
 	});
 
@@ -149,9 +148,8 @@ Configured agent types (use as \`agent_type\`):
 				},
 				{
 					jobs: {
-						getStartTimeoutMs: () => 100,
 						wait: () => Effect.die(new Error('background starts do not wait')),
-					} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>,
+					} as unknown as Jobs['Service'],
 					sessions: {
 						start: () =>
 							Effect.succeed({
@@ -169,7 +167,7 @@ Configured agent types (use as \`agent_type\`):
 			content: [
 				{
 					type: 'text',
-					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `read` with session ID `session-1` or run `oagent jobs wait job-1` in the background.',
+					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `read` with session ID `session-1`.',
 				},
 			],
 		});

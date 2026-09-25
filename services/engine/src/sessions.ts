@@ -414,7 +414,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				};
 			});
 
-		const read = (input: { sessionId: string; timeoutMs?: number }) =>
+		const read = (input: { sessionId: string; wait?: boolean }) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(input.sessionId);
 				const job = latestJob(session);
@@ -426,7 +426,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				const result = yield* jobs.wait({
 					jobId: job.uuid,
-					timeoutMs: input.timeoutMs,
+					timeoutMs: input.wait === true ? undefined : 0,
 				});
 				return { ...result, jobId: job.uuid };
 			});

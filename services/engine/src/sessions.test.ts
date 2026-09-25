@@ -174,7 +174,19 @@ describe('session turns', () => {
 			cwd: '/repo',
 		});
 		await turnStarted.promise;
+		const blockingRead = Effect.runPromise(
+			services.sessions.read({ sessionId: started.sessionId, wait: true }),
+		);
+		expect(
+			await Effect.runPromise(
+				services.sessions.read({ sessionId: started.sessionId }),
+			),
+		).toMatchObject({ status: 'running', jobId: started.jobId });
 		releaseTurn.resolve();
+		expect(await blockingRead).toMatchObject({
+			status: 'done',
+			jobId: started.jobId,
+		});
 		expect(
 			await Effect.runPromise(
 				services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
@@ -395,7 +407,6 @@ describe('session turns', () => {
 			await Effect.runPromise(
 				services.sessions.read({
 					sessionId: started.sessionId,
-					timeoutMs: 1,
 				}),
 			),
 		).toMatchObject({ status: 'running', jobId: started.jobId });
