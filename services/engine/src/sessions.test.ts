@@ -387,6 +387,7 @@ describe('session turns', () => {
 		]);
 		const otherSession = insertSession(database, {
 			uuid: 'other-directory',
+			title: 'Other task',
 			backend: 'opencode',
 			harnessSessionId: 'ses_other',
 			cwd: '/elsewhere',

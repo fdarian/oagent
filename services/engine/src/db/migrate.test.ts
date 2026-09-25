@@ -211,12 +211,16 @@ test('backfills session titles from the lowest job id and names empty sessions',
 			INSERT INTO sessions (id, uuid, backend, cwd, created_at)
 			VALUES (1, 'existing-session', 'opencode', '/repo', 100),
 				(2, 'empty-session', 'codex', '/empty', 200),
-				(3, 'blank-first-line-session', 'opencode', '/blank', 300);
+				(3, 'blank-first-line-session', 'opencode', '/blank', 300),
+				(4, 'whitespace-session', 'opencode', '/whitespace', 400),
+				(5, 'long-title-session', 'opencode', '/long', 500);
 			INSERT INTO jobs (id, uuid, status, prompt, created_at, session_id)
 			VALUES
 				(1, 'first-job', 'done', char(9) || '  First title line  ' || char(13) || char(10) || 'Rest of prompt', 100, 1),
 				(2, 'second-job', 'done', 'Later job title', 50, 1),
-				(3, 'blank-first-line-job', 'done', '  ' || char(9) || char(10) || 'Later non-empty line', 300, 3);
+				(3, 'blank-first-line-job', 'done', '  ' || char(9) || char(13) || char(10) || char(10) || '  Later non-empty line  ', 300, 3),
+				(4, 'whitespace-job', 'done', char(9) || char(10) || '  ', 400, 4),
+				(5, 'long-title-job', 'done', '  ' || replace(hex(zeroblob(41)), '00', 'ab') || char(10) || 'Later', 500, 5);
 		`);
 
 		Effect.runSync(runMigrations(drizzle(sqlite)));
@@ -226,7 +230,18 @@ test('backfills session titles from the lowest job id and names empty sessions',
 		).toEqual([
 			{ uuid: 'existing-session', title: 'First title line' },
 			{ uuid: 'empty-session', title: 'Untitled' },
-			{ uuid: 'blank-first-line-session', title: 'Untitled' },
+			{ uuid: 'blank-first-line-session', title: 'Later non-empty line' },
+			{ uuid: 'whitespace-session', title: 'Untitled' },
+			{ uuid: 'long-title-session', title: 'ab'.repeat(40) },
+		]);
+		expect(
+			sqlite.query('SELECT id, session_id FROM jobs ORDER BY id').all(),
+		).toEqual([
+			{ id: 1, session_id: 1 },
+			{ id: 2, session_id: 1 },
+			{ id: 3, session_id: 3 },
+			{ id: 4, session_id: 4 },
+			{ id: 5, session_id: 5 },
 		]);
 		expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([]);
 	} finally {
