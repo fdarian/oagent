@@ -46,6 +46,7 @@ export const jobs = sqliteTable(
 		status: text({ enum: ['running', 'done', 'error', 'cancelled'] }).notNull(),
 		prompt: text().notNull(),
 		model: text(),
+		reasoning_effort: text(),
 		agent_type: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()

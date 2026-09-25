@@ -32,17 +32,42 @@ export const runMigrations = (db: BunSQLiteDatabase<Record<string, unknown>>) =>
 					};
 				},
 			);
-			// Drizzle wraps every migration in a transaction, where PRAGMA foreign_keys=OFF
-			// cannot take effect. Rebuilding jobs with it enabled cascades deletes to events.
+			db.run(
+				sql`CREATE TABLE IF NOT EXISTS __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric)`,
+			);
+			const last = db.values(
+				sql`SELECT created_at FROM __drizzle_migrations ORDER BY created_at DESC LIMIT 1`,
+			)[0];
+			const pending = migrations.filter(
+				(migration) =>
+					last === undefined || Number(last[0]) < migration.folderMillis,
+			);
+			if (pending.length === 0) return;
+
+			// SQLite cannot change foreign_keys inside a transaction; rebuilding jobs
+			// with it enabled would cascade deletes into its event tables.
 			db.run(sql`PRAGMA foreign_keys=OFF`);
 			try {
-				// biome-ignore lint/suspicious/noExplicitAny: internal drizzle API
-				(db as any).dialect.migrate(migrations, (db as any).session);
-				const violations = db.values(sql`PRAGMA foreign_key_check`);
-				if (violations.length > 0) {
-					throw new Error(
-						`Migration broke foreign keys: ${JSON.stringify(violations)}`,
-					);
+				for (const migration of pending) {
+					db.run(sql`BEGIN`);
+					try {
+						for (const statement of migration.sql) {
+							db.run(sql.raw(statement));
+						}
+						const violations = db.values(sql`PRAGMA foreign_key_check`);
+						if (violations.length > 0) {
+							throw new Error(
+								`Migration broke foreign keys: ${JSON.stringify(violations)}`,
+							);
+						}
+						db.run(
+							sql`INSERT INTO __drizzle_migrations (hash, created_at) VALUES (${migration.hash}, ${migration.folderMillis})`,
+						);
+						db.run(sql`COMMIT`);
+					} catch (cause) {
+						db.run(sql`ROLLBACK`);
+						throw cause;
+					}
 				}
 			} finally {
 				db.run(sql`PRAGMA foreign_keys=ON`);

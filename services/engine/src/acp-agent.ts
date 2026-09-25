@@ -423,7 +423,7 @@ export function runAcpTurn(
 ) {
 	return Effect.scoped(
 		Effect.gen(function* () {
-			const turnState = { buffer: '' };
+			const turnState = { buffer: '', afterToolCall: false };
 			const recoveryController = yield* createAcpTurnRecovery({
 				env,
 				cwd: input.cwd,
@@ -432,12 +432,16 @@ export function runAcpTurn(
 				onEvent: (update) => {
 					if (input.onEvent !== undefined) input.onEvent(update);
 					if (update.sessionUpdate === 'tool_call') {
-						turnState.buffer = '';
+						turnState.afterToolCall = true;
 					}
 					if (
 						update.sessionUpdate === 'agent_message_chunk' &&
 						update.content.type === 'text'
 					) {
+						if (turnState.afterToolCall) {
+							turnState.buffer = '';
+							turnState.afterToolCall = false;
+						}
 						turnState.buffer += update.content.text;
 					}
 				},
