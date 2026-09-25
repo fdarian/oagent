@@ -74,6 +74,49 @@ test('returns only assistant text after the last tool call', async () => {
 	expect(result.text).toBe('The final answer');
 });
 
+test('keeps the last text segment when a tool call ends the turn', async () => {
+	type NewSessionResult = Awaited<
+		ReturnType<ClientSideConnection['newSession']>
+	>;
+	type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
+	const state = {
+		listener: undefined as ((update: SessionUpdate) => void) | undefined,
+	};
+	const conn = {
+		newSession: async (): Promise<NewSessionResult> =>
+			({ sessionId: 'ses_test' }) as NewSessionResult,
+		prompt: async (): Promise<PromptResult> => {
+			const listener = state.listener;
+			if (listener === undefined)
+				throw new Error('session listener was not set');
+			listener({
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'The final answer' },
+			});
+			listener({
+				sessionUpdate: 'tool_call',
+				toolCallId: 'tool-1',
+				title: 'Update todo',
+			});
+			return { stopReason: 'end_turn' } as PromptResult;
+		},
+	} as unknown as ClientSideConnection;
+	const result = await Effect.runPromise(
+		runAcpTurn(
+			{
+				conn,
+				registerListener: (_sessionId, listener) => {
+					state.listener = listener;
+					return () => {};
+				},
+				extNotificationHandlers: new Map(),
+			},
+			{ prompt: 'continue', cwd: '/tmp' },
+		),
+	);
+	expect(result.text).toBe('The final answer');
+});
+
 describe('ACP pre-prompt ordering', () => {
 	test('uses model config options when the session omits top-level models', async () => {
 		type NewSessionResult = Awaited<

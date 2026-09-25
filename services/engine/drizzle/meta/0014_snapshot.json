@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "f9ff4a3e-9489-46ce-b2b2-df85e6378df6",
+  "id": "57733db3-9ce3-4287-b459-57625aa23f3e",
   "prevId": "6c408235-e679-43e9-b665-182ed41bb63f",
   "tables": {
     "agent_harness_targets": {
@@ -436,6 +436,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "reasoning_effort": {
+          "name": "reasoning_effort",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "agent_type": {
           "name": "agent_type",
           "type": "text",
@@ -777,6 +784,13 @@
         },
         "worktree_branch": {
           "name": "worktree_branch",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "mcp_session_id": {
+          "name": "mcp_session_id",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

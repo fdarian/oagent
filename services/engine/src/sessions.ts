@@ -187,7 +187,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					return yield* new SessionForkError({
 						forkId,
 						code: 'SOURCE_NOT_READY',
-						message: `Session ${source.session.uuid} has no completed turn to fork.`,
+						message: `Session ${source.session.uuid} has no turn to fork.`,
 					});
 				}
 				if (source.session.harness_session_id === null) {
@@ -296,6 +296,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					sourceSession: source.session,
 					sourceJob: selectedJob,
 					model: selectedJob.model,
+					reasoningEffort: selectedJob.reasoning_effort ?? undefined,
 					agentType: selectedJob.agent_type ?? undefined,
 					backend,
 					harnessSessionId: forkedSession.sessionId,
@@ -304,6 +305,17 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const start = (input: StartInput) =>
 			Effect.gen(function* () {
+				const source =
+					input.forkId === undefined ? undefined : findForkSource(input.forkId);
+				if (source?.job !== undefined && source.job.model !== null) {
+					yield* jobs.validateStart({
+						model:
+							input.model ??
+							`${parseBackend(source.session.backend)}:${source.job.model}`,
+						backend: parseBackend(source.session.backend),
+						agentType: input.agentType ?? source.job.agent_type ?? undefined,
+					});
+				}
 				const fork =
 					input.forkId === undefined
 						? undefined
@@ -323,6 +335,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					input.model ??
 					(fork === undefined ? undefined : `${fork.backend}:${fork.model}`);
 				const agentType = input.agentType ?? fork?.agentType;
+				if (fork === undefined && model !== undefined) {
+					yield* jobs.validateStart({ model, backend, agentType });
+				}
 				const session = yield* insertSession({
 					backend,
 					harnessSessionId: fork?.harnessSessionId,
@@ -335,6 +350,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					session,
 					prompt: input.prompt,
 					model,
+					reasoningEffort: fork?.reasoningEffort,
 					agentType,
 					worktree: input.worktree,
 				});
@@ -364,21 +380,35 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							message: `Session ${session.uuid} is busy on the ${session.backend} backend.`,
 						});
 					}
-					yield* jobs.steer(running.uuid, input.prompt).pipe(
-						Effect.mapError(
-							(error) =>
-								new SessionBusy({
-									sessionId: session.uuid,
-									code: 'TURN_IN_PROGRESS',
-									message: error.message,
-								}),
+					const steered = yield* jobs.steer(running.uuid, input.prompt).pipe(
+						Effect.as(true),
+						Effect.catchTag('JobSteerError', (error) =>
+							error.code === 'NOT_RUNNING'
+								? Effect.succeed(false)
+								: Effect.fail(
+										new SessionBusy({
+											sessionId: session.uuid,
+											code: 'TURN_IN_PROGRESS',
+											message: error.message,
+										}),
+									),
 						),
 					);
-					return {
-						sessionId: session.uuid,
-						jobId: running.uuid,
-						delivery: 'steered' as const,
-					};
+					if (steered) {
+						return {
+							sessionId: session.uuid,
+							jobId: running.uuid,
+							delivery: 'steered' as const,
+						};
+					}
+					const completed = yield* jobs.wait({ jobId: running.uuid });
+					if (completed.status === 'running') {
+						return yield* new SessionBusy({
+							sessionId: session.uuid,
+							code: 'TURN_IN_PROGRESS',
+							message: `Session ${session.uuid} is finishing its current turn.`,
+						});
+					}
 				}
 
 				const latest = latestJob(session);
@@ -393,6 +423,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						session,
 						prompt: input.prompt,
 						model: `${parseBackend(session.backend)}:${latest.model}`,
+						reasoningEffort: latest.reasoning_effort ?? undefined,
 						agentType: latest.agent_type ?? undefined,
 					})
 					.pipe(

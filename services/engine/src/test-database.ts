@@ -32,6 +32,7 @@ CREATE TABLE jobs (
 	status TEXT NOT NULL,
 	prompt TEXT NOT NULL,
 	model TEXT,
+	reasoning_effort TEXT,
 	agent_type TEXT,
 	created_at INTEGER NOT NULL,
 	terminated_at INTEGER,
