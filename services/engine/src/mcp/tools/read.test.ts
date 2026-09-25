@@ -1,5 +1,7 @@
 import { describe, expect, test } from 'bun:test';
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
+import type { Jobs } from '../../jobs.ts';
 import type { Sessions } from '../../sessions.ts';
 import { readTool } from './read.ts';
 
@@ -10,6 +12,10 @@ describe('read tool', () => {
 			readTool.handle(
 				{ sessionId: 'session-1' },
 				{
+					mcp: {
+						mcpReq: { signal: new AbortController().signal },
+					} as ServerContext,
+					jobs: {} as Jobs['Service'],
 					sessions: {
 						read: (input) => {
 							wait = input.wait;

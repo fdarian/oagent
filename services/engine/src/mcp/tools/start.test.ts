@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../../agents.ts';
 import type { Jobs } from '../../jobs.ts';
@@ -13,6 +14,9 @@ import {
 } from './start.ts';
 
 type AgentStartError = AgentTypeNotFound | AgentNotMappedForBackend;
+const mcp = {
+	mcpReq: { signal: new AbortController().signal },
+} as ServerContext;
 
 async function expectToolError(error: AgentStartError) {
 	const response = await Effect.runPromise(
@@ -24,6 +28,7 @@ async function expectToolError(error: AgentStartError) {
 				agent_type: 'reviewer',
 			},
 			{
+				mcp,
 				jobs: {
 					wait: () =>
 						Effect.die(new Error('wait must not run after start fails')),
@@ -147,6 +152,7 @@ Configured agent types (use as \`agent_type\`):
 					background: true,
 				},
 				{
+					mcp,
 					jobs: {
 						wait: () => Effect.die(new Error('background starts do not wait')),
 					} as unknown as Jobs['Service'],

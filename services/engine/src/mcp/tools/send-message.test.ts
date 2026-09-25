@@ -1,10 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import type { Jobs } from '../../jobs.ts';
 import { SessionNotFound, type Sessions } from '../../sessions.ts';
 import { sendMessageTool } from './send-message.ts';
 
+const mcp = {
+	mcpReq: { signal: new AbortController().signal },
+} as ServerContext;
+
 const jobs = {
+	subscribe: () => () => {},
+	getJobMetadata: () => ({ status: 'done' }),
+	readEventsPage: () => ({ events: [], nextCursor: null }),
 	wait: () =>
 		Effect.succeed({
 			status: 'done' as const,
@@ -20,6 +28,7 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'session-1', prompt: 'continue' },
 				{
+					mcp,
 					jobs,
 					sessions: {
 						sendMessage: () =>
@@ -50,6 +59,7 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'session-1', prompt: 'also inspect tests' },
 				{
+					mcp,
 					jobs: {
 						wait: () => {
 							waitCalled = true;
@@ -79,6 +89,7 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'missing-session', prompt: 'continue' },
 				{
+					mcp,
 					jobs,
 					sessions: {
 						sendMessage: () =>

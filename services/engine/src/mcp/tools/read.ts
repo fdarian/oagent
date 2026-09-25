@@ -31,19 +31,16 @@ export const readTool = {
 		args: Args,
 		ctx: {
 			sessions: ReadSessions;
-			jobs?: Pick<
+			jobs: Pick<
 				Jobs['Service'],
 				'subscribe' | 'getJobMetadata' | 'readEventsPage' | 'wait'
 			>;
-			mcp?: ServerContext;
+			mcp: ServerContext;
 		},
 	) {
 		return ctx.sessions.read({ sessionId: args.sessionId }).pipe(
 			Effect.flatMap((result) =>
-				args.wait === true &&
-				result.status === 'running' &&
-				ctx.jobs !== undefined &&
-				ctx.mcp !== undefined
+				args.wait === true && result.status === 'running'
 					? waitWithProgress(ctx.jobs, result.jobId, ctx.mcp).pipe(
 							Effect.map((terminal) => ({ ...terminal, jobId: result.jobId })),
 						)

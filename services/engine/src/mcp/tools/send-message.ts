@@ -44,7 +44,7 @@ export const sendMessageTool = {
 		ctx: {
 			jobs: SendMessageJobs;
 			sessions: SendMessageSessions;
-			mcp?: ServerContext;
+			mcp: ServerContext;
 		},
 	) {
 		return ctx.sessions
@@ -79,11 +79,7 @@ export const sendMessageTool = {
 							),
 						);
 					}
-					return (
-						ctx.mcp === undefined
-							? ctx.jobs.wait({ jobId: started.jobId })
-							: waitWithProgress(ctx.jobs, started.jobId, ctx.mcp)
-					).pipe(
+					return waitWithProgress(ctx.jobs, started.jobId, ctx.mcp).pipe(
 						Effect.map((result) =>
 							textResponse(
 								formatTurnResult({
