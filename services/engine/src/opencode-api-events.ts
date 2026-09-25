@@ -25,8 +25,6 @@ function output(value: unknown): string | undefined {
 /** State is confined to one turn; OpenCode input deltas precede the parsed tool call. */
 export function createOpenCodeEventTranslator() {
 	const tools = new Map<string, Tool>();
-	const inputs = new Map<string, string>();
-	const names = new Map<string, string>();
 	return (event: Event): SessionUpdate[] => {
 		const data = event.data;
 		if (
@@ -47,39 +45,12 @@ export function createOpenCodeEventTranslator() {
 		if (typeof data.id !== 'string') return [];
 		const id = data.id;
 		if (event.type === 'session.tool.input.started') {
-			inputs.set(id, '');
-			if (typeof data.name === 'string') names.set(id, data.name);
-			return [];
-		}
-		if (
-			event.type === 'session.tool.input.delta' &&
-			typeof data.delta === 'string'
-		) {
-			inputs.set(
-				id,
-				`${inputs.get(id) === undefined ? '' : inputs.get(id)}${data.delta}`,
-			);
-			return [];
-		}
-		if (
-			event.type === 'session.tool.input.ended' &&
-			typeof data.text === 'string'
-		) {
-			inputs.set(id, data.text);
-			return [];
-		}
-		if (event.type === 'session.tool.called') {
-			const title = names.get(id);
-			if (title === undefined) return [];
+			if (typeof data.name !== 'string') return [];
+			const title = data.name;
 			const kind = /^(bash|shell|execute|terminal)$/.test(title)
 				? ('execute' as const)
 				: ('other' as const);
-			const input = inputs.get(id);
-			tools.set(id, {
-				title,
-				kind,
-				input: input === undefined ? JSON.stringify(data.input) : input,
-			});
+			tools.set(id, { title, kind, input: '' });
 			return [
 				{
 					sessionUpdate: 'tool_call',
@@ -87,12 +58,52 @@ export function createOpenCodeEventTranslator() {
 					title,
 					kind,
 					status: 'pending',
-					rawInput: data.input,
+					rawInput: '',
 				},
 			];
 		}
 		const tool = tools.get(id);
 		if (tool === undefined) return [];
+		if (
+			event.type === 'session.tool.input.delta' &&
+			typeof data.delta === 'string'
+		) {
+			tool.input += data.delta;
+			return [
+				{
+					sessionUpdate: 'tool_call_update',
+					toolCallId: id,
+					rawInput: tool.input,
+					status: 'pending',
+				},
+			];
+		}
+		if (
+			event.type === 'session.tool.input.ended' &&
+			typeof data.text === 'string'
+		) {
+			tool.input = data.text;
+			return [
+				{
+					sessionUpdate: 'tool_call_update',
+					toolCallId: id,
+					rawInput: tool.input,
+					status: 'pending',
+				},
+			];
+		}
+		if (event.type === 'session.tool.called') {
+			return [
+				{
+					sessionUpdate: 'tool_call_update',
+					toolCallId: id,
+					title: tool.title,
+					kind: tool.kind,
+					status: 'in_progress',
+					rawInput: data.input,
+				},
+			];
+		}
 		if (event.type === 'session.tool.progress') {
 			return [
 				{
@@ -110,8 +121,6 @@ export function createOpenCodeEventTranslator() {
 			event.type === 'session.tool.failed'
 		) {
 			tools.delete(id);
-			inputs.delete(id);
-			names.delete(id);
 			return [
 				{
 					sessionUpdate: 'tool_call_update',

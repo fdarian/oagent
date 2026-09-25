@@ -50,20 +50,6 @@ describe('OpenCode v2.0.16 event translation', () => {
 					name: 'bash',
 				},
 			}),
-		).toEqual([]);
-		translate({
-			type: 'session.tool.input.delta',
-			data: { id: 'call_1', delta: '{"command":' },
-		});
-		translate({
-			type: 'session.tool.input.ended',
-			data: { id: 'call_1', text: '{"command":"pwd"}' },
-		});
-		expect(
-			translate({
-				type: 'session.tool.called',
-				data: { id: 'call_1', input: { command: 'pwd' }, executed: true },
-			}),
 		).toEqual([
 			{
 				sessionUpdate: 'tool_call',
@@ -71,6 +57,47 @@ describe('OpenCode v2.0.16 event translation', () => {
 				title: 'bash',
 				kind: 'execute',
 				status: 'pending',
+				rawInput: '',
+			},
+		]);
+		expect(
+			translate({
+				type: 'session.tool.input.delta',
+				data: { id: 'call_1', delta: '{"command":' },
+			}),
+		).toEqual([
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'call_1',
+				rawInput: '{"command":',
+				status: 'pending',
+			},
+		]);
+		expect(
+			translate({
+				type: 'session.tool.input.ended',
+				data: { id: 'call_1', text: '{"command":"pwd"}' },
+			}),
+		).toEqual([
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'call_1',
+				rawInput: '{"command":"pwd"}',
+				status: 'pending',
+			},
+		]);
+		expect(
+			translate({
+				type: 'session.tool.called',
+				data: { id: 'call_1', input: { command: 'pwd' }, executed: true },
+			}),
+		).toEqual([
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'call_1',
+				title: 'bash',
+				kind: 'execute',
+				status: 'in_progress',
 				rawInput: { command: 'pwd' },
 			},
 		]);
