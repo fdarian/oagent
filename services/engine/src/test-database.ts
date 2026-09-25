@@ -8,6 +8,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE sessions (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	uuid TEXT NOT NULL UNIQUE,
+	title TEXT NOT NULL,
 	backend TEXT NOT NULL,
 	harness_session_id TEXT,
 	cwd TEXT NOT NULL,

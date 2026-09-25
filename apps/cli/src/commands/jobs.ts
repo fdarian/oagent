@@ -134,6 +134,7 @@ function renderToon(
 	const mapped = jobs.map((job) => ({
 		status: job.status,
 		id: job.id,
+		title: job.title,
 		created: new Date(job.createdAt).toISOString(),
 		model: job.model ?? null,
 		cwd: job.cwd,
@@ -152,6 +153,7 @@ function renderJson(
 ) {
 	const mapped = jobs.map((job) => ({
 		id: job.id,
+		title: job.title,
 		status: job.status,
 		createdAt: new Date(job.createdAt).toISOString(),
 		terminatedAt:

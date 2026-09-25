@@ -22,6 +22,7 @@ export const sessions = sqliteTable(
 	{
 		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
 		uuid: text().notNull(),
+		title: text().notNull(),
 		backend: text().notNull(),
 		harness_session_id: text(),
 		cwd: text().notNull(),

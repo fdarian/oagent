@@ -16,6 +16,7 @@ describe('list tool', () => {
 							return Effect.succeed([
 								{
 									id: 'session-1',
+									title: 'Run tests',
 									jobId: 'job-2',
 									status: 'done',
 									prompt: 'Follow up\nwith tests',
@@ -30,7 +31,7 @@ describe('list tool', () => {
 
 		expect(requestedCwd).toBe('/repo');
 		expect(response.content[0]?.text).toBe(
-			'# Sessions (1)\n\n- **session-1** [done] 2026-09-23T12:00:00.000Z · latest job `job-2`\n  Follow up with tests',
+			'# Sessions (1)\n\n- **Run tests** (`session-1`) [done] 2026-09-23T12:00:00.000Z · latest job `job-2`\n  Follow up with tests',
 		);
 		expect(response).not.toHaveProperty('structuredContent');
 	});

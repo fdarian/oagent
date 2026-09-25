@@ -17,6 +17,7 @@ import m0012 from '../drizzle/0012_greedy_synch.sql' with { type: 'text' };
 import m0013 from '../drizzle/0013_lovely_shape.sql' with { type: 'text' };
 import m0014 from '../drizzle/0014_sharp_nocturne.sql' with { type: 'text' };
 import m0015 from '../drizzle/0015_striped_elektra.sql' with { type: 'text' };
+import m0016 from '../drizzle/0016_parched_menace.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -36,6 +37,7 @@ export default {
   '0012_greedy_synch': m0012,
   '0013_lovely_shape': m0013,
   '0014_sharp_nocturne': m0014,
-  '0015_striped_elektra': m0015
+  '0015_striped_elektra': m0015,
+  '0016_parched_menace': m0016
   } as Record<string, string>,
 };

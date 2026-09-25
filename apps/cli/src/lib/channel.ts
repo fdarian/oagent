@@ -233,6 +233,7 @@ function registerChannelTools(
 		async (args, ctx) => {
 			try {
 				const started = await client.sessions.start({
+					title: args.title,
 					prompt: args.prompt,
 					cwd: args.cwd,
 					model: args.model,

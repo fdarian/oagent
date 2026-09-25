@@ -53,6 +53,7 @@ const fakeClient = {
 	jobs: {
 		get: async (input: { jobId: string }) => ({
 			id: input.jobId,
+			title: `Title for ${input.jobId}`,
 			status: 'done',
 			prompt: `Prompt for ${input.jobId}`,
 			cwd: '/repo',
@@ -87,12 +88,14 @@ const orpc = createTanstackQueryUtils(
 mock.module('@/lib/orpc', () => ({ orpc, client: fakeClient }));
 
 type JobHeaderProps = {
+	title: string;
 	onNewSideChat?: () => void;
 	isCreatingSideChat?: boolean;
 };
 
 type JobTimelineProps = {
 	header?: ReactNode;
+	parts?: Array<{ kind: string; text?: string }>;
 };
 
 type SideChatDrawerProps = {
@@ -104,23 +107,37 @@ type SideChatDrawerProps = {
 mock.module('@/components/job-header', () => ({
 	JobHeader: (props: JobHeaderProps) =>
 		react.createElement(
-			'button',
-			{
-				type: 'button',
-				disabled: props.isCreatingSideChat,
-				onClick: () => props.onNewSideChat?.(),
-			},
-			'New side chat',
+			react.Fragment,
+			undefined,
+			react.createElement('span', undefined, props.title),
+			react.createElement(
+				'button',
+				{
+					type: 'button',
+					disabled: props.isCreatingSideChat,
+					onClick: () => props.onNewSideChat?.(),
+				},
+				'New side chat',
+			),
 		),
 }));
 
 mock.module('@/components/job-timeline', () => ({
 	JobTimeline: (props: JobTimelineProps) =>
-		react.createElement('div', undefined, props.header),
-}));
-
-mock.module('@/components/job-prompt-view', () => ({
-	JobPromptView: () => null,
+		react.createElement(
+			'div',
+			undefined,
+			props.header,
+			...(props.parts ?? [])
+				.filter((part) => part.kind === 'user')
+				.map((part) =>
+					react.createElement(
+						'p',
+						{ 'data-kind': part.kind, key: part.text },
+						part.text,
+					),
+				),
+		),
 }));
 
 mock.module('@/components/job-status-strip', () => ({
@@ -318,6 +335,17 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		sideChatCreateRequests.length = 0;
 		sideChatListRequests.length = 0;
 		document.body.replaceChildren();
+	});
+
+	test('shows the session title and initial prompt as a user message', async () => {
+		const mountedRoute = await mountRoute('/jobs/job-title');
+		activeMountedRoute = mountedRoute;
+		await waitForNewSideChatButton(mountedRoute.container);
+
+		expect(mountedRoute.container.textContent).toContain('Title for job-title');
+		expect(
+			mountedRoute.container.querySelector('[data-kind="user"]')?.textContent,
+		).toBe('Prompt for job-title');
 	});
 
 	afterEach(async () => {

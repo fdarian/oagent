@@ -17,12 +17,13 @@ function createDatabase() {
 
 function insertSession(
 	database: ReturnType<typeof createDatabase>,
-	input: { uuid: string; cwd: string; backend?: string },
+	input: { uuid: string; title: string; cwd: string; backend?: string },
 ) {
 	const session = database.db
 		.insert(schema.sessions)
 		.values({
 			uuid: input.uuid,
+			title: input.title,
 			backend: input.backend ?? 'opencode',
 			cwd: input.cwd,
 		})
@@ -88,6 +89,7 @@ describe('job event persistence', () => {
 		);
 		const session = insertSession(database, {
 			uuid: 'session-events',
+			title: 'Event session',
 			cwd: '/tmp',
 		});
 
@@ -147,6 +149,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 	);
 	const session = insertSession(database, {
 		uuid: 'session-worktree',
+		title: 'Worktree session',
 		cwd: '/repo/apps/web',
 	});
 	const first = await Effect.runPromise(
@@ -227,6 +230,7 @@ test('cancel during worktree creation never starts the reserved turn', async () 
 	);
 	const session = insertSession(database, {
 		uuid: 'session-cancel-window',
+		title: 'Cancel window',
 		cwd: '/repo',
 	});
 	const starting = Effect.runPromise(
@@ -275,6 +279,7 @@ test('interrupted worktree creation releases the running reservation', async () 
 	);
 	const session = insertSession(database, {
 		uuid: 'session-interrupted',
+		title: 'Interrupted session',
 		cwd: '/repo',
 	});
 	const starting = Effect.runFork(
@@ -328,6 +333,7 @@ test('keeps the session busy until its completion checkpoint is saved', async ()
 	);
 	const session = insertSession(database, {
 		uuid: 'session-checkpoint',
+		title: 'Checkpoint session',
 		cwd: '/repo',
 	});
 	const started = await Effect.runPromise(
@@ -347,6 +353,7 @@ test('keeps the session busy until its completion checkpoint is saved', async ()
 		harness_last_message_id: 'msg_last',
 	});
 	expect(jobs.getRootJobMetadata(started.jobId)).toMatchObject({
+		title: 'Checkpoint session',
 		sessionId: session.uuid,
 		harnessSessionId: 'ses_checkpoint',
 	});

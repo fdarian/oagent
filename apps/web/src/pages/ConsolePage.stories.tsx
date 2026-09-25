@@ -31,6 +31,7 @@ export const EmptySelection: Story = {
 						items: [
 							{
 								id: 'job-1',
+								title: 'List files',
 								status: 'done',
 								createdAt: Date.now() - 300_000,
 								prompt: 'List files',
@@ -43,6 +44,7 @@ export const EmptySelection: Story = {
 				jobs={[
 					{
 						id: 'job-1',
+						title: 'List files',
 						status: 'done',
 						createdAt: Date.now() - 300_000,
 						prompt: 'List files',
@@ -72,6 +74,7 @@ export const RunningSession: Story = {
 						items: [
 							{
 								id: 'job-run',
+								title: 'Refactor auth middleware',
 								status: 'running',
 								createdAt: Date.now() - 120_000,
 								prompt: 'Refactor auth middleware',
@@ -82,6 +85,7 @@ export const RunningSession: Story = {
 							},
 							{
 								id: 'job-done',
+								title: 'List source files',
 								status: 'done',
 								createdAt: Date.now() - 400_000,
 								prompt: 'List files in src/',
@@ -94,6 +98,7 @@ export const RunningSession: Story = {
 				jobs={[
 					{
 						id: 'job-run',
+						title: 'Refactor auth middleware',
 						status: 'running',
 						createdAt: Date.now() - 120_000,
 						prompt: 'Refactor auth middleware',
@@ -104,6 +109,7 @@ export const RunningSession: Story = {
 					},
 					{
 						id: 'job-done',
+						title: 'List source files',
 						status: 'done',
 						createdAt: Date.now() - 400_000,
 						prompt: 'List files in src/',
@@ -123,7 +129,7 @@ export const RunningSession: Story = {
 						<JobHeader
 							id="job-run"
 							status="running"
-							prompt="Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases"
+							title="Refactor authentication middleware"
 							cwd="/Users/dev/project/apps/api"
 							backend="opencode"
 							model="opencode-go/kimi-k2.6"
@@ -138,6 +144,12 @@ export const RunningSession: Story = {
 								activeChildSessionId="child-2"
 								onChildSelect={selectSubagent}
 								parts={[
+									{
+										kind: 'user',
+										id: 'initial-prompt',
+										text: 'Refactor the authentication middleware to use Effect.ts\nAdd proper error handling for all edge cases',
+										createdAt: Date.now() - 120_000,
+									},
 									{
 										kind: 'reasoning',
 										id: 'reasoning-1',

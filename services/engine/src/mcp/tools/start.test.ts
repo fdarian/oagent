@@ -22,6 +22,7 @@ async function expectToolError(error: AgentStartError) {
 	const response = await Effect.runPromise(
 		startTool.handle(
 			{
+				title: 'Review change',
 				prompt: 'Review this change',
 				cwd: '/repo',
 				model: 'opencode:model',
@@ -104,6 +105,7 @@ Configured agent types (use as \`agent_type\`):
 
 	test('accepts optional cwd and a fork ID in the shared input schema', () => {
 		const parsed = inputSchema.parse({
+			title: 'Review change',
 			prompt: 'Review this change',
 			forkId: 'job-or-session-id',
 		});
@@ -111,10 +113,17 @@ Configured agent types (use as \`agent_type\`):
 		expect(parsed.cwd).toBeUndefined();
 	});
 
+	test('requires a title in the shared input schema', () => {
+		expect(
+			inputSchema.safeParse({ prompt: 'Review this change' }).success,
+		).toBe(false);
+	});
+
 	test('adds worktree fields only to the enabled schema', () => {
 		expect(Object.hasOwn(inputSchema.shape, 'worktree')).toBe(false);
 		expect(
 			worktreeInputSchema.parse({
+				title: 'Run tests',
 				prompt: 'Run',
 				cwd: '/repo',
 				worktree: true,
@@ -144,9 +153,11 @@ Configured agent types (use as \`agent_type\`):
 	});
 
 	test('returns a background handle as markdown text with the session and job IDs', async () => {
+		let startedTitle: string | undefined;
 		const response = await Effect.runPromise(
 			startTool.handle(
 				{
+					title: 'Run tests',
 					prompt: 'Run tests',
 					cwd: '/repo',
 					background: true,
@@ -157,17 +168,20 @@ Configured agent types (use as \`agent_type\`):
 						wait: () => Effect.die(new Error('background starts do not wait')),
 					} as unknown as Jobs['Service'],
 					sessions: {
-						start: () =>
-							Effect.succeed({
+						start: (input) => {
+							startedTitle = input.title;
+							return Effect.succeed({
 								sessionId: 'session-1',
 								jobId: 'job-1',
 								worktreePath: '/repo-worktree',
 								worktreeBranch: 'oagent/1234abcd',
-							}),
+							});
+						},
 					} as Pick<Sessions['Service'], 'start'>,
 				},
 			),
 		);
+		expect(startedTitle).toBe('Run tests');
 
 		expect(response).toEqual({
 			content: [
