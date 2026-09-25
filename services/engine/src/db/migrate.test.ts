@@ -69,7 +69,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 
 			const sessions = migrated
 				.query(
-					'SELECT uuid, backend, harness_session_id, cwd, worktree_path, worktree_branch, created_at FROM sessions ORDER BY created_at',
+					'SELECT uuid, title, backend, harness_session_id, cwd, worktree_path, worktree_branch, created_at FROM sessions ORDER BY created_at',
 				)
 				.all();
 			expect(
@@ -77,6 +77,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 			).not.toContainEqual(expect.objectContaining({ name: 'mcp_session_id' }));
 			expect(sessions).toMatchObject([
 				{
+					title: 'later shared turn',
 					backend: 'opencode',
 					harness_session_id: 'ses_shared',
 					cwd: '/earliest',
@@ -85,18 +86,21 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					created_at: 1000,
 				},
 				{
+					title: 'null harness session',
 					backend: 'cursor',
 					harness_session_id: null,
 					cwd: '/null',
 					created_at: 3000,
 				},
 				{
+					title: 'other harness session',
 					backend: 'opencode',
 					harness_session_id: 'ses_other',
 					cwd: '/other',
 					created_at: 4000,
 				},
 				{
+					title: 'side chat turn',
 					backend: 'opencode',
 					harness_session_id: 'ses_child',
 					cwd: '/child',
@@ -116,7 +120,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 			}
 			const jobs = migrated
 				.query(
-					'SELECT j.id, j.uuid, j.status, j.text, j.side_chat_id, s.harness_session_id FROM jobs j JOIN sessions s ON s.id = j.session_id ORDER BY j.id',
+					'SELECT j.id, j.uuid, j.status, j.text, j.side_chat_id, s.title AS session_title, s.harness_session_id FROM jobs j JOIN sessions s ON s.id = j.session_id ORDER BY j.id',
 				)
 				.all();
 			expect(jobs).toEqual([
@@ -126,6 +130,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					status: 'done',
 					text: 'later text',
 					side_chat_id: null,
+					session_title: 'later shared turn',
 					harness_session_id: 'ses_shared',
 				},
 				{
@@ -134,6 +139,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					status: 'done',
 					text: 'first text',
 					side_chat_id: null,
+					session_title: 'later shared turn',
 					harness_session_id: 'ses_shared',
 				},
 				{
@@ -142,6 +148,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					status: 'done',
 					text: 'null text',
 					side_chat_id: null,
+					session_title: 'null harness session',
 					harness_session_id: null,
 				},
 				{
@@ -150,6 +157,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					status: 'error',
 					text: null,
 					side_chat_id: null,
+					session_title: 'other harness session',
 					harness_session_id: 'ses_other',
 				},
 				{
@@ -158,6 +166,7 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					status: 'done',
 					text: 'child text',
 					side_chat_id: 1,
+					session_title: 'side chat turn',
 					harness_session_id: 'ses_child',
 				},
 			]);
@@ -176,6 +185,52 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 		}
 	} finally {
 		rmSync(directory, { recursive: true, force: true });
+	}
+});
+
+test('backfills session titles from the lowest job id and names empty sessions', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const latest = bundle.journal.entries.at(-1);
+		if (latest === undefined) throw new Error('Missing latest migration');
+		const previousMigrations = bundle.journal.entries.filter(
+			(entry) => entry.idx < latest.idx,
+		);
+		for (const migration of previousMigrations) {
+			const migrationSql = bundle.files[migration.tag];
+			if (migrationSql === undefined)
+				throw new Error(`Missing ${migration.tag}`);
+			sqlite.exec(migrationSql);
+		}
+		const previous = previousMigrations.at(-1);
+		if (previous === undefined) throw new Error('Missing previous migration');
+		sqlite.exec(`
+			CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric);
+			INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('previous', ${previous.when});
+			PRAGMA foreign_keys=ON;
+			INSERT INTO sessions (id, uuid, backend, cwd, created_at)
+			VALUES (1, 'existing-session', 'opencode', '/repo', 100),
+				(2, 'empty-session', 'codex', '/empty', 200),
+				(3, 'blank-first-line-session', 'opencode', '/blank', 300);
+			INSERT INTO jobs (id, uuid, status, prompt, created_at, session_id)
+			VALUES
+				(1, 'first-job', 'done', char(9) || '  First title line  ' || char(13) || char(10) || 'Rest of prompt', 100, 1),
+				(2, 'second-job', 'done', 'Later job title', 50, 1),
+				(3, 'blank-first-line-job', 'done', '  ' || char(9) || char(10) || 'Later non-empty line', 300, 3);
+		`);
+
+		Effect.runSync(runMigrations(drizzle(sqlite)));
+
+		expect(
+			sqlite.query('SELECT uuid, title FROM sessions ORDER BY id').all(),
+		).toEqual([
+			{ uuid: 'existing-session', title: 'First title line' },
+			{ uuid: 'empty-session', title: 'Untitled' },
+			{ uuid: 'blank-first-line-session', title: 'Untitled' },
+		]);
+		expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([]);
+	} finally {
+		sqlite.close();
 	}
 });
 
