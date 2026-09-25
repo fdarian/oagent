@@ -4,16 +4,15 @@ import type { Sessions } from '../../sessions.ts';
 import { listTool } from './list.ts';
 
 describe('list tool', () => {
-	test('renders the latest jobs for the current MCP session', async () => {
-		let requestedMcpSessionId: string | undefined;
+	test('renders recent sessions filtered by cwd', async () => {
+		let requestedCwd: string | undefined;
 		const response = await Effect.runPromise(
 			listTool.handle(
-				{},
+				{ cwd: '/repo' },
 				{
-					mcpSessionId: 'mcp-1',
 					sessions: {
 						list: (input) => {
-							requestedMcpSessionId = input.mcpSessionId;
+							requestedCwd = input.cwd;
 							return Effect.succeed([
 								{
 									id: 'session-1',
@@ -29,10 +28,27 @@ describe('list tool', () => {
 			),
 		);
 
-		expect(requestedMcpSessionId).toBe('mcp-1');
+		expect(requestedCwd).toBe('/repo');
 		expect(response.content[0]?.text).toBe(
 			'# Sessions (1)\n\n- **session-1** [done] 2026-09-23T12:00:00.000Z · latest job `job-2`\n  Follow up with tests',
 		);
 		expect(response).not.toHaveProperty('structuredContent');
+	});
+
+	test('lists across directories when cwd is omitted', async () => {
+		const response = await Effect.runPromise(
+			listTool.handle(
+				{},
+				{
+					sessions: {
+						list: (input) => {
+							expect(input.cwd).toBeUndefined();
+							return Effect.succeed([]);
+						},
+					} as Pick<Sessions['Service'], 'list'>,
+				},
+			),
+		);
+		expect(response.content[0]?.text).toBe('No sessions found.');
 	});
 });

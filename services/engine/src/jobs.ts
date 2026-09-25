@@ -16,7 +16,6 @@ import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
-import { Settings } from './settings.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
@@ -125,10 +124,6 @@ type JobsChange = {
 	status?: string;
 };
 
-const TIMEOUT_DEFAULT_MS = 50_000;
-
-export const DEFAULT_START_TIMEOUT_MS = 30 * 60 * 1000;
-
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
 
@@ -159,7 +154,6 @@ function isRunningSessionTurnConflict(cause: unknown): boolean {
 export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 	make: Effect.gen(function* () {
 		const harnessRegistry = yield* HarnessRegistry;
-		const settings = yield* Settings;
 		const worktrees = yield* Worktrees;
 		const agents = yield* Agents;
 		const dbService = yield* Db;
@@ -1083,11 +1077,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					return toWaitResult(row.job, row.session.uuid);
 				}
 
-				const cap = input.timeoutMs ?? TIMEOUT_DEFAULT_MS;
 				const fiber = liveFibers.get(input.jobId);
 
 				if (fiber !== undefined) {
-					yield* Fiber.join(fiber).pipe(Effect.exit, Effect.timeoutOption(cap));
+					const joined = Fiber.join(fiber).pipe(Effect.exit);
+					if (input.timeoutMs === undefined) yield* joined;
+					else yield* joined.pipe(Effect.timeoutOption(input.timeoutMs));
 
 					const updated = findJob();
 					if (updated === undefined) {
@@ -1097,9 +1092,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				// Defensive fallback: poll the row at 500ms cadence
-				const startTime = Date.now();
-				const deadline = startTime + cap;
-				while (Date.now() < deadline) {
+				const deadline =
+					input.timeoutMs === undefined
+						? undefined
+						: Date.now() + input.timeoutMs;
+				while (deadline === undefined || Date.now() < deadline) {
 					const latest = findJob();
 					if (latest === undefined) {
 						return yield* Effect.fail(new JobNotFound({ jobId: input.jobId }));
@@ -1107,7 +1104,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					if (latest.job.status !== 'running') {
 						return toWaitResult(latest.job, latest.session.uuid);
 					}
-					Bun.sleepSync(500);
+					yield* Effect.sleep(500);
 				}
 				return { status: 'running' };
 			});
@@ -1124,7 +1121,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType?: string;
 			sessionId: string;
 			harnessSessionId?: string;
-			mcpSessionId?: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
 		};
@@ -1144,7 +1140,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			agentType: row.job.agent_type ?? undefined,
 			sessionId: row.session.uuid,
 			harnessSessionId: row.session.harness_session_id ?? undefined,
-			mcpSessionId: row.session.mcp_session_id ?? undefined,
 			worktreePath: row.session.worktree_path ?? undefined,
 			worktreeBranch: row.session.worktree_branch ?? undefined,
 		});
@@ -1158,29 +1153,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					eq(schema.jobs.session_id, schema.sessions.id),
 				)
 				.where(isNull(schema.jobs.side_chat_id))
-				.orderBy(
-					sql`(${schema.jobs.status} = 'running') DESC`,
-					desc(schema.jobs.created_at),
-				)
-				.all();
-
-			return rows.map(toJobSummary);
-		};
-
-		const listByMcpSession = (mcpSessionId: string): JobSummary[] => {
-			const rows = db
-				.select({ job: schema.jobs, session: schema.sessions })
-				.from(schema.jobs)
-				.innerJoin(
-					schema.sessions,
-					eq(schema.jobs.session_id, schema.sessions.id),
-				)
-				.where(
-					and(
-						eq(schema.sessions.mcp_session_id, mcpSessionId),
-						isNull(schema.jobs.side_chat_id),
-					),
-				)
 				.orderBy(
 					sql`(${schema.jobs.status} = 'running') DESC`,
 					desc(schema.jobs.created_at),
@@ -1325,29 +1297,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return true;
 		};
 
-		/**
-		 * Max time the start tool blocks waiting for a job before returning a running handle.
-		 *
-		 * Safe because Claude Code's MCP tool-call timeout defaults to ~27.7h (1e8 ms): from
-		 * the client binary, the per-call limit resolves as `.mcp.json` timeout → MCP_TOOL_TIMEOUT
-		 * env → 1e8 ms default, floored at 1s, ceiled at INT32_MAX (~24.8 days). The server can NOT
-		 * read that value — Claude Code injects no timeout into the MCP subprocess env (only
-		 * CLAUDE_PROJECT_DIR) — and progress notifications do NOT extend it (hard wall-clock). So we
-		 * pick our own conservative cap well under the default and hand back a {status:"running"}
-		 * resume handle if it elapses, rather than trying to detect the client's limit.
-		 */
-		const getStartTimeoutMs = (): number => {
-			const raw = settings.getSetting('start_timeout_ms');
-			if (raw === undefined) {
-				return DEFAULT_START_TIMEOUT_MS;
-			}
-			const parsed = Number.parseInt(raw, 10);
-			if (Number.isNaN(parsed)) {
-				throw new Error(`Corrupt start_timeout_ms setting: ${raw}`);
-			}
-			return parsed;
-		};
-
 		return {
 			start,
 			reserve,
@@ -1359,7 +1308,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			steer,
 			wait,
 			list,
-			listByMcpSession,
 			getJobMetadata,
 			getRootJobMetadata,
 			subscribe,
@@ -1367,7 +1315,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listAliases,
 			saveAlias,
 			deleteAlias,
-			getStartTimeoutMs,
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
 					.select()
@@ -1383,7 +1330,6 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 }) {
 	static readonly layer = Layer.effect(Jobs, Jobs.make).pipe(
 		Layer.provide(HarnessRegistry.layer),
-		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 		Layer.provide(Db.layer),
 		Layer.provide(Worktrees.layer),

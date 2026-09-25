@@ -31,7 +31,6 @@ const denseItems = Array.from({ length: 12 }).map((_, i) => ({
 	backend: 'opencode' as const,
 	model: 'opencode-go/kimi-k2.6',
 	sessionId: i % 2 === 0 ? 'ses_01JSESSIONEXAMPLE1234567890' : undefined,
-	mcpSessionId: i % 2 === 0 ? 'session-abc-123' : undefined,
 }));
 
 export const Dense: Story = {
@@ -55,7 +54,6 @@ const mixedItems = [
 		backend: 'opencode' as const,
 		model: 'opencode-go/kimi-k2.6',
 		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
-		mcpSessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
 	},
 	{
 		id: 'job-b',
@@ -65,7 +63,6 @@ const mixedItems = [
 		cwd: '/Users/dev/app',
 		backend: 'opencode' as const,
 		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
-		mcpSessionId: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890',
 	},
 	{
 		id: 'job-c',
@@ -83,7 +80,6 @@ const mixedItems = [
 		cwd: '/Users/dev/app',
 		backend: 'opencode' as const,
 		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
-		mcpSessionId: 'f9e8d7c6-b5a4-3210-fedc-ba9876543210',
 	},
 ];
 

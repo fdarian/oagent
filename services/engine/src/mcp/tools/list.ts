@@ -1,14 +1,19 @@
 import { Effect } from 'effect';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { Sessions } from '../../sessions.ts';
 
 const description = `\
-List sessions started in the current MCP session, including their latest job \
-status, prompt, and creation time. Only available over the HTTP \`/mcp\` transport.`;
+List recent sessions, including their latest job status, prompt, and creation \
+time. Pass cwd to limit results to that working directory.`;
 
-const inputSchema = {};
+const inputSchema = z.object({
+	cwd: z
+		.string()
+		.optional()
+		.describe('Absolute working directory to filter sessions.'),
+});
 
-type Args = z.infer<ReturnType<typeof z.object<typeof inputSchema>>>;
+type Args = z.infer<typeof inputSchema>;
 type SessionSummary = {
 	id: string;
 	jobId: string;
@@ -20,7 +25,7 @@ type SessionList = Pick<Sessions['Service'], 'list'>;
 
 function formatSessions(sessions: ReadonlyArray<SessionSummary>): string {
 	if (sessions.length === 0) {
-		return 'No sessions in this MCP session yet.';
+		return 'No sessions found.';
 	}
 	const lines = [
 		`# Sessions (${sessions.length})`,
@@ -39,19 +44,8 @@ function formatSessions(sessions: ReadonlyArray<SessionSummary>): string {
 export const listTool = {
 	description,
 	inputSchema,
-	handle(
-		_args: Args,
-		ctx: { sessions: SessionList; mcpSessionId: string | undefined },
-	) {
-		const sessionId = ctx.mcpSessionId;
-		if (sessionId === undefined) {
-			return Effect.fail(
-				new Error(
-					'The `list` tool requires an MCP session. It is only available in /mcp HTTP mode.',
-				),
-			);
-		}
-		return ctx.sessions.list({ mcpSessionId: sessionId }).pipe(
+	handle(args: Args, ctx: { sessions: SessionList }) {
+		return ctx.sessions.list({ cwd: args.cwd }).pipe(
 			Effect.map((sessions) => ({
 				content: [{ type: 'text' as const, text: formatSessions(sessions) }],
 			})),

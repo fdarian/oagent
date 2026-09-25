@@ -1,11 +1,18 @@
 import { describe, expect, test } from 'bun:test';
+import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import type { Jobs } from '../../jobs.ts';
 import { SessionNotFound, type Sessions } from '../../sessions.ts';
 import { sendMessageTool } from './send-message.ts';
 
+const mcp = {
+	mcpReq: { signal: new AbortController().signal },
+} as ServerContext;
+
 const jobs = {
-	getStartTimeoutMs: () => 100,
+	subscribe: () => () => {},
+	getJobMetadata: () => ({ status: 'done' }),
+	readEventsPage: () => ({ events: [], nextCursor: null }),
 	wait: () =>
 		Effect.succeed({
 			status: 'done' as const,
@@ -13,7 +20,7 @@ const jobs = {
 			text: 'Finished the follow-up.',
 			stopReason: 'end_turn',
 		}),
-} as Pick<Jobs['Service'], 'getStartTimeoutMs' | 'wait'>;
+} as unknown as Jobs['Service'];
 
 describe('send_message tool', () => {
 	test('returns the markdown final result for an idle session turn', async () => {
@@ -21,6 +28,7 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'session-1', prompt: 'continue' },
 				{
+					mcp,
 					jobs,
 					sessions: {
 						sendMessage: () =>
@@ -51,13 +59,13 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'session-1', prompt: 'also inspect tests' },
 				{
+					mcp,
 					jobs: {
-						getStartTimeoutMs: () => 100,
 						wait: () => {
 							waitCalled = true;
 							return Effect.die(new Error('steering must not wait'));
 						},
-					},
+					} as unknown as Jobs['Service'],
 					sessions: {
 						sendMessage: () =>
 							Effect.succeed({
@@ -81,6 +89,7 @@ describe('send_message tool', () => {
 			sendMessageTool.handle(
 				{ sessionId: 'missing-session', prompt: 'continue' },
 				{
+					mcp,
 					jobs,
 					sessions: {
 						sendMessage: () =>

@@ -135,7 +135,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - `oagent serve` — run the HTTP server in the foreground. Flags: `--port` (default 17777), `--portless`, `--log-file <path>`.
 - **jobs**
   - `oagent jobs list` — list recent jobs. Flags: `--engine-url`, `--limit` (default 10), `--format` (`toon`|`json`).
-  - `oagent jobs wait <jobId>` — block until a job reaches a terminal state and print its markdown result. Flags: `--engine-url`, `--timeout-ms` (default 3h), `--json` (print the JSON result).
+  - `oagent jobs wait <jobId>` — block until a job reaches a terminal state and print its markdown result. Flags: `--engine-url`, `--json` (print the JSON result).
 - **claude**
   - `oagent claude mcp serve` — run the Claude Code channel MCP that bridges to a running engine. Flags: `--engine-url`, `--mcp-name`.
 
@@ -157,7 +157,7 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 
 #### `start`
 
-Starts a new agent session or forks the state of an existing session/job. By default it waits (up to 30 minutes) for the final response.
+Starts a new agent session or forks the state of an existing session/job. By default it waits for the final response and streams progress when the client supplies a progress token.
 
 Input:
 - `prompt: string` — the task to send
@@ -178,7 +178,7 @@ Status: done
 <final assistant response>
 ```
 
-Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `read` with the session ID or run `oagent jobs wait <jobId>` in the background. Errors include the error message after `---`.
+Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `read` with the session ID. Errors include the error message after `---`.
 
 Every MCP result is returned as a single text content block; tools do not set `structuredContent`.
 
@@ -195,13 +195,13 @@ An idle turn returns the same markdown shape as `start`. A steered turn returns 
 
 #### `read`
 
-Reads the latest turn in a session, waiting briefly if it is still running.
+Reads the latest turn in a session immediately, or blocks until completion with `wait: true`.
 
 Input:
 - `sessionId: string`
-- `timeoutMs?: number` — default 50000, capped at 55000
+- `wait?: boolean` — default `false`; set `true` to wait for a terminal result
 
-Output: the same markdown result format as `start`. Call again if the latest turn is still running.
+Output: the same markdown result format as `start`.
 
 #### `cancel`
 

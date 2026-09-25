@@ -69,9 +69,12 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 
 			const sessions = migrated
 				.query(
-					'SELECT uuid, backend, harness_session_id, cwd, worktree_path, worktree_branch, mcp_session_id, created_at FROM sessions ORDER BY created_at',
+					'SELECT uuid, backend, harness_session_id, cwd, worktree_path, worktree_branch, created_at FROM sessions ORDER BY created_at',
 				)
 				.all();
+			expect(
+				migrated.query('PRAGMA table_info(sessions)').all(),
+			).not.toContainEqual(expect.objectContaining({ name: 'mcp_session_id' }));
 			expect(sessions).toMatchObject([
 				{
 					backend: 'opencode',
@@ -79,7 +82,6 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 					cwd: '/earliest',
 					worktree_path: '/tree',
 					worktree_branch: 'branch',
-					mcp_session_id: 'mcp-first',
 					created_at: 1000,
 				},
 				{

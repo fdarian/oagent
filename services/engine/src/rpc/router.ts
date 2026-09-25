@@ -264,7 +264,6 @@ const router = procedure.router({
 					agent_type: v.optional(v.string()),
 					forkId: v.optional(v.string()),
 					worktree: v.optional(v.boolean()),
-					mcpSessionId: v.optional(v.string()),
 				}),
 			)
 			.effect(function* (options) {
@@ -276,7 +275,6 @@ const router = procedure.router({
 					agentType: options.input.agent_type,
 					forkId: options.input.forkId,
 					worktree: options.input.worktree,
-					mcpSessionId: options.input.mcpSessionId,
 				});
 			}),
 		sendMessage: procedure
@@ -289,7 +287,7 @@ const router = procedure.router({
 			.input(
 				v.object({
 					sessionId: v.string(),
-					timeoutMs: v.optional(v.number()),
+					wait: v.optional(v.boolean()),
 				}),
 			)
 			.effect(function* (options) {
@@ -303,7 +301,7 @@ const router = procedure.router({
 				return yield* sessions.cancel(options.input);
 			}),
 		list: procedure
-			.input(v.object({ mcpSessionId: v.string() }))
+			.input(v.object({ cwd: v.optional(v.string()) }))
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.list(options.input);
@@ -433,24 +431,6 @@ const router = procedure.router({
 				const settings = yield* Settings;
 				settings.setWorktree(options.input);
 				return settings.getWorktree();
-			}),
-		getStartTimeout: procedure.input(v.void_()).effect(function* () {
-			const jobs = yield* Jobs;
-			return { minutes: jobs.getStartTimeoutMs() / 60000 };
-		}),
-		setStartTimeout: procedure
-			.input(
-				v.object({
-					minutes: v.pipe(v.number(), v.integer(), v.minValue(1)),
-				}),
-			)
-			.effect(function* (options) {
-				const settings = yield* Settings;
-				settings.setSetting(
-					'start_timeout_ms',
-					String(options.input.minutes * 60000),
-				);
-				return { minutes: options.input.minutes };
 			}),
 		getCodexHome: procedure.input(v.void_()).effect(function* () {
 			const settings = yield* Settings;

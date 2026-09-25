@@ -16,7 +16,7 @@
 	"dependencies": {
 		"@agentclientprotocol/sdk": "^0.22.1",
 		"@effect/platform-bun": "catalog:",
-		"@modelcontextprotocol/sdk": "^1.29.0",
+		"@modelcontextprotocol/server": "catalog:",
 		"@orpc/experimental-effect": "catalog:",
 		"@orpc/server": "catalog:",
 		"drizzle-orm": "^0.45.2",
