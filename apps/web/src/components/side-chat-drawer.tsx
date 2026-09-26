@@ -1,5 +1,5 @@
+import { Dialog as DialogPrimitive } from '@base-ui/react/dialog';
 import { PlusIcon, XCircleIcon, XIcon } from 'lucide-react';
-import { Dialog as DialogPrimitive } from 'radix-ui';
 import { type ReactNode, useEffect, useState } from 'react';
 import { JobTimeline } from '@/components/job-timeline.tsx';
 import { SideChatComposer } from '@/components/side-chat-composer.tsx';
@@ -9,7 +9,7 @@ import { ActionRow } from './ui/action-row';
 export type SideChatDrawerProps = {
 	open: boolean;
 	onOpenChange: (open: boolean) => void;
-	onCloseAutoFocus?: () => void;
+	finalFocus?: React.ComponentProps<typeof DialogPrimitive.Popup>['finalFocus'];
 	cwd: string;
 	sideChats: SideChat[] | undefined;
 	selectedSideChatId?: string;
@@ -89,19 +89,14 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 		}
 		props.onSelectSideChat(nextSideChat.id);
 	};
-	const handleCloseAutoFocus = (event: Event) => {
-		if (props.onCloseAutoFocus === undefined) return;
-		event.preventDefault();
-		props.onCloseAutoFocus();
-	};
 
 	return (
 		<DialogPrimitive.Root open={props.open} onOpenChange={props.onOpenChange}>
 			<DialogPrimitive.Portal>
-				<DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-black/35 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0" />
-				<DialogPrimitive.Content
-					onCloseAutoFocus={handleCloseAutoFocus}
-					className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-full max-w-[min(44rem,100vw)] flex-col overflow-hidden border-l border-border bg-background shadow-xl outline-none data-[state=closed]:animate-out data-[state=closed]:slide-out-to-right data-[state=open]:animate-in data-[state=open]:slide-in-from-right"
+				<DialogPrimitive.Backdrop className="fixed inset-0 z-50 bg-black/35 data-closed:animate-out data-closed:fade-out-0 data-open:animate-in data-open:fade-in-0" />
+				<DialogPrimitive.Popup
+					finalFocus={props.finalFocus}
+					className="fixed inset-y-0 right-0 z-50 flex min-h-0 w-full max-w-[min(44rem,100vw)] flex-col overflow-hidden border-l border-border bg-background shadow-xl outline-none data-closed:animate-out data-closed:slide-out-to-right data-open:animate-in data-open:slide-in-from-right"
 				>
 					<div className="flex shrink-0 items-center justify-between gap-10 border-b border-border px-22 py-15">
 						<div className="min-w-0 flex-1">
@@ -124,14 +119,12 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 									New side chat
 								</button>
 							)}
-							<DialogPrimitive.Close asChild>
-								<button
-									type="button"
-									className="flex size-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
-									aria-label="Close side chats"
-								>
-									<XIcon className="size-4" />
-								</button>
+							<DialogPrimitive.Close
+								render={<button type="button" />}
+								className="flex size-7 items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+								aria-label="Close side chats"
+							>
+								<XIcon className="size-4" />
 							</DialogPrimitive.Close>
 						</ActionRow>
 					</div>
@@ -269,7 +262,7 @@ export function SideChatDrawer(props: SideChatDrawerProps) {
 								)}
 						</>
 					)}
-				</DialogPrimitive.Content>
+				</DialogPrimitive.Popup>
 			</DialogPrimitive.Portal>
 		</DialogPrimitive.Root>
 	);

@@ -1,5 +1,7 @@
+import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
+import type * as React from 'react';
+
 import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 
@@ -20,55 +22,55 @@ const buttonGroupVariants = cva(
 	},
 );
 
-function ButtonGroup({
-	className,
-	orientation,
-	...props
-}: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>) {
+function ButtonGroup(
+	props: React.ComponentProps<'div'> & VariantProps<typeof buttonGroupVariants>,
+) {
 	return (
-		// biome-ignore lint/a11y/useSemanticElements: shadcn/ui pattern, intentional div with role
+		// biome-ignore lint/a11y/useSemanticElements: A fieldset would change form layout and default styling.
 		<div
 			role="group"
 			data-slot="button-group"
-			data-orientation={orientation}
-			className={cn(buttonGroupVariants({ orientation }), className)}
-			{...props}
-		/>
-	);
-}
-
-function ButtonGroupText({
-	className,
-	asChild = false,
-	...props
-}: React.ComponentProps<'div'> & {
-	asChild?: boolean;
-}) {
-	const Comp = asChild ? Slot.Root : 'div';
-
-	return (
-		<Comp
+			data-orientation={props.orientation}
 			className={cn(
-				"flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*='size-'])]:size-4",
-				className,
+				buttonGroupVariants({ orientation: props.orientation }),
+				props.className,
 			)}
 			{...props}
 		/>
 	);
 }
 
-function ButtonGroupSeparator({
-	className,
-	orientation = 'vertical',
-	...props
-}: React.ComponentProps<typeof Separator>) {
+type ButtonGroupTextProps = React.ComponentProps<'div'> & {
+	render?: React.ReactElement;
+};
+
+function ButtonGroupText(props: ButtonGroupTextProps) {
+	const renderProps = { ...props };
+	delete renderProps.className;
+	delete renderProps.render;
+
+	return useRender({
+		defaultTagName: 'div',
+		render: props.render,
+		props: {
+			...renderProps,
+			children: props.children,
+			className: cn(
+				'flex items-center gap-2 rounded-md border bg-muted px-4 text-sm font-medium shadow-xs [&_svg]:pointer-events-none [&_svg:not([class*="size-"])]:size-4',
+				props.className,
+			),
+		},
+	});
+}
+
+function ButtonGroupSeparator(props: React.ComponentProps<typeof Separator>) {
 	return (
 		<Separator
 			data-slot="button-group-separator"
-			orientation={orientation}
+			orientation={props.orientation ?? 'vertical'}
 			className={cn(
 				'relative m-0! self-stretch bg-input data-[orientation=vertical]:h-auto',
-				className,
+				props.className,
 			)}
 			{...props}
 		/>

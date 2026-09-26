@@ -2,7 +2,7 @@
 
 import type { LanguageModelUsage } from 'ai';
 import type { ComponentProps } from 'react';
-import { createContext, useContext, useMemo } from 'react';
+import { createContext, isValidElement, useContext, useMemo } from 'react';
 import { getUsage } from 'tokenlens';
 import { Button } from '@/components/ui/button';
 import {
@@ -112,18 +112,18 @@ export const ContextTrigger = ({ children, ...props }: ContextTriggerProps) => {
 		style: 'percent',
 	}).format(usedPercent);
 
-	return (
-		<HoverCardTrigger asChild>
-			{children ?? (
-				<Button type="button" variant="ghost" {...props}>
-					<span className="font-medium text-muted-foreground">
-						{renderedPercent}
-					</span>
-					<ContextIcon />
-				</Button>
-			)}
-		</HoverCardTrigger>
+	const trigger = children ?? (
+		<Button type="button" variant="ghost" {...props}>
+			<span className="font-medium text-muted-foreground">
+				{renderedPercent}
+			</span>
+			<ContextIcon />
+		</Button>
 	);
+	if (!isValidElement(trigger))
+		throw new Error('ContextTrigger requires one element');
+
+	return <HoverCardTrigger render={trigger} />;
 };
 
 export type ContextContentProps = ComponentProps<typeof HoverCardContent>;
