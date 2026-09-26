@@ -1,5 +1,22 @@
 # oagent
 
+## 0.4.0
+
+### Minor Changes
+
+- ee11949: Add user-defined descriptions for configured agent types and include them in the web UI and MCP tool descriptions.
+- 711a3c9: Add Claude as an ACP backend via @agentclientprotocol/claude-agent-acp adapter. Supports model selection, effort levels, and aliases. Improves generic ACP catalog fallback for model error hints across all backends.
+- 56f9131: Expose configured custom agents in session headers and improve agent description display.
+- 4768edb: `steer` tool to send message mid-turns
+- ff00ba4: Add durable side chats for jobs. Side chats fork the job's ACP session, persist independently, stream their events, and provide a tabbed drawer with a composer for creating, switching, and sending messages.
+
+### Patch Changes
+
+- d65bcab: Clearer error message and show binary path
+- d4eb034: Persist harness versions and use version-aware OpenCode model discovery.
+- 416c470: Disable OpenCode's interactive question tool on oagent sessions without changing global or project permissions.
+- 6a43905: Add per-harness environment variable settings for ACP sessions.
+
 ## 0.3.2
 
 ### Patch Changes
