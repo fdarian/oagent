@@ -132,20 +132,22 @@ function ModelCombobox(props: ModelComboboxProps) {
 
 	return (
 		<Popover open={open} onOpenChange={setOpen} modal>
-			<PopoverTrigger asChild>
-				<Button
-					type="button"
-					variant="outline"
-					role="combobox"
-					aria-expanded={open}
-					aria-invalid={props.invalid}
-					className="w-full justify-between text-foreground"
-				>
-					{triggerContent}
-					<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
-				</Button>
-			</PopoverTrigger>
-			<PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0">
+			<PopoverTrigger
+				render={
+					<Button
+						type="button"
+						variant="outline"
+						role="combobox"
+						aria-expanded={open}
+						aria-invalid={props.invalid}
+						className="w-full justify-between text-foreground"
+					>
+						{triggerContent}
+						<ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
+					</Button>
+				}
+			/>
+			<PopoverContent className="w-[var(--anchor-width)] p-0">
 				<Command>
 					<CommandInput placeholder="Search models…" />
 					<CommandList>

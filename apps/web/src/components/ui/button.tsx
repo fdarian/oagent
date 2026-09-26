@@ -1,5 +1,6 @@
+import type { Button as ButtonPrimitive } from '@base-ui/react/button';
+import { useRender } from '@base-ui/react/use-render';
 import { cva, type VariantProps } from 'class-variance-authority';
-import { Slot } from 'radix-ui';
 import type * as React from 'react';
 
 import { cn } from '@/lib/utils';
@@ -38,27 +39,30 @@ const buttonVariants = cva(
 	},
 );
 
-function Button({
-	className,
-	variant = 'default',
-	size = 'default',
-	asChild = false,
-	...props
-}: React.ComponentProps<'button'> &
+type ButtonProps = Omit<ButtonPrimitive.Props, 'render'> &
 	VariantProps<typeof buttonVariants> & {
-		asChild?: boolean;
-	}) {
-	const Comp = asChild ? Slot.Root : 'button';
+		render?: React.ReactElement;
+	};
 
-	return (
-		<Comp
-			data-slot="button"
-			data-variant={variant}
-			data-size={size}
-			className={cn(buttonVariants({ variant, size, className }))}
-			{...props}
-		/>
-	);
+function Button(props: ButtonProps) {
+	const variant = props.variant ?? 'default';
+	const size = props.size ?? 'default';
+	const buttonProps = { ...props };
+	delete buttonProps.variant;
+	delete buttonProps.size;
+	const button = useRender({
+		defaultTagName: 'button',
+		render: props.render,
+		props: {
+			...buttonProps,
+			type: props.type ?? 'button',
+			'data-slot': 'button',
+			'data-variant': variant,
+			'data-size': size,
+			className: cn(buttonVariants({ variant, size }), props.className),
+		},
+	});
+	return button;
 }
 
 export { Button, buttonVariants };

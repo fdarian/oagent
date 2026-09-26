@@ -18,11 +18,10 @@ export function WorktreeSettingsPage() {
 	}, [setting.data]);
 	const save = useMutation(
 		orpc.settings.setWorktree.mutationOptions({
-			onSuccess: () => {
+			onSuccess: () =>
 				queryClient.invalidateQueries({
 					queryKey: orpc.settings.getWorktree.key(),
-				});
-			},
+				}),
 		}),
 	);
 

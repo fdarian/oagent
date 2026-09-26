@@ -420,16 +420,18 @@ export const PromptInputActionAddAttachments = ({
 }: PromptInputActionAddAttachmentsProps) => {
 	const attachments = usePromptInputAttachments();
 
-	const handleSelect = useCallback(
-		(e: Event) => {
-			e.preventDefault();
+	const handleClick = useCallback<
+		NonNullable<PromptInputActionAddAttachmentsProps['onClick']>
+	>(
+		(event) => {
+			event.preventBaseUIHandler();
 			attachments.openFileDialog();
 		},
 		[attachments],
 	);
 
 	return (
-		<DropdownMenuItem {...props} onSelect={handleSelect}>
+		<DropdownMenuItem {...props} onClick={handleClick}>
 			<ImageIcon className="mr-2 size-4" /> {label}
 		</DropdownMenuItem>
 	);
@@ -443,15 +445,17 @@ export type PromptInputActionAddScreenshotProps = ComponentProps<
 
 export const PromptInputActionAddScreenshot = ({
 	label = 'Take screenshot',
-	onSelect,
+	onClick,
 	...props
 }: PromptInputActionAddScreenshotProps) => {
 	const attachments = usePromptInputAttachments();
 
-	const handleSelect = useCallback(
-		async (event: Event) => {
-			onSelect?.(event);
-			if (event.defaultPrevented) {
+	const handleClick = useCallback<
+		NonNullable<PromptInputActionAddScreenshotProps['onClick']>
+	>(
+		async (event) => {
+			onClick?.(event);
+			if (event.baseUIHandlerPrevented) {
 				return;
 			}
 
@@ -470,11 +474,11 @@ export const PromptInputActionAddScreenshot = ({
 				throw error;
 			}
 		},
-		[onSelect, attachments],
+		[onClick, attachments],
 	);
 
 	return (
-		<DropdownMenuItem {...props} onSelect={handleSelect}>
+		<DropdownMenuItem {...props} onClick={handleClick}>
 			<Monitor className="mr-2 size-4" />
 			{label}
 		</DropdownMenuItem>
@@ -1155,7 +1159,7 @@ export const PromptInputButton = ({
 
 	return (
 		<Tooltip>
-			<TooltipTrigger asChild>{button}</TooltipTrigger>
+			<TooltipTrigger render={button} />
 			<TooltipContent side={side}>
 				{tooltipContent}
 				{shortcut && (
@@ -1178,11 +1182,13 @@ export const PromptInputActionMenuTrigger = ({
 	children,
 	...props
 }: PromptInputActionMenuTriggerProps) => (
-	<DropdownMenuTrigger asChild>
-		<PromptInputButton className={className} {...props}>
-			{children ?? <PlusIcon className="size-4" />}
-		</PromptInputButton>
-	</DropdownMenuTrigger>
+	<DropdownMenuTrigger
+		render={
+			<PromptInputButton className={className} {...props}>
+				{children ?? <PlusIcon className="size-4" />}
+			</PromptInputButton>
+		}
+	/>
 );
 
 export type PromptInputActionMenuContentProps = ComponentProps<
@@ -1236,7 +1242,7 @@ export const PromptInputSubmit = ({
 	}
 
 	const handleClick = useCallback(
-		(e: React.MouseEvent<HTMLButtonElement>) => {
+		(e: Parameters<NonNullable<PromptInputSubmitProps['onClick']>>[0]) => {
 			if (isGenerating && onStop) {
 				e.preventDefault();
 				onStop();

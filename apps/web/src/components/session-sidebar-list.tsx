@@ -80,7 +80,7 @@ export function SessionSidebarGroup(props: {
 					<span className="text-caption font-medium text-muted-foreground">
 						{props.items.length}
 					</span>
-					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-90" />
+					<ChevronRightIcon className="size-3 shrink-0 text-muted-foreground transition-transform group-data-open:rotate-90" />
 				</div>
 			</CollapsibleTrigger>
 			<CollapsibleContent className="flex flex-col">

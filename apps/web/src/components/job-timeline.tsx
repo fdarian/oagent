@@ -169,7 +169,7 @@ function ExplorationGroup(props: {
 				<span className="min-w-0 truncate text-sm text-muted-foreground">
 					— {explorationSummary(props.group.parts)}
 				</span>
-				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-[state=open]:rotate-90" />
+				<ChevronRightIcon className="size-3.5 shrink-0 text-muted-foreground opacity-0 transition-all group-hover:opacity-100 group-data-open:rotate-90" />
 			</CollapsibleTrigger>
 			<CollapsibleContent className="ml-1 border-border border-l pl-4 pt-1">
 				{props.group.parts.map((part) => (

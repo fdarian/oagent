@@ -140,7 +140,7 @@ function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 					</SelectTrigger>
 					<SelectContent
 						position="popper"
-						className="w-[var(--radix-select-trigger-width)] max-w-[calc(100vw-2rem)]"
+						className="w-[var(--anchor-width)] max-w-[calc(100vw-2rem)]"
 					>
 						{selectedTargetIsUnavailable ? (
 							<SelectItem value={props.value}>
