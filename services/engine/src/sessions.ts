@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, isNull } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -142,7 +142,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			db
 				.select()
 				.from(schema.jobs)
-				.where(eq(schema.jobs.session_id, session.id))
+				.where(
+					and(
+						eq(schema.jobs.session_id, session.id),
+						isNull(schema.jobs.side_chat_id),
+					),
+				)
 				.orderBy(desc(schema.jobs.created_at), desc(schema.jobs.id))
 				.limit(1)
 				.get();
@@ -512,6 +517,10 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					jobId: string;
 					status: JobRow['status'];
 					prompt: string;
+					cwd: string;
+					backend: Backend;
+					model?: string;
+					agentType?: string;
 					createdAt: number;
 				}> = [];
 				for (const session of rows) {
@@ -523,10 +532,29 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						jobId: job.uuid,
 						status: job.status,
 						prompt: job.prompt,
+						cwd: session.cwd,
+						backend: parseBackend(session.backend),
+						model: job.model ?? undefined,
+						agentType: job.agent_type ?? undefined,
 						createdAt: session.created_at.getTime(),
 					});
 				}
 				return sessions;
+			});
+
+		const get = (input: { sessionId: string }) =>
+			Effect.gen(function* () {
+				const session = yield* findSession(input.sessionId);
+				const rootJobs = jobs.listForSession(session.id);
+				const last = rootJobs[rootJobs.length - 1];
+				return {
+					id: session.uuid,
+					title: session.title,
+					cwd: session.cwd,
+					createdAt: session.created_at.getTime(),
+					status: last?.status,
+					jobs: rootJobs,
+				};
 			});
 
 		const createSideChatSession = (input: {
@@ -583,6 +611,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			read,
 			cancel,
 			list,
+			get,
 			createSideChatSession,
 			findSideChatSession,
 		};
