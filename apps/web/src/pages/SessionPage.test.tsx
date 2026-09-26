@@ -50,17 +50,55 @@ const sideChatCreateRequests: SideChatCreateRequest[] = [];
 const sideChatListRequests: string[] = [];
 
 const fakeClient = {
-	jobs: {
-		get: async (input: { jobId: string }) => ({
-			id: input.jobId,
-			title: `Title for ${input.jobId}`,
-			status: 'done',
-			prompt: `Prompt for ${input.jobId}`,
+	sessions: {
+		get: async (input: { sessionId: string }) => ({
+			id: input.sessionId,
+			title:
+				input.sessionId === 'session-1'
+					? 'Conversation'
+					: `Title for ${input.sessionId}`,
 			cwd: '/repo',
-			backend: 'opencode',
 			createdAt: 1,
+			status: 'done',
+			jobs:
+				input.sessionId === 'session-1'
+					? [
+							{
+								id: 'first',
+								title: 'Conversation',
+								prompt: 'First prompt',
+								createdAt: 1,
+								status: 'done',
+								cwd: '/repo',
+								backend: 'opencode',
+								sessionId: input.sessionId,
+							},
+							{
+								id: 'second',
+								title: 'Conversation',
+								prompt: 'Follow-up prompt',
+								createdAt: 2,
+								status: 'done',
+								cwd: '/repo',
+								backend: 'opencode',
+								sessionId: input.sessionId,
+							},
+						]
+					: [
+							{
+								id: input.sessionId,
+								title: `Title for ${input.sessionId}`,
+								prompt: `Prompt for ${input.sessionId}`,
+								createdAt: 1,
+								status: 'done',
+								cwd: '/repo',
+								backend: 'opencode',
+								sessionId: input.sessionId,
+							},
+						],
 		}),
-		list: async () => [],
+	},
+	jobs: {
 		cancel: async () => ({ ok: true }),
 	},
 	sideChats: {
@@ -129,7 +167,7 @@ mock.module('@/components/job-timeline', () => ({
 			undefined,
 			props.header,
 			...(props.parts ?? [])
-				.filter((part) => part.kind === 'user')
+				.filter((part) => part.kind === 'user' || part.kind === 'text')
 				.map((part) =>
 					react.createElement(
 						'p',
@@ -170,25 +208,53 @@ mock.module('@/components/side-chat-drawer', () => ({
 	},
 }));
 
+const eventStates = new Map<
+	string,
+	{
+		jobId: string;
+		parts: Array<{ kind: 'text'; id: string; text: string; createdAt: number }>;
+		streamingTail: null;
+		children: Map<string, never>;
+		terminal: boolean;
+		isLoading: boolean;
+	}
+>();
 mock.module('@/lib/use-job-events', () => ({
-	useJobEvents: () => ({
-		parts: [],
-		streamingTail: null,
-		children: new Map(),
-		terminal: false,
-		isLoading: false,
-	}),
+	useJobEvents: (jobId: string) => {
+		const existing = eventStates.get(jobId);
+		if (existing !== undefined) return existing;
+		const state = {
+			jobId,
+			parts: [] as Array<{
+				kind: 'text';
+				id: string;
+				text: string;
+				createdAt: number;
+			}>,
+			streamingTail: null,
+			children: new Map<string, never>(),
+			terminal: false,
+			isLoading: false,
+		};
+		eventStates.set(jobId, state);
+		return state;
+	},
+}));
+
+mock.module('@/lib/use-session-events', () => ({
+	useSessionEvents: (ids: string[]) =>
+		Object.fromEntries(ids.map((id) => [id, eventStates.get(id)])),
 }));
 
 mock.module('@/lib/use-side-chat-timeline', () => ({
 	useSideChatTimeline: () => undefined,
 }));
 
-const jobDetailPage = await import('./JobDetailPage.tsx');
+const sessionPage = await import('./SessionPage.tsx');
 
 type MountedRoute = {
 	container: HTMLDivElement;
-	navigateToJob: (jobId: string) => Promise<void>;
+	navigateToSession: (sessionId: string) => Promise<void>;
 	navigateAway: () => Promise<void>;
 	href: () => string;
 	unmount: () => Promise<void>;
@@ -209,10 +275,10 @@ async function mountRoute(initialEntry: string): Promise<MountedRoute> {
 		id: 'console',
 		component: RouterOutlet,
 	});
-	const jobRoute = reactRouter.createRoute({
+	const sessionRoute = reactRouter.createRoute({
 		getParentRoute: () => consoleRoute,
-		path: 'jobs/$jobId',
-		component: jobDetailPage.JobDetailPage,
+		path: 'sessions/$sessionId',
+		component: sessionPage.SessionPage,
 	});
 	const awayRoute = reactRouter.createRoute({
 		getParentRoute: () => rootRoute,
@@ -220,7 +286,7 @@ async function mountRoute(initialEntry: string): Promise<MountedRoute> {
 		component: AwayPage,
 	});
 	const routeTree = rootRoute.addChildren([
-		consoleRoute.addChildren([jobRoute]),
+		consoleRoute.addChildren([sessionRoute]),
 		awayRoute,
 	]);
 	const history = reactRouter.createMemoryHistory({
@@ -250,11 +316,11 @@ async function mountRoute(initialEntry: string): Promise<MountedRoute> {
 
 	return {
 		container,
-		navigateToJob: async (jobId: string) => {
+		navigateToSession: async (sessionId: string) => {
 			await react.act(async () => {
 				await router.navigate({
-					to: '/jobs/$jobId',
-					params: { jobId },
+					to: '/sessions/$sessionId',
+					params: { sessionId },
 				});
 			});
 		},
@@ -328,17 +394,18 @@ async function waitForSideChatListRequestCount(
 	);
 }
 
-describe('JobDetailPage side-chat creation lifecycle', () => {
+describe('SessionPage side-chat creation lifecycle', () => {
 	let activeMountedRoute: MountedRoute | undefined;
 
 	beforeEach(() => {
+		eventStates.clear();
 		sideChatCreateRequests.length = 0;
 		sideChatListRequests.length = 0;
 		document.body.replaceChildren();
 	});
 
 	test('shows the session title and initial prompt as a user message', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-title');
+		const mountedRoute = await mountRoute('/sessions/job-title');
 		activeMountedRoute = mountedRoute;
 		await waitForNewSideChatButton(mountedRoute.container);
 
@@ -346,6 +413,35 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		expect(
 			mountedRoute.container.querySelector('[data-kind="user"]')?.textContent,
 		).toBe('Prompt for job-title');
+	});
+
+	test('shows each session turn prompt in order in one timeline', async () => {
+		eventStates.set('first', {
+			jobId: 'first',
+			parts: [
+				{ kind: 'text', id: 'answer', text: 'First answer', createdAt: 1 },
+			],
+			streamingTail: null,
+			children: new Map<string, never>(),
+			terminal: true,
+			isLoading: false,
+		});
+		const mountedRoute = await mountRoute('/sessions/session-1');
+		activeMountedRoute = mountedRoute;
+		await waitForNewSideChatButton(mountedRoute.container);
+		const prompts = Array.from(
+			mountedRoute.container.querySelectorAll('[data-kind="user"]'),
+		).map((element) => element.textContent);
+		expect(prompts).toEqual(['First prompt', 'Follow-up prompt']);
+		const messages = Array.from(
+			mountedRoute.container.querySelectorAll('[data-kind]'),
+		).map((element) => element.textContent);
+		expect(messages).toEqual([
+			'First prompt',
+			'First answer',
+			'Follow-up prompt',
+		]);
+		expect(mountedRoute.container.textContent).toContain('Conversation');
 	});
 
 	afterEach(async () => {
@@ -356,7 +452,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 	});
 
 	test('keeps a delayed job A result from retargeting mounted job B', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-a');
+		const mountedRoute = await mountRoute('/sessions/job-a');
 		activeMountedRoute = mountedRoute;
 		const buttonA = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-a', 1);
@@ -367,7 +463,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		expect(sideChatCreateRequests).toHaveLength(1);
 		expect(sideChatCreateRequests[0]?.sourceJobId).toBe('job-a');
 
-		await mountedRoute.navigateToJob('job-b');
+		await mountedRoute.navigateToSession('job-b');
 
 		const buttonB = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-b', 1);
@@ -386,7 +482,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 			await Promise.resolve();
 		});
 		await flush();
-		expect(mountedRoute.href()).toBe('/jobs/job-b?sideChat=chat-b');
+		expect(mountedRoute.href()).toBe('/sessions/job-b?sideChat=chat-b');
 
 		const jobACreate = sideChatCreateRequests[0];
 		if (jobACreate === undefined)
@@ -398,11 +494,11 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		});
 		await flush();
 		await waitForSideChatListRequestCount('job-a', jobAListRequestCount + 1);
-		expect(mountedRoute.href()).toBe('/jobs/job-b?sideChat=chat-b');
+		expect(mountedRoute.href()).toBe('/sessions/job-b?sideChat=chat-b');
 	});
 
 	test('refreshes the source query after the originating drawer closes', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-a');
+		const mountedRoute = await mountRoute('/sessions/job-a');
 		activeMountedRoute = mountedRoute;
 		const button = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-a', 1);
@@ -418,7 +514,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 			getButton(mountedRoute.container, 'Close side chats').click();
 		});
 		await flush();
-		expect(mountedRoute.href()).toBe('/jobs/job-a');
+		expect(mountedRoute.href()).toBe('/sessions/job-a');
 
 		const jobAListRequestCount = sideChatListRequestCount('job-a');
 		await react.act(async () => {
@@ -427,11 +523,11 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		});
 		await flush();
 		await waitForSideChatListRequestCount('job-a', jobAListRequestCount + 1);
-		expect(mountedRoute.href()).toBe('/jobs/job-a');
+		expect(mountedRoute.href()).toBe('/sessions/job-a');
 	});
 
 	test('refreshes the source query after switching the originating drawer', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-a');
+		const mountedRoute = await mountRoute('/sessions/job-a');
 		activeMountedRoute = mountedRoute;
 		const button = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-a', 1);
@@ -447,7 +543,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 			getButton(mountedRoute.container, 'Switch side chat').click();
 		});
 		await flush();
-		expect(mountedRoute.href()).toBe('/jobs/job-a?sideChat=existing-chat');
+		expect(mountedRoute.href()).toBe('/sessions/job-a?sideChat=existing-chat');
 
 		const jobAListRequestCount = sideChatListRequestCount('job-a');
 		await react.act(async () => {
@@ -456,11 +552,11 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		});
 		await flush();
 		await waitForSideChatListRequestCount('job-a', jobAListRequestCount + 1);
-		expect(mountedRoute.href()).toBe('/jobs/job-a?sideChat=existing-chat');
+		expect(mountedRoute.href()).toBe('/sessions/job-a?sideChat=existing-chat');
 	});
 
 	test('refreshes job A after returning without applying its old selection', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-a');
+		const mountedRoute = await mountRoute('/sessions/job-a');
 		activeMountedRoute = mountedRoute;
 		const buttonA = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-a', 1);
@@ -472,10 +568,10 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		if (jobACreate === undefined)
 			throw new Error('Job A create was not started');
 
-		await mountedRoute.navigateToJob('job-b');
+		await mountedRoute.navigateToSession('job-b');
 		await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-b', 1);
-		await mountedRoute.navigateToJob('job-a');
+		await mountedRoute.navigateToSession('job-a');
 		const returnedButtonA = await waitForNewSideChatButton(
 			mountedRoute.container,
 		);
@@ -489,11 +585,11 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		});
 		await flush();
 		await waitForSideChatListRequestCount('job-a', jobAListRequestCount + 1);
-		expect(mountedRoute.href()).toBe('/jobs/job-a');
+		expect(mountedRoute.href()).toBe('/sessions/job-a');
 	});
 
-	test('ignores a delayed create result after leaving the job route', async () => {
-		const mountedRoute = await mountRoute('/jobs/job-a');
+	test('ignores a delayed create result after leaving the session route', async () => {
+		const mountedRoute = await mountRoute('/sessions/job-a');
 		activeMountedRoute = mountedRoute;
 		const button = await waitForNewSideChatButton(mountedRoute.container);
 		await waitForSideChatListRequestCount('job-a', 1);

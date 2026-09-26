@@ -2,9 +2,9 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { fn } from 'storybook/test';
 import { JobEmptyState } from '@/components/job-empty-state';
 import { JobHeader } from '@/components/job-header';
-import { JobSidebar } from '@/components/job-sidebar';
 import { JobStatusStrip } from '@/components/job-status-strip';
 import { JobTimeline } from '@/components/job-timeline';
+import { SessionSidebar } from '@/components/session-sidebar';
 import { createConcurrentSubagentFixture } from '@/components/subagent-fixtures';
 import type { TimelinePart } from '@/lib/event-adapter';
 
@@ -24,32 +24,21 @@ const selectSubagent = fn<(sessionId: string) => void>();
 export const EmptySelection: Story = {
 	render: () => (
 		<div className="flex h-screen w-screen overflow-hidden bg-background">
-			<JobSidebar
+			<SessionSidebar
 				grouped={[
 					{
 						label: 'TODAY',
 						items: [
 							{
 								id: 'job-1',
+								jobId: 'job-1',
 								title: 'List files',
 								status: 'done',
 								createdAt: Date.now() - 300_000,
 								prompt: 'List files',
 								cwd: '/Users/dev/project',
-								backend: 'opencode',
 							},
 						],
-					},
-				]}
-				jobs={[
-					{
-						id: 'job-1',
-						title: 'List files',
-						status: 'done',
-						createdAt: Date.now() - 300_000,
-						prompt: 'List files',
-						cwd: '/Users/dev/project',
-						backend: 'opencode',
 					},
 				]}
 				selectedId={undefined}
@@ -67,54 +56,30 @@ export const EmptySelection: Story = {
 export const RunningSession: Story = {
 	render: () => (
 		<div className="flex h-screen w-screen overflow-hidden bg-background">
-			<JobSidebar
+			<SessionSidebar
 				grouped={[
 					{
 						label: 'TODAY',
 						items: [
 							{
 								id: 'job-run',
+								jobId: 'job-run',
 								title: 'Refactor auth middleware',
 								status: 'running',
 								createdAt: Date.now() - 120_000,
 								prompt: 'Refactor auth middleware',
 								cwd: '/Users/dev/project',
-								backend: 'opencode',
-								sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
-								model: 'opencode-go/kimi-k2.6',
 							},
 							{
 								id: 'job-done',
+								jobId: 'job-done',
 								title: 'List source files',
 								status: 'done',
 								createdAt: Date.now() - 400_000,
 								prompt: 'List files in src/',
 								cwd: '/Users/dev/project',
-								backend: 'opencode',
 							},
 						],
-					},
-				]}
-				jobs={[
-					{
-						id: 'job-run',
-						title: 'Refactor auth middleware',
-						status: 'running',
-						createdAt: Date.now() - 120_000,
-						prompt: 'Refactor auth middleware',
-						cwd: '/Users/dev/project',
-						backend: 'opencode',
-						sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
-						model: 'opencode-go/kimi-k2.6',
-					},
-					{
-						id: 'job-done',
-						title: 'List source files',
-						status: 'done',
-						createdAt: Date.now() - 400_000,
-						prompt: 'List files in src/',
-						cwd: '/Users/dev/project',
-						backend: 'opencode',
 					},
 				]}
 				selectedId="job-run"

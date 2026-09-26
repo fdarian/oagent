@@ -5,16 +5,14 @@ import {
 	redirect,
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
-import {
-	jobDetailRoutePath,
-	jobDetailSearchSchema,
-} from './lib/job-detail-route.ts';
+import { sessionSearchSchema } from './lib/session-route.ts';
 import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
 import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
 import { HarnessSettingsPage } from './pages/HarnessSettingsPage.tsx';
-import { JobDetailPage } from './pages/JobDetailPage.tsx';
+import { JobRedirectPage } from './pages/JobRedirectPage.tsx';
+import { SessionPage } from './pages/SessionPage.tsx';
 import { SettingsLayout } from './pages/SettingsLayout.tsx';
 import { WorktreeSettingsPage } from './pages/WorktreeSettingsPage.tsx';
 
@@ -32,11 +30,18 @@ const consoleIndexRoute = createRoute({
 	component: ConsoleIndexPage,
 });
 
-const jobDetailRoute = createRoute({
+const jobRedirectRoute = createRoute({
 	getParentRoute: () => consoleLayoutRoute,
-	path: jobDetailRoutePath,
-	validateSearch: jobDetailSearchSchema,
-	component: JobDetailPage,
+	path: 'jobs/$jobId',
+	validateSearch: sessionSearchSchema,
+	component: JobRedirectPage,
+});
+
+const sessionDetailRoute = createRoute({
+	getParentRoute: () => consoleLayoutRoute,
+	path: 'sessions/$sessionId',
+	validateSearch: sessionSearchSchema,
+	component: SessionPage,
 });
 
 const settingsLayoutRoute = createRoute({
@@ -78,7 +83,11 @@ const settingsHarnessRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-	consoleLayoutRoute.addChildren([consoleIndexRoute, jobDetailRoute]),
+	consoleLayoutRoute.addChildren([
+		consoleIndexRoute,
+		jobRedirectRoute,
+		sessionDetailRoute,
+	]),
 	settingsLayoutRoute.addChildren([
 		settingsIndexRoute,
 		settingsAliasesRoute,

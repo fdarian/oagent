@@ -325,6 +325,12 @@ const router = procedure.router({
 				const sessions = yield* Sessions;
 				return yield* sessions.list(options.input);
 			}),
+		get: procedure
+			.input(v.object({ sessionId: v.string() }))
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.get(options.input);
+			}),
 	},
 	sideChats: {
 		list: procedure

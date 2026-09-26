@@ -1164,6 +1164,24 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return rows.map(toJobSummary);
 		};
 
+		const listForSession = (sessionId: number): JobSummary[] =>
+			db
+				.select({ job: schema.jobs, session: schema.sessions })
+				.from(schema.jobs)
+				.innerJoin(
+					schema.sessions,
+					eq(schema.jobs.session_id, schema.sessions.id),
+				)
+				.where(
+					and(
+						eq(schema.jobs.session_id, sessionId),
+						isNull(schema.jobs.side_chat_id),
+					),
+				)
+				.orderBy(schema.jobs.created_at, schema.jobs.id)
+				.all()
+				.map(toJobSummary);
+
 		const getJobMetadata = (jobId: string): JobSummary | undefined => {
 			const job = db
 				.select({ job: schema.jobs, session: schema.sessions })
@@ -1310,6 +1328,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			steer,
 			wait,
 			list,
+			listForSession,
 			getJobMetadata,
 			getRootJobMetadata,
 			subscribe,
