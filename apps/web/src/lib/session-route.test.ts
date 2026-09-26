@@ -5,25 +5,21 @@ import {
 	createRoute,
 	createRouter,
 } from '@tanstack/react-router';
-import {
-	jobDetailRouteId,
-	jobDetailRoutePath,
-	jobDetailSearchSchema,
-} from './job-detail-route.ts';
+import { sessionSearchSchema } from './session-route.ts';
 
-function createJobDetailRouter(initialEntry: string) {
+function createSessionRouter(initialEntry: string) {
 	const rootRoute = createRootRoute();
 	const consoleRoute = createRoute({
 		getParentRoute: () => rootRoute,
 		id: 'console',
 	});
-	const jobDetailRoute = createRoute({
+	const sessionRoute = createRoute({
 		getParentRoute: () => consoleRoute,
-		path: jobDetailRoutePath,
-		validateSearch: jobDetailSearchSchema,
+		path: 'sessions/$sessionId',
+		validateSearch: sessionSearchSchema,
 	});
 	const routeTree = rootRoute.addChildren([
-		consoleRoute.addChildren([jobDetailRoute]),
+		consoleRoute.addChildren([sessionRoute]),
 	]);
 	const history = createMemoryHistory({ initialEntries: [initialEntry] });
 	const router = createRouter({ routeTree, history });
@@ -31,48 +27,48 @@ function createJobDetailRouter(initialEntry: string) {
 	return { history, router };
 }
 
-describe('job detail route query', () => {
-	test('routes a reloaded job URL to its persisted side-chat selection', async () => {
-		const setup = createJobDetailRouter(
-			'/jobs/job-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
+describe('session route query', () => {
+	test('routes a reloaded session URL to its persisted side-chat selection', async () => {
+		const setup = createSessionRouter(
+			'/sessions/session-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
 		);
 		await setup.router.load();
-		const jobMatch = setup.router.state.matches.find(
-			(match) => match.routeId === jobDetailRouteId,
+		const sessionMatch = setup.router.state.matches.find(
+			(match) => match.routeId === '/console/sessions/$sessionId',
 		);
 
-		expect(jobMatch?.params).toEqual({ jobId: 'job-1' });
-		expect(jobMatch?.search).toEqual({
+		expect(sessionMatch?.params).toEqual({ sessionId: 'session-1' });
+		expect(sessionMatch?.search).toEqual({
 			engine: 'http://localhost:17777',
 			sideChat: 'chat-1',
 		});
 	});
 
 	test('restores and closes the selected side-chat through browser history', async () => {
-		const setup = createJobDetailRouter(
-			'/jobs/job-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
+		const setup = createSessionRouter(
+			'/sessions/session-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
 		);
 		await setup.router.load();
 		await setup.router.navigate({
-			to: '/jobs/$jobId',
-			params: { jobId: 'job-1' },
+			to: '/sessions/$sessionId',
+			params: { sessionId: 'session-1' },
 			search: (previous) => ({ ...previous, sideChat: undefined }),
 		});
 
 		expect(setup.router.state.location.href).toBe(
-			'/jobs/job-1?engine=http%3A%2F%2Flocalhost%3A17777',
+			'/sessions/session-1?engine=http%3A%2F%2Flocalhost%3A17777',
 		);
 
 		setup.history.back();
 		await setup.router.load();
 		expect(setup.router.state.location.href).toBe(
-			'/jobs/job-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
+			'/sessions/session-1?engine=http%3A%2F%2Flocalhost%3A17777&sideChat=chat-1',
 		);
 
 		setup.history.forward();
 		await setup.router.load();
 		expect(setup.router.state.location.href).toBe(
-			'/jobs/job-1?engine=http%3A%2F%2Flocalhost%3A17777',
+			'/sessions/session-1?engine=http%3A%2F%2Flocalhost%3A17777',
 		);
 	});
 });

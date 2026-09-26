@@ -6,6 +6,7 @@ import { useSessionListStream } from './use-session-list-stream.ts';
 
 export type SessionListItem = {
 	id: string;
+	jobId: string;
 	title: string;
 	status: string;
 	createdAt: number;

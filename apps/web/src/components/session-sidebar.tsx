@@ -8,6 +8,7 @@ import { ThemeToggle } from './theme-toggle';
 export type SessionSidebarProps = {
 	grouped: { label: string; items: SessionListItem[] }[];
 	selectedId?: string;
+	selectedJobId?: string;
 	isLoading: boolean;
 	cwdFilter: string;
 	onCwdFilterChange: (value: string) => void;
@@ -48,6 +49,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
 								label={group.label}
 								items={group.items}
 								selectedId={props.selectedId}
+								selectedJobId={props.selectedJobId}
 							/>
 						))}
 					</div>

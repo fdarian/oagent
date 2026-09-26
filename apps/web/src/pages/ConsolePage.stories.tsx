@@ -31,6 +31,7 @@ export const EmptySelection: Story = {
 						items: [
 							{
 								id: 'job-1',
+								jobId: 'job-1',
 								title: 'List files',
 								status: 'done',
 								createdAt: Date.now() - 300_000,
@@ -62,6 +63,7 @@ export const RunningSession: Story = {
 						items: [
 							{
 								id: 'job-run',
+								jobId: 'job-run',
 								title: 'Refactor auth middleware',
 								status: 'running',
 								createdAt: Date.now() - 120_000,
@@ -70,6 +72,7 @@ export const RunningSession: Story = {
 							},
 							{
 								id: 'job-done',
+								jobId: 'job-done',
 								title: 'List source files',
 								status: 'done',
 								createdAt: Date.now() - 400_000,

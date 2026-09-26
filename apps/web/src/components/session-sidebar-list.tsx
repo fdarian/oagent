@@ -1,6 +1,9 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { ChevronRightIcon } from 'lucide-react';
 import { formatAge } from '@/lib/format';
+import { warmUpJobEvents } from '@/lib/job-warmup';
+import { orpc } from '@/lib/orpc';
 import type { SessionListItem } from '@/lib/use-session-list';
 import { cn } from '@/lib/utils';
 import {
@@ -18,12 +21,22 @@ function statusDotClass(status: string): string {
 function SessionSidebarItem(props: {
 	session: SessionListItem;
 	selectedId?: string;
+	selectedJobId?: string;
 }) {
 	const session = props.session;
+	const queryClient = useQueryClient();
+	const warmUp = () => {
+		warmUpJobEvents(session.jobId, props.selectedJobId);
+		void queryClient.prefetchQuery(
+			orpc.sessions.get.queryOptions({ input: { sessionId: session.id } }),
+		);
+	};
 	return (
 		<Link
 			to="/sessions/$sessionId"
 			params={{ sessionId: session.id }}
+			onMouseEnter={warmUp}
+			onFocus={warmUp}
 			className={cn(
 				'flex flex-col gap-[6px] border-l px-22 py-15 text-left transition-colors',
 				session.id === props.selectedId
@@ -55,6 +68,7 @@ export function SessionSidebarGroup(props: {
 	label: string;
 	items: SessionListItem[];
 	selectedId?: string;
+	selectedJobId?: string;
 }) {
 	return (
 		<Collapsible defaultOpen className="group flex flex-col">
@@ -75,6 +89,7 @@ export function SessionSidebarGroup(props: {
 						key={session.id}
 						session={session}
 						selectedId={props.selectedId}
+						selectedJobId={props.selectedJobId}
 					/>
 				))}
 			</CollapsibleContent>

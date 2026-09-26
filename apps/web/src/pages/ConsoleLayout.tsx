@@ -9,12 +9,16 @@ export function ConsoleLayout() {
 		shouldThrow: false,
 	});
 	const selectedId = sessionMatch?.params.sessionId;
+	const selectedJobId = sessionList.sessions.find(
+		(session) => session.id === selectedId,
+	)?.jobId;
 
 	return (
 		<div className="flex h-screen w-screen flex-col overflow-hidden bg-background sm:flex-row">
 			<SessionSidebar
 				grouped={sessionList.grouped}
 				selectedId={selectedId}
+				selectedJobId={selectedJobId}
 				isLoading={sessionList.isLoading}
 				cwdFilter={sessionList.cwdFilter}
 				onCwdFilterChange={sessionList.setCwdFilter}
