@@ -50,6 +50,29 @@ const sideChatCreateRequests: SideChatCreateRequest[] = [];
 const sideChatListRequests: string[] = [];
 
 const fakeClient = {
+	sessions: {
+		get: async (input: { sessionId: string }) => ({
+			id: input.sessionId,
+			title: 'Conversation',
+			cwd: '/repo',
+			createdAt: 1,
+			status: 'done',
+			jobs: [
+				{
+					id: 'first',
+					title: 'Conversation',
+					prompt: 'First prompt',
+					createdAt: 1,
+				},
+				{
+					id: 'second',
+					title: 'Conversation',
+					prompt: 'Follow-up prompt',
+					createdAt: 2,
+				},
+			],
+		}),
+	},
 	jobs: {
 		get: async (input: { jobId: string }) => ({
 			id: input.jobId,
@@ -129,7 +152,7 @@ mock.module('@/components/job-timeline', () => ({
 			undefined,
 			props.header,
 			...(props.parts ?? [])
-				.filter((part) => part.kind === 'user')
+				.filter((part) => part.kind === 'user' || part.kind === 'text')
 				.map((part) =>
 					react.createElement(
 						'p',
@@ -170,14 +193,37 @@ mock.module('@/components/side-chat-drawer', () => ({
 	},
 }));
 
+const eventStates = new Map<
+	string,
+	{
+		jobId: string;
+		parts: Array<{ kind: 'text'; id: string; text: string; createdAt: number }>;
+		streamingTail: null;
+		children: Map<string, never>;
+		terminal: boolean;
+		isLoading: boolean;
+	}
+>();
 mock.module('@/lib/use-job-events', () => ({
-	useJobEvents: () => ({
-		parts: [],
-		streamingTail: null,
-		children: new Map(),
-		terminal: false,
-		isLoading: false,
-	}),
+	useJobEvents: (jobId: string) => {
+		const existing = eventStates.get(jobId);
+		if (existing !== undefined) return existing;
+		const state = {
+			jobId,
+			parts: [] as Array<{
+				kind: 'text';
+				id: string;
+				text: string;
+				createdAt: number;
+			}>,
+			streamingTail: null,
+			children: new Map<string, never>(),
+			terminal: false,
+			isLoading: false,
+		};
+		eventStates.set(jobId, state);
+		return state;
+	},
 }));
 
 mock.module('@/lib/use-side-chat-timeline', () => ({
@@ -185,6 +231,7 @@ mock.module('@/lib/use-side-chat-timeline', () => ({
 }));
 
 const jobDetailPage = await import('./JobDetailPage.tsx');
+const sessionPage = await import('./SessionPage.tsx');
 
 type MountedRoute = {
 	container: HTMLDivElement;
@@ -214,13 +261,18 @@ async function mountRoute(initialEntry: string): Promise<MountedRoute> {
 		path: 'jobs/$jobId',
 		component: jobDetailPage.JobDetailPage,
 	});
+	const sessionRoute = reactRouter.createRoute({
+		getParentRoute: () => consoleRoute,
+		path: 'sessions/$sessionId',
+		component: sessionPage.SessionPage,
+	});
 	const awayRoute = reactRouter.createRoute({
 		getParentRoute: () => rootRoute,
 		path: 'settings',
 		component: AwayPage,
 	});
 	const routeTree = rootRoute.addChildren([
-		consoleRoute.addChildren([jobRoute]),
+		consoleRoute.addChildren([jobRoute, sessionRoute]),
 		awayRoute,
 	]);
 	const history = reactRouter.createMemoryHistory({
@@ -332,6 +384,7 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 	let activeMountedRoute: MountedRoute | undefined;
 
 	beforeEach(() => {
+		eventStates.clear();
 		sideChatCreateRequests.length = 0;
 		sideChatListRequests.length = 0;
 		document.body.replaceChildren();
@@ -346,6 +399,35 @@ describe('JobDetailPage side-chat creation lifecycle', () => {
 		expect(
 			mountedRoute.container.querySelector('[data-kind="user"]')?.textContent,
 		).toBe('Prompt for job-title');
+	});
+
+	test('shows each session turn prompt in order in one timeline', async () => {
+		eventStates.set('first', {
+			jobId: 'first',
+			parts: [
+				{ kind: 'text', id: 'answer', text: 'First answer', createdAt: 1 },
+			],
+			streamingTail: null,
+			children: new Map<string, never>(),
+			terminal: true,
+			isLoading: false,
+		});
+		const mountedRoute = await mountRoute('/sessions/session-1');
+		activeMountedRoute = mountedRoute;
+		await waitForNewSideChatButton(mountedRoute.container);
+		const prompts = Array.from(
+			mountedRoute.container.querySelectorAll('[data-kind="user"]'),
+		).map((element) => element.textContent);
+		expect(prompts).toEqual(['First prompt', 'Follow-up prompt']);
+		const messages = Array.from(
+			mountedRoute.container.querySelectorAll('[data-kind]'),
+		).map((element) => element.textContent);
+		expect(messages).toEqual([
+			'First prompt',
+			'First answer',
+			'Follow-up prompt',
+		]);
+		expect(mountedRoute.container.textContent).toContain('Conversation');
 	});
 
 	afterEach(async () => {

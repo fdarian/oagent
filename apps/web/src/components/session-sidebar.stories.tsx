@@ -1,8 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { JobSidebar } from './job-sidebar';
+import { SessionSidebar } from './session-sidebar';
 
-const meta: Meta<typeof JobSidebar> = {
-	component: JobSidebar,
+const meta: Meta<typeof SessionSidebar> = {
+	component: SessionSidebar,
 	parameters: {
 		layout: 'fullscreen',
 	},
@@ -14,7 +14,6 @@ type Story = StoryObj<typeof meta>;
 export const Empty: Story = {
 	args: {
 		grouped: [],
-		jobs: [],
 		selectedId: undefined,
 		isLoading: false,
 		cwdFilter: '',
@@ -29,15 +28,11 @@ const denseItems = Array.from({ length: 12 }).map((_, i) => ({
 	createdAt: Date.now() - i * 60_000,
 	prompt: `Task ${i}: analyze codebase`,
 	cwd: '/Users/dev/project',
-	backend: 'opencode' as const,
-	model: 'opencode-go/kimi-k2.6',
-	sessionId: i % 2 === 0 ? 'ses_01JSESSIONEXAMPLE1234567890' : undefined,
 }));
 
 export const Dense: Story = {
 	args: {
 		grouped: [{ label: 'TODAY', items: denseItems }],
-		jobs: denseItems,
 		selectedId: 'job-2',
 		isLoading: false,
 		cwdFilter: '',
@@ -53,9 +48,6 @@ const mixedItems = [
 		createdAt: Date.now() - 30_000,
 		prompt: 'Refactor auth middleware',
 		cwd: '/Users/dev/app',
-		backend: 'opencode' as const,
-		model: 'opencode-go/kimi-k2.6',
-		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 	},
 	{
 		id: 'job-b',
@@ -64,8 +56,6 @@ const mixedItems = [
 		createdAt: Date.now() - 300_000,
 		prompt: 'List files in src/',
 		cwd: '/Users/dev/app',
-		backend: 'opencode' as const,
-		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 	},
 	{
 		id: 'job-c',
@@ -74,7 +64,6 @@ const mixedItems = [
 		createdAt: Date.now() - 600_000,
 		prompt: 'Deploy to production',
 		cwd: '/Users/dev/infra',
-		backend: 'codex' as const,
 	},
 	{
 		id: 'job-d',
@@ -83,8 +72,6 @@ const mixedItems = [
 		createdAt: Date.now() - 86_400_000,
 		prompt: 'Write tests for utils',
 		cwd: '/Users/dev/app',
-		backend: 'opencode' as const,
-		sessionId: 'ses_01JSESSIONEXAMPLE1234567890',
 	},
 ];
 
@@ -100,7 +87,6 @@ export const MixedStatuses: Story = {
 				items: mixedItems.slice(3),
 			},
 		],
-		jobs: mixedItems,
 		selectedId: 'job-a',
 		isLoading: false,
 		cwdFilter: '',
@@ -117,13 +103,11 @@ const longItem = {
 	prompt:
 		'This is an extremely long prompt that goes on and on describing in great detail exactly what needs to be done across multiple lines and paragraphs so that we can verify truncation behavior in the sidebar row component',
 	cwd: '/Users/dev/very/long/path/to/the/project/directory',
-	backend: 'opencode' as const,
 };
 
 export const LongTitles: Story = {
 	args: {
 		grouped: [{ label: 'TODAY', items: [longItem] }],
-		jobs: [longItem],
 		selectedId: 'job-long',
 		isLoading: false,
 		cwdFilter: '',

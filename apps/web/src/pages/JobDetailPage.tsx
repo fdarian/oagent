@@ -18,7 +18,7 @@ import {
 	type SideChatCreation,
 	sideChatCreateMutationFilter,
 } from '@/lib/side-chat-creation.ts';
-import { useJobEvents } from '@/lib/use-job-events';
+import { type JobEventsState, useJobEvents } from '@/lib/use-job-events';
 import { useSideChatTimeline } from '@/lib/use-side-chat-timeline.ts';
 
 function getErrorMessage(error: unknown): string {
@@ -37,23 +37,55 @@ export function JobDetailPage() {
 	return <JobDetailPageForJob key={params.jobId} jobId={params.jobId} />;
 }
 
+type SessionJob = Awaited<
+	ReturnType<typeof client.sessions.get>
+>['jobs'][number];
+
+export function SessionDetail(props: { jobId: string; jobs: SessionJob[] }) {
+	return <JobDetailPageForJob jobId={props.jobId} jobs={props.jobs} />;
+}
+
+function HistoricalJobEvents(props: {
+	jobId: string;
+	onChange: (jobId: string, events: JobEventsState) => void;
+}) {
+	const events = useJobEvents(props.jobId);
+	useEffect(() => {
+		if (events.jobId === props.jobId) props.onChange(props.jobId, events);
+	}, [events, props.jobId, props.onChange]);
+	return null;
+}
+
 type JobDetailPageForJobProps = {
 	jobId: string;
+	jobs?: SessionJob[];
 };
 
 function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const jobId = props.jobId;
-	const search = useSearch({ from: '/console/jobs/$jobId' });
-	const navigate = useNavigate({ from: '/jobs/$jobId' });
+	const search = useSearch({
+		strict: false,
+		select: (value) => value as { sideChat?: string },
+	});
+	const navigate = useNavigate();
+	const [history, setHistory] = useState<Record<string, JobEventsState>>({});
+	const onHistoryChange = useCallback((id: string, state: JobEventsState) => {
+		setHistory((previous) => ({ ...previous, [id]: state }));
+	}, []);
+	const earlierJobs = props.jobs?.slice(0, -1) ?? [];
 	const activeChildState = useState<
 		{ jobId: string; sessionId: string } | undefined
 	>(undefined);
 	const childSelection = activeChildState[0];
 	const setChildSelection = activeChildState[1];
 	const selectedJobQuery = useQuery(
-		orpc.jobs.get.queryOptions({ input: { jobId } }),
+		orpc.jobs.get.queryOptions({
+			input: { jobId },
+			enabled: props.jobs === undefined,
+		}),
 	);
-	const selectedJob = selectedJobQuery.data;
+	const selectedJob =
+		props.jobs?.[props.jobs.length - 1] ?? selectedJobQuery.data;
 	const events = useJobEvents(selectedJob?.id);
 	const queryClient = useQueryClient();
 	const [drawerState, setDrawerState] = useState({
@@ -131,6 +163,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			setSideChatError(undefined);
 			setDrawerState({ sourceJobId: jobId, drawerInstance, open: false });
 			void navigate({
+				to: '.',
 				search: (previous) => ({ ...previous, sideChat: sideChatId }),
 			});
 		},
@@ -177,7 +210,12 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const cancelJob = useMutation(
 		orpc.jobs.cancel.mutationOptions({
 			onSuccess: () => {
-				queryClient.invalidateQueries({ queryKey: orpc.jobs.list.key() });
+				void queryClient.invalidateQueries({
+					queryKey: orpc.sessions.list.key(),
+				});
+				void queryClient.invalidateQueries({
+					queryKey: orpc.sessions.get.key(),
+				});
 			},
 			onError: (error) => {
 				console.error('Failed to cancel job', error);
@@ -301,7 +339,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			drawerState.drawerInstance === drawerInstanceRef.current &&
 			drawerState.open);
 
-	if (selectedJobQuery.isLoading) {
+	if (selectedJob === undefined && selectedJobQuery.isLoading) {
 		return (
 			<div className="flex h-full flex-col items-center justify-center gap-22 text-muted-foreground">
 				<p className="text-body font-light">Loading job…</p>
@@ -350,13 +388,32 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		text: selectedJob.prompt,
 		createdAt: selectedJob.createdAt,
 	};
+	const historyParts: TimelinePart[] = earlierJobs.flatMap((job) => [
+		{
+			kind: 'user' as const,
+			id: `${job.id}:prompt`,
+			text: job.prompt,
+			createdAt: job.createdAt,
+		},
+		...(history[job.id]?.parts ?? []).map((part) => ({
+			...part,
+			id: `${job.id}:${part.id}`,
+		})),
+	]);
 	const parts =
 		activeChild === undefined
-			? [initialPrompt, ...events.parts]
+			? [...historyParts, initialPrompt, ...events.parts]
 			: activeChild.parts;
 
 	return (
 		<>
+			{earlierJobs.map((job) => (
+				<HistoricalJobEvents
+					key={job.id}
+					jobId={job.id}
+					onChange={onHistoryChange}
+				/>
+			))}
 			<div className="flex flex-col gap-0">
 				<JobStatusStrip
 					status={

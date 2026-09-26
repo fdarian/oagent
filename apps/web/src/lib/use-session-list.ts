@@ -1,42 +1,40 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { groupByDay } from './format.ts';
-import type { Backend } from './harnesses.ts';
 import { orpc } from './orpc.ts';
-import { useJobListStream } from './use-job-list-stream.ts';
+import { useSessionListStream } from './use-session-list-stream.ts';
 
-export type JobListItem = {
+export type SessionListItem = {
 	id: string;
 	title: string;
 	status: string;
 	createdAt: number;
-	terminatedAt?: number;
 	prompt: string;
 	cwd: string;
-	backend: Backend;
-	model?: string;
-	agentType?: string;
-	sessionId?: string;
 };
 
-export function useJobList() {
-	useJobListStream();
+export function useSessionList() {
+	useSessionListStream();
 
-	const { data, isLoading } = useQuery(orpc.jobs.list.queryOptions());
+	const { data, isLoading } = useQuery(
+		orpc.sessions.list.queryOptions({ input: {} }),
+	);
 
 	const [cwdFilter, setCwdFilter] = useState('');
 
 	const filtered = useMemo(() => {
-		const jobs = (data ?? []) as JobListItem[];
-		if (cwdFilter.trim() === '') return jobs;
+		const sessions = data ?? [];
+		if (cwdFilter.trim() === '') return sessions;
 		const needle = cwdFilter.toLowerCase();
-		return jobs.filter((j) => j.cwd.toLowerCase().includes(needle));
+		return sessions.filter((session) =>
+			session.cwd.toLowerCase().includes(needle),
+		);
 	}, [data, cwdFilter]);
 
 	const grouped = useMemo(() => groupByDay(filtered), [filtered]);
 
 	return {
-		jobs: filtered,
+		sessions: filtered,
 		grouped,
 		isLoading,
 		cwdFilter,

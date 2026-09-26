@@ -9,12 +9,13 @@ import {
 	jobDetailRoutePath,
 	jobDetailSearchSchema,
 } from './lib/job-detail-route.ts';
+import { client } from './lib/orpc.ts';
 import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
 import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
 import { HarnessSettingsPage } from './pages/HarnessSettingsPage.tsx';
-import { JobDetailPage } from './pages/JobDetailPage.tsx';
+import { SessionPage } from './pages/SessionPage.tsx';
 import { SettingsLayout } from './pages/SettingsLayout.tsx';
 import { WorktreeSettingsPage } from './pages/WorktreeSettingsPage.tsx';
 
@@ -36,7 +37,23 @@ const jobDetailRoute = createRoute({
 	getParentRoute: () => consoleLayoutRoute,
 	path: jobDetailRoutePath,
 	validateSearch: jobDetailSearchSchema,
-	component: JobDetailPage,
+	beforeLoad: async ({ params, search }) => {
+		const job = await client.jobs.get({ jobId: params.jobId });
+		if (job?.sessionId === undefined) throw new Error('Job not found');
+		throw redirect({
+			to: '/sessions/$sessionId',
+			params: { sessionId: job.sessionId },
+			search,
+			replace: true,
+		});
+	},
+});
+
+const sessionDetailRoute = createRoute({
+	getParentRoute: () => consoleLayoutRoute,
+	path: 'sessions/$sessionId',
+	validateSearch: jobDetailSearchSchema,
+	component: SessionPage,
 });
 
 const settingsLayoutRoute = createRoute({
@@ -78,7 +95,11 @@ const settingsHarnessRoute = createRoute({
 });
 
 const routeTree = rootRoute.addChildren([
-	consoleLayoutRoute.addChildren([consoleIndexRoute, jobDetailRoute]),
+	consoleLayoutRoute.addChildren([
+		consoleIndexRoute,
+		jobDetailRoute,
+		sessionDetailRoute,
+	]),
 	settingsLayoutRoute.addChildren([
 		settingsIndexRoute,
 		settingsAliasesRoute,
