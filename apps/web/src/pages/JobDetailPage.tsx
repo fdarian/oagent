@@ -347,14 +347,17 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 		);
 	}
 
-	const activeChildSessionId =
-		childSelection === undefined || childSelection.jobId !== jobId
-			? undefined
-			: childSelection.sessionId;
+	const activeChildSessionId = childSelection?.sessionId;
+	const selectedChildEvents =
+		childSelection?.jobId === jobId
+			? events
+			: childSelection === undefined
+				? undefined
+				: history[childSelection.jobId];
 	const activeChild =
-		activeChildSessionId === undefined
+		activeChildSessionId === undefined || selectedChildEvents === undefined
 			? undefined
-			: events.children.get(activeChildSessionId);
+			: selectedChildEvents.children.get(activeChildSessionId);
 
 	const selectChild = (sessionId: string) => {
 		setChildSelection({ jobId, sessionId });
@@ -362,9 +365,13 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 
 	const navigateChild = (sessionId: string | undefined) => {
 		setChildSelection(
-			sessionId === undefined ? undefined : { jobId, sessionId },
+			sessionId === undefined || childSelection === undefined
+				? undefined
+				: { jobId: childSelection.jobId, sessionId },
 		);
 	};
+	const historicalJobForPart = (part: TimelinePart) =>
+		earlierJobs.find((job) => part.id.startsWith(`${job.id}:`));
 
 	if (selectedJob === undefined) {
 		return (
@@ -424,7 +431,9 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 					isRunning={
 						selectedJob.status === 'running' &&
 						!events.terminal &&
-						(activeChild === undefined || activeChild.status === 'running')
+						(activeChild === undefined ||
+							(childSelection?.jobId === jobId &&
+								activeChild.status === 'running'))
 					}
 				/>
 			</div>
@@ -440,7 +449,22 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 							: activeChild.streamingTail
 					}
 					cwd={selectedJob.cwd}
-					childSessions={events.children}
+					childSessions={selectedChildEvents?.children ?? events.children}
+					childSessionsForPart={(part) => {
+						if (activeChild !== undefined) return selectedChildEvents?.children;
+						const historicalJob = historicalJobForPart(part);
+						return historicalJob === undefined
+							? events.children
+							: history[historicalJob.id]?.children;
+					}}
+					onChildSelectForPart={(part, sessionId) => {
+						if (activeChild !== undefined && childSelection !== undefined) {
+							setChildSelection({ jobId: childSelection.jobId, sessionId });
+							return;
+						}
+						const historicalJob = historicalJobForPart(part);
+						setChildSelection({ jobId: historicalJob?.id ?? jobId, sessionId });
+					}}
 					currentChild={activeChild}
 					activeChildSessionId={activeChildSessionId}
 					onChildSelect={selectChild}
@@ -487,7 +511,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 						) : (
 							<SubagentHeader
 								child={activeChild}
-								sessions={events.children}
+								sessions={selectedChildEvents?.children ?? events.children}
 								onNavigate={navigateChild}
 							/>
 						)

@@ -27,9 +27,13 @@ export type JobTimelineProps = {
 	isLoading?: boolean;
 	contentClassName?: string;
 	childSessions?: ReadonlyMap<string, ChildTimeline>;
+	childSessionsForPart?: (
+		part: TimelinePart,
+	) => ReadonlyMap<string, ChildTimeline> | undefined;
 	currentChild?: ChildTimeline;
 	activeChildSessionId?: string;
 	onChildSelect?: (sessionId: string) => void;
+	onChildSelectForPart?: (part: TimelinePart, sessionId: string) => void;
 	isChildTimeline?: boolean;
 };
 
@@ -287,9 +291,17 @@ export function JobTimeline(props: JobTimelineProps) {
 										renderPart(
 											item,
 											props.cwd,
-											props.childSessions,
+											(item.kind === 'exploration'
+												? undefined
+												: props.childSessionsForPart?.(item)) ??
+												props.childSessions,
 											props.currentChild,
-											props.onChildSelect,
+											props.onChildSelectForPart === undefined
+												? props.onChildSelect
+												: (sessionId) => {
+														if (item.kind !== 'exploration')
+															props.onChildSelectForPart?.(item, sessionId);
+													},
 										)
 									)}
 								</div>
