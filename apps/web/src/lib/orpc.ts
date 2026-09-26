@@ -3,15 +3,15 @@ import { createORPCClient } from '@orpc/client';
 import { RPCLink } from '@orpc/client/fetch';
 import type { RouterClient } from '@orpc/server';
 import { createTanstackQueryUtils } from '@orpc/tanstack-query';
-import { createEngineEndpointURL } from './engine-url.ts';
+import {
+	createEngineEndpointURL,
+	resolveConfiguredEngineURL,
+} from './engine-url.ts';
 
-function getConfiguredEngineURL(): string {
-	const engineOverride = new URLSearchParams(location.search).get('engine');
-	if (engineOverride === null) return '/rpc';
-	return engineOverride;
-}
-
-const configuredEngineURL = getConfiguredEngineURL();
+const configuredEngineURL = resolveConfiguredEngineURL(
+	location.search,
+	sessionStorage,
+);
 const rpcURL = createEngineEndpointURL(
 	configuredEngineURL,
 	'/rpc',

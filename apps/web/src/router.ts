@@ -5,13 +5,13 @@ import {
 	redirect,
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
-import { client } from './lib/orpc.ts';
 import { sessionSearchSchema } from './lib/session-route.ts';
 import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
 import { ConsoleLayout } from './pages/ConsoleLayout.tsx';
 import { HarnessSettingsPage } from './pages/HarnessSettingsPage.tsx';
+import { JobRedirectPage } from './pages/JobRedirectPage.tsx';
 import { SessionPage } from './pages/SessionPage.tsx';
 import { SettingsLayout } from './pages/SettingsLayout.tsx';
 import { WorktreeSettingsPage } from './pages/WorktreeSettingsPage.tsx';
@@ -34,16 +34,7 @@ const jobRedirectRoute = createRoute({
 	getParentRoute: () => consoleLayoutRoute,
 	path: 'jobs/$jobId',
 	validateSearch: sessionSearchSchema,
-	beforeLoad: async ({ params, search }) => {
-		const job = await client.jobs.get({ jobId: params.jobId });
-		if (job?.sessionId === undefined) throw new Error('Job not found');
-		throw redirect({
-			to: '/sessions/$sessionId',
-			params: { sessionId: job.sessionId },
-			search,
-			replace: true,
-		});
-	},
+	component: JobRedirectPage,
 });
 
 const sessionDetailRoute = createRoute({
