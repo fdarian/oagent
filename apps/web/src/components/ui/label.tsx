@@ -4,6 +4,7 @@ import { cn } from '@/lib/utils';
 
 function Label(props: React.ComponentProps<'label'>) {
 	return (
+		// biome-ignore lint/a11y/noLabelWithoutControl: htmlFor and children come from callers via props
 		<label
 			data-slot="label"
 			className={cn(
