@@ -166,28 +166,48 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				backend: Backend;
 				modelId: string;
 				reasoningEffort: string | undefined;
+				suffixEffort: string | undefined;
 			},
 			ModelResolutionError,
 			never
 		> =>
 			Effect.gen(function* () {
-				const colonIdx = model.indexOf(':');
+				const hashIdx = model.lastIndexOf('#');
+				const suffixEffort =
+					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
+				if (suffixEffort === '') {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `Model "${model}" has an empty reasoning-effort suffix.`,
+					});
+				}
+				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
+				const colonIdx = modelName.indexOf(':');
 				if (colonIdx !== -1) {
-					const backend = model.slice(0, colonIdx);
-					const modelId = model.slice(colonIdx + 1);
+					const backend = modelName.slice(0, colonIdx);
+					const modelId = modelName.slice(colonIdx + 1);
 					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
 							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
 						});
 					}
-					return { backend, modelId, reasoningEffort: undefined };
+					if (
+						suffixEffort !== undefined &&
+						(backend === 'cursor' || backend === 'grok')
+					) {
+						return yield* new ModelResolutionError({
+							code: 'INVALID_FORMAT',
+							message: `${backend} does not support reasoning-effort suffixes.`,
+						});
+					}
+					return { backend, modelId, reasoningEffort: undefined, suffixEffort };
 				}
 
 				const alias = db
 					.select()
 					.from(schema.modelAliases)
-					.where(eq(schema.modelAliases.name, model))
+					.where(eq(schema.modelAliases.name, modelName))
 					.limit(1)
 					.get();
 
@@ -203,11 +223,21 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						message: `Model alias "${model}" references unknown backend "${alias.backend}".`,
 					});
 				}
+				if (
+					suffixEffort !== undefined &&
+					(alias.backend === 'cursor' || alias.backend === 'grok')
+				) {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `${alias.backend} does not support reasoning-effort suffixes.`,
+					});
+				}
 
 				return {
 					backend: alias.backend,
 					modelId: alias.model_id,
 					reasoningEffort: alias.reasoning_effort ?? undefined,
+					suffixEffort,
 				};
 			});
 
@@ -524,7 +554,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 				const reasoningEffort =
-					input.reasoningEffort ?? resolvedModel.reasoningEffort;
+					input.reasoningEffort ??
+					resolvedModel.suffixEffort ??
+					resolvedModel.reasoningEffort;
 				const agentTarget =
 					input.agentType === undefined
 						? undefined
