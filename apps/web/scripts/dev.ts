@@ -4,9 +4,11 @@ import {
 	awaitRunning,
 	CurrentSession,
 	DevSessions,
+	getStickyPort,
+	publishRunning,
 	runManagedSubprocess,
 } from 'devsess';
-import { Effect } from 'effect';
+import { Effect, Schedule } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import webPackage from '../package.json' with { type: 'json' };
 
@@ -22,6 +24,8 @@ const web = Command.make(
 		Effect.gen(function* () {
 			const session = yield* CurrentSession;
 			yield* Effect.logInfo(`[dev] session: ${session.name}`);
+			const port = yield* getStickyPort(session);
+			const url = `http://localhost:${port}/`;
 
 			const engineUrl = yield* Effect.gen(function* () {
 				if (opts.local === 'engine') {
@@ -35,9 +39,24 @@ const web = Command.make(
 				return engineUrl;
 			});
 
-			yield* runManagedSubprocess('pnpm', ['vite'], {
-				env: { ENGINE_URL: engineUrl },
+			const vite = runManagedSubprocess(
+				'pnpm',
+				['vite', '--port', String(port), '--strictPort'],
+				{
+					env: { ENGINE_URL: engineUrl },
+				},
+			);
+			const publishWhenReady = Effect.gen(function* () {
+				yield* Effect.tryPromise(() => fetch(url)).pipe(
+					Effect.retry(Schedule.spaced('250 millis')),
+				);
+				yield* publishRunning({ url });
 			});
+
+			yield* Effect.raceAll([
+				vite,
+				publishWhenReady.pipe(Effect.andThen(Effect.never)),
+			]);
 		}).pipe(Effect.provide(CurrentSession.layer)),
 );
 
