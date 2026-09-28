@@ -19,6 +19,7 @@ import {
 	sideChatCreateMutationFilter,
 } from '@/lib/side-chat-creation.ts';
 import { useJobEvents } from '@/lib/use-job-events';
+import { useSessionEvents } from '@/lib/use-session-events';
 import { useSideChatTimeline } from '@/lib/use-side-chat-timeline.ts';
 
 function getErrorMessage(error: unknown): string {
@@ -32,29 +33,61 @@ type SideChatError = {
 	sideChatId?: string;
 };
 
-export function JobDetailPage() {
-	const params = useParams({ from: '/console/jobs/$jobId' });
-	return <JobDetailPageForJob key={params.jobId} jobId={params.jobId} />;
+type SessionJob = Awaited<
+	ReturnType<typeof client.sessions.get>
+>['jobs'][number];
+
+export function SessionPage() {
+	const params = useParams({ from: '/console/sessions/$sessionId' });
+	return <SessionContent key={params.sessionId} sessionId={params.sessionId} />;
 }
 
-type JobDetailPageForJobProps = {
-	jobId: string;
-};
+function SessionContent(props: { sessionId: string }) {
+	const query = useQuery(
+		orpc.sessions.get.queryOptions({ input: { sessionId: props.sessionId } }),
+	);
+	if (query.isLoading)
+		return (
+			<div className="flex h-full items-center justify-center text-muted-foreground">
+				Loading session…
+			</div>
+		);
+	if (query.isError)
+		return (
+			<div className="flex h-full items-center justify-center text-destructive">
+				{query.error.message}
+			</div>
+		);
+	const session = query.data;
+	if (session === undefined) return null;
+	const latest = session.jobs[session.jobs.length - 1];
+	if (latest === undefined)
+		return (
+			<div className="flex h-full items-center justify-center text-muted-foreground">
+				No jobs in this session
+			</div>
+		);
+	return (
+		<SessionConversation key={latest.id} jobs={session.jobs} latest={latest} />
+	);
+}
 
-function JobDetailPageForJob(props: JobDetailPageForJobProps) {
-	const jobId = props.jobId;
-	const search = useSearch({ from: '/console/jobs/$jobId' });
-	const navigate = useNavigate({ from: '/jobs/$jobId' });
+function SessionConversation(props: {
+	jobs: SessionJob[];
+	latest: SessionJob;
+}) {
+	const selectedJob = props.latest;
+	const jobId = selectedJob.id;
+	const search = useSearch({ from: '/console/sessions/$sessionId' });
+	const navigate = useNavigate({ from: '/sessions/$sessionId' });
+	const earlierJobs = props.jobs.slice(0, -1);
+	const history = useSessionEvents(earlierJobs.map((job) => job.id));
 	const activeChildState = useState<
 		{ jobId: string; sessionId: string } | undefined
 	>(undefined);
 	const childSelection = activeChildState[0];
 	const setChildSelection = activeChildState[1];
-	const selectedJobQuery = useQuery(
-		orpc.jobs.get.queryOptions({ input: { jobId } }),
-	);
-	const selectedJob = selectedJobQuery.data;
-	const events = useJobEvents(selectedJob?.id);
+	const events = useJobEvents(jobId);
 	const queryClient = useQueryClient();
 	const [drawerState, setDrawerState] = useState({
 		sourceJobId: jobId,
@@ -83,7 +116,6 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const sideChatsQuery = useQuery(
 		orpc.sideChats.list.queryOptions({
 			input: { sourceJobId: jobId },
-			enabled: selectedJob !== undefined,
 		}),
 	);
 	const sideChats = sideChatsQuery.data;
@@ -131,6 +163,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			setSideChatError(undefined);
 			setDrawerState({ sourceJobId: jobId, drawerInstance, open: false });
 			void navigate({
+				to: '.',
 				search: (previous) => ({ ...previous, sideChat: sideChatId }),
 			});
 		},
@@ -177,7 +210,12 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 	const cancelJob = useMutation(
 		orpc.jobs.cancel.mutationOptions({
 			onSuccess: () => {
-				queryClient.invalidateQueries({ queryKey: orpc.jobs.list.key() });
+				void queryClient.invalidateQueries({
+					queryKey: orpc.sessions.list.key(),
+				});
+				void queryClient.invalidateQueries({
+					queryKey: orpc.sessions.get.key(),
+				});
 			},
 			onError: (error) => {
 				console.error('Failed to cancel job', error);
@@ -251,7 +289,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			open: true,
 		});
 		setSideChatError(undefined);
-		if (selectedJob === undefined || selectedJob.backend !== 'opencode') return;
+		if (selectedJob.backend !== 'opencode') return;
 		void completeSideChatCreation(creation);
 	}, [
 		beginDrawerInstance,
@@ -301,22 +339,17 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 			drawerState.drawerInstance === drawerInstanceRef.current &&
 			drawerState.open);
 
-	if (selectedJobQuery.isLoading) {
-		return (
-			<div className="flex h-full flex-col items-center justify-center gap-22 text-muted-foreground">
-				<p className="text-body font-light">Loading job…</p>
-			</div>
-		);
-	}
-
-	const activeChildSessionId =
-		childSelection === undefined || childSelection.jobId !== jobId
-			? undefined
-			: childSelection.sessionId;
+	const activeChildSessionId = childSelection?.sessionId;
+	const selectedChildEvents =
+		childSelection?.jobId === jobId
+			? events
+			: childSelection === undefined
+				? undefined
+				: history[childSelection.jobId];
 	const activeChild =
-		activeChildSessionId === undefined
+		activeChildSessionId === undefined || selectedChildEvents === undefined
 			? undefined
-			: events.children.get(activeChildSessionId);
+			: selectedChildEvents.children.get(activeChildSessionId);
 
 	const selectChild = (sessionId: string) => {
 		setChildSelection({ jobId, sessionId });
@@ -324,17 +357,13 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 
 	const navigateChild = (sessionId: string | undefined) => {
 		setChildSelection(
-			sessionId === undefined ? undefined : { jobId, sessionId },
+			sessionId === undefined || childSelection === undefined
+				? undefined
+				: { jobId: childSelection.jobId, sessionId },
 		);
 	};
-
-	if (selectedJob === undefined) {
-		return (
-			<div className="flex h-full flex-col items-center justify-center gap-22 text-muted-foreground">
-				<p className="text-body font-light">Job not found</p>
-			</div>
-		);
-	}
+	const jobIdForPart = (part: TimelinePart) =>
+		'jobId' in part && typeof part.jobId === 'string' ? part.jobId : jobId;
 
 	const status =
 		selectedJob.status !== 'running'
@@ -344,15 +373,35 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 					? 'error'
 					: 'done'
 				: selectedJob.status;
-	const initialPrompt: TimelinePart = {
+	const initialPrompt: TimelinePart & { jobId: string } = {
 		kind: 'user',
-		id: 'initial-prompt',
+		id: `${jobId}:prompt`,
+		jobId,
 		text: selectedJob.prompt,
 		createdAt: selectedJob.createdAt,
 	};
+	const historyParts: TimelinePart[] = earlierJobs.flatMap((job) => [
+		{
+			kind: 'user' as const,
+			id: `${job.id}:prompt`,
+			jobId: job.id,
+			text: job.prompt,
+			createdAt: job.createdAt,
+		},
+		...(history[job.id]?.parts ?? []).map((part) => ({
+			...part,
+			jobId: job.id,
+			id: `${job.id}:${part.id}`,
+		})),
+	]);
+	const currentParts: TimelinePart[] = events.parts.map((part) => ({
+		...part,
+		jobId,
+		id: `${jobId}:${part.id}`,
+	}));
 	const parts =
 		activeChild === undefined
-			? [initialPrompt, ...events.parts]
+			? [...historyParts, initialPrompt, ...currentParts]
 			: activeChild.parts;
 
 	return (
@@ -367,7 +416,9 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 					isRunning={
 						selectedJob.status === 'running' &&
 						!events.terminal &&
-						(activeChild === undefined || activeChild.status === 'running')
+						(activeChild === undefined ||
+							(childSelection?.jobId === jobId &&
+								activeChild.status === 'running'))
 					}
 				/>
 			</div>
@@ -383,7 +434,21 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 							: activeChild.streamingTail
 					}
 					cwd={selectedJob.cwd}
-					childSessions={events.children}
+					childSessions={selectedChildEvents?.children ?? events.children}
+					childSessionsForPart={(part) => {
+						if (activeChild !== undefined) return selectedChildEvents?.children;
+						const partJobId = jobIdForPart(part);
+						return partJobId === jobId
+							? events.children
+							: history[partJobId]?.children;
+					}}
+					onChildSelectForPart={(part, sessionId) => {
+						if (activeChild !== undefined && childSelection !== undefined) {
+							setChildSelection({ jobId: childSelection.jobId, sessionId });
+							return;
+						}
+						setChildSelection({ jobId: jobIdForPart(part), sessionId });
+					}}
 					currentChild={activeChild}
 					activeChildSessionId={activeChildSessionId}
 					onChildSelect={selectChild}
@@ -430,7 +495,7 @@ function JobDetailPageForJob(props: JobDetailPageForJobProps) {
 						) : (
 							<SubagentHeader
 								child={activeChild}
-								sessions={events.children}
+								sessions={selectedChildEvents?.children ?? events.children}
 								onNavigate={navigateChild}
 							/>
 						)

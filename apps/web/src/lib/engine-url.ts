@@ -1,3 +1,18 @@
+const ENGINE_OVERRIDE_KEY = 'oagent.engineOverride';
+
+export function resolveConfiguredEngineURL(
+	search: string,
+	storage: Pick<Storage, 'getItem' | 'setItem'>,
+): string {
+	const override = new URLSearchParams(search).get('engine');
+	if (override !== null) {
+		storage.setItem(ENGINE_OVERRIDE_KEY, override);
+		return override;
+	}
+	const savedOverride = storage.getItem(ENGINE_OVERRIDE_KEY);
+	return savedOverride === null ? '/rpc' : savedOverride;
+}
+
 function engineBasePath(pathname: string): string {
 	const withoutTrailingSlash = pathname.endsWith('/')
 		? pathname.slice(0, -1)

@@ -133,6 +133,82 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	test('lists session details and root turns in chronological order without side-chat turns', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(database, 'opencode', () =>
+			Effect.succeed({
+				sessionId: 'harness',
+				text: 'done',
+				stopReason: 'end_turn',
+			}),
+		);
+		const session = insertSession(database, {
+			uuid: 'session-history',
+			title: 'History',
+			backend: 'opencode',
+			harnessSessionId: 'harness',
+			cwd: '/repo',
+		});
+		insertJob(database, session, {
+			uuid: 'first',
+			status: 'done',
+			prompt: 'first prompt',
+			model: 'provider/model',
+		});
+		insertJob(database, session, {
+			uuid: 'second',
+			status: 'done',
+			prompt: 'follow-up',
+			model: 'provider/model',
+		});
+		const sideChat = database.db
+			.insert(schema.sideChats)
+			.values({
+				uuid: 'side-chat-history',
+				source_job_id: 1,
+				session_id: session.uuid,
+			})
+			.returning()
+			.get();
+		if (sideChat === undefined) throw new Error('Expected side chat');
+		database.db
+			.insert(schema.jobs)
+			.values({
+				uuid: 'side-turn',
+				session_id: session.id,
+				side_chat_id: sideChat.id,
+				status: 'done',
+				prompt: 'side prompt',
+			})
+			.run();
+		const detail = await Effect.runPromise(
+			services.sessions.get({ sessionId: session.uuid }),
+		);
+		expect(detail).toMatchObject({
+			id: session.uuid,
+			title: 'History',
+			cwd: '/repo',
+			status: 'done',
+		});
+		expect(
+			detail.jobs.map((job) => ({
+				id: job.id,
+				prompt: job.prompt,
+				sessionId: job.sessionId,
+			})),
+		).toEqual([
+			{ id: 'first', prompt: 'first prompt', sessionId: session.uuid },
+			{ id: 'second', prompt: 'follow-up', sessionId: session.uuid },
+		]);
+		expect(
+			(await Effect.runPromise(services.sessions.list({})))[0],
+		).toMatchObject({
+			id: session.uuid,
+			cwd: '/repo',
+			model: 'provider/model',
+		});
+		database.sqlite.close();
+	});
 	test('keeps alias reasoning effort across follow-up turns and forks', async () => {
 		const database = createTestDatabase();
 		database.db

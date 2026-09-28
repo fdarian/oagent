@@ -1,5 +1,28 @@
 import { describe, expect, test } from 'bun:test';
-import { createEngineEndpointURL } from './engine-url.ts';
+import {
+	createEngineEndpointURL,
+	resolveConfiguredEngineURL,
+} from './engine-url.ts';
+
+test('remembers the selected engine for legacy job URLs without an engine query', () => {
+	const entries = new Map<string, string>();
+	const storage = {
+		getItem: (key: string) => entries.get(key) ?? null,
+		setItem: (key: string, value: string) => {
+			entries.set(key, value);
+		},
+	};
+	expect(resolveConfiguredEngineURL('', storage)).toBe('/rpc');
+	expect(
+		resolveConfiguredEngineURL(
+			'?engine=http%3A%2F%2Flocalhost%3A17778',
+			storage,
+		),
+	).toBe('http://localhost:17778');
+	expect(resolveConfiguredEngineURL('', storage)).toBe(
+		'http://localhost:17778',
+	);
+});
 
 describe('engine endpoint URLs', () => {
 	test('uses the same-origin RPC proxy by default', () => {

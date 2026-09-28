@@ -1,24 +1,27 @@
 import { Outlet, useMatch } from '@tanstack/react-router';
-import { JobSidebar } from '@/components/job-sidebar';
-import { useJobList } from '@/lib/use-job-list';
+import { SessionSidebar } from '@/components/session-sidebar';
+import { useSessionList } from '@/lib/use-session-list';
 
 export function ConsoleLayout() {
-	const jobList = useJobList();
-	const jobMatch = useMatch({
-		from: '/console/jobs/$jobId',
+	const sessionList = useSessionList();
+	const sessionMatch = useMatch({
+		from: '/console/sessions/$sessionId',
 		shouldThrow: false,
 	});
-	const selectedId = jobMatch === undefined ? undefined : jobMatch.params.jobId;
+	const selectedId = sessionMatch?.params.sessionId;
+	const selectedJobId = sessionList.sessions.find(
+		(session) => session.id === selectedId,
+	)?.jobId;
 
 	return (
 		<div className="flex h-screen w-screen flex-col overflow-hidden bg-background sm:flex-row">
-			<JobSidebar
-				grouped={jobList.grouped}
-				jobs={jobList.jobs}
+			<SessionSidebar
+				grouped={sessionList.grouped}
 				selectedId={selectedId}
-				isLoading={jobList.isLoading}
-				cwdFilter={jobList.cwdFilter}
-				onCwdFilterChange={jobList.setCwdFilter}
+				selectedJobId={selectedJobId}
+				isLoading={sessionList.isLoading}
+				cwdFilter={sessionList.cwdFilter}
+				onCwdFilterChange={sessionList.setCwdFilter}
 			/>
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 				<Outlet />
