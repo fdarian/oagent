@@ -159,8 +159,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const dbService = yield* Db;
 		const db = dbService.db;
 
-		const resolveModel = (
-			model: string,
+		const unsupportedSuffixBackends: ReadonlySet<Backend> = new Set([
+			'cursor',
+			'grok',
+		]);
+		const resolveModelName = (
+			modelName: string,
 		): Effect.Effect<
 			{
 				backend: Backend;
@@ -171,10 +175,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const colonIdx = model.indexOf(':');
+				const colonIdx = modelName.indexOf(':');
 				if (colonIdx !== -1) {
-					const backend = model.slice(0, colonIdx);
-					const modelId = model.slice(colonIdx + 1);
+					const backend = modelName.slice(0, colonIdx);
+					const modelId = modelName.slice(colonIdx + 1);
 					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
@@ -187,27 +191,54 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const alias = db
 					.select()
 					.from(schema.modelAliases)
-					.where(eq(schema.modelAliases.name, model))
+					.where(eq(schema.modelAliases.name, modelName))
 					.limit(1)
 					.get();
 
 				if (alias === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_ALIAS',
-						message: `Model "${model}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
+						message: `Model "${modelName}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
 					});
 				}
 				if (!isBackend(alias.backend)) {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_BACKEND',
-						message: `Model alias "${model}" references unknown backend "${alias.backend}".`,
+						message: `Model alias "${modelName}" references unknown backend "${alias.backend}".`,
 					});
 				}
-
 				return {
 					backend: alias.backend,
 					modelId: alias.model_id,
 					reasoningEffort: alias.reasoning_effort ?? undefined,
+				};
+			});
+
+		const resolveModel = (model: string) =>
+			Effect.gen(function* () {
+				const hashIdx = model.lastIndexOf('#');
+				const suffixEffort =
+					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
+				if (suffixEffort === '') {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `Model "${model}" has an empty reasoning-effort suffix.`,
+					});
+				}
+				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
+				const resolved = yield* resolveModelName(modelName);
+				if (
+					suffixEffort !== undefined &&
+					unsupportedSuffixBackends.has(resolved.backend)
+				) {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `${resolved.backend} does not support reasoning-effort suffixes.`,
+					});
+				}
+				return {
+					...resolved,
+					reasoningEffort: suffixEffort ?? resolved.reasoningEffort,
 				};
 			});
 

@@ -41,6 +41,141 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 	};
 }
 
+describe('start model reasoning effort', () => {
+	const cases = [
+		{ model: 'opencode:test', expectedModel: 'test', expectedEffort: null },
+		{
+			model: 'opencode:test#medium',
+			expectedModel: 'test',
+			expectedEffort: 'medium',
+		},
+		{ model: 'general#high', expectedModel: 'test', expectedEffort: 'high' },
+		{ model: 'general', expectedModel: 'test', expectedEffort: 'low' },
+		{
+			model: 'general#high',
+			explicitEffort: 'maximum',
+			expectedModel: 'test',
+			expectedEffort: 'maximum',
+		},
+	];
+
+	for (const entry of cases) {
+		test(`resolves ${entry.model}`, async () => {
+			const database = createDatabase();
+			database.db
+				.insert(schema.modelAliases)
+				.values({
+					name: 'general',
+					backend: 'opencode',
+					model_id: 'test',
+					reasoning_effort: 'low',
+				})
+				.run();
+			const efforts: Array<string | undefined> = [];
+			const harness = {
+				backend: 'opencode' as const,
+				runTurn: (input: { reasoningEffort?: string }) =>
+					Effect.sync(() => {
+						efforts.push(input.reasoningEffort);
+						return {
+							sessionId: 'ses_model',
+							text: 'done',
+							stopReason: 'end_turn',
+						};
+					}),
+			} as unknown as Harness;
+			const jobs = await Effect.runPromise(
+				Jobs.make.pipe(
+					Effect.provideService(Db, {
+						db: database.db,
+						sqlite: database.sqlite,
+					} as unknown as Db['Service']),
+					Effect.provideService(
+						HarnessRegistry,
+						createHarnessRegistry(harness),
+					),
+					Effect.provideService(Agents, {} as Agents['Service']),
+					Effect.provideService(Worktrees, {} as Worktrees['Service']),
+				),
+			);
+			const session = insertSession(database, {
+				uuid: 'session-model',
+				title: 'Model session',
+				cwd: '/tmp',
+			});
+			const started = await Effect.runPromise(
+				jobs.start({
+					session,
+					prompt: 'run',
+					model: entry.model,
+					reasoningEffort: entry.explicitEffort,
+				}),
+			);
+			await Effect.runPromise(
+				jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+			);
+			const job = database.db
+				.select()
+				.from(schema.jobs)
+				.where(eq(schema.jobs.uuid, started.jobId))
+				.get();
+			expect(job?.model).toBe(entry.expectedModel);
+			expect(job?.reasoning_effort).toBe(entry.expectedEffort);
+			expect(efforts).toEqual([
+				entry.expectedEffort === null ? undefined : entry.expectedEffort,
+			]);
+			database.sqlite.close();
+		});
+	}
+
+	for (const model of [
+		'opencode:test#',
+		'general#',
+		'cursor:test#high',
+		'grok:test#high',
+		'unsupported#high',
+	]) {
+		test(`rejects ${model}`, async () => {
+			const database = createDatabase();
+			database.db
+				.insert(schema.modelAliases)
+				.values({
+					name: 'unsupported',
+					backend: 'cursor',
+					model_id: 'test',
+				})
+				.run();
+			const harness = { backend: 'opencode' } as Harness;
+			const jobs = await Effect.runPromise(
+				Jobs.make.pipe(
+					Effect.provideService(Db, {
+						db: database.db,
+						sqlite: database.sqlite,
+					} as unknown as Db['Service']),
+					Effect.provideService(
+						HarnessRegistry,
+						createHarnessRegistry(harness),
+					),
+					Effect.provideService(Agents, {} as Agents['Service']),
+					Effect.provideService(Worktrees, {} as Worktrees['Service']),
+				),
+			);
+			const session = insertSession(database, {
+				uuid: 'session-model',
+				title: 'Model session',
+				cwd: '/tmp',
+			});
+			const exit = await Effect.runPromiseExit(
+				jobs.start({ session, prompt: 'run', model }),
+			);
+			expect(exit._tag).toBe('Failure');
+			if (exit._tag === 'Failure')
+				expect(String(exit.cause)).toContain('ModelResolutionError');
+			database.sqlite.close();
+		});
+	}
+});
+
 describe('job event persistence', () => {
 	test('does not persist the same replayed ACP update twice', async () => {
 		const database = createDatabase();

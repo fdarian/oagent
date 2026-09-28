@@ -10,7 +10,8 @@ import { waitWithProgress } from '../progress.ts';
 
 const BASE_DESCRIPTION = `\
 Start a coding-agent session or fork an existing session/job. Pass its returned \
-session ID to \`send_message\` to continue. Use \`read\` to check a background turn.`;
+session ID to \`send_message\` to continue. Use \`read\` to check a background turn. \
+Model accepts \`<backend>:<modelId>[#effort]\` or \`<alias>[#effort]\`.`;
 
 export type AliasPreset = {
 	name: string;
@@ -51,7 +52,7 @@ export function formatPresets(aliases: AliasPreset[]): string {
 
 	return `
 
-Available presets (use as \`model\` or pass the raw \`<backend>:<modelId>\` form):
+Available presets (use as \`<alias>[#effort]\` or pass \`<backend>:<modelId>[#effort]\`):
 ${lines.join('\n')}`;
 }
 
@@ -146,7 +147,7 @@ export const inputSchema = z.object({
 		.string()
 		.optional()
 		.describe(
-			'Pick a model alias from the server instructions, or pass a raw `<backend>:<modelId>` value.',
+			'Pick `<alias>[#effort]` from the server instructions, or pass `<backend>:<modelId>[#effort]`. The optional suffix overrides alias effort.',
 		),
 	agent_type: z
 		.string()
