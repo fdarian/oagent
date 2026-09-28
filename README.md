@@ -230,10 +230,40 @@ If a process monitor shows oagent using gigabytes of memory, run `oagent doctor 
 
 ## Development
 
+Install dependencies with `pnpm install`; use Bun to run the development scripts.
+
+For **UI changes**, start with Storybook. It runs the component and page stories without an engine:
+
 ```sh
-pnpm dev         # parallel: engine + vite dev server
-pnpm check       # typecheck + biome lint across all packages
-pnpm run build   # produce standalone binary at apps/cli/dist/oagent
+cd apps/web
+bun storybook --ci
 ```
 
-Architecture: `AGENTS.md`.
+Open `http://localhost:6006` (or the URL printed by Storybook). Use the full app when testing backend integration or an end-to-end flow:
+
+1. Start the engine first, and wait for its listening log. It restarts on source changes.
+
+   ```sh
+   cd services/engine
+   bun dev
+   ```
+
+2. In a separate terminal, starting from the repo root:
+
+   ```sh
+   cd apps/web
+   bun dev --local engine
+   ```
+
+Open the URL in `apps/web/.data/running.json`. The engine URL is in `services/engine/.data/running.json`; both ports are per-session.
+
+The local engine uses isolated development data. Without `--local engine`, the web connects to the user's engine at `http://localhost:17777`, which may have stale oRPC procedures; mutations affect the user's running app. Use that mode deliberately for UI-only inspection of existing data. Use the local engine for engine changes and test-case setup.
+
+Repo-root checks:
+
+```sh
+pnpm check     # typecheck + biome lint across all packages
+pnpm run build # produce standalone binary at apps/cli/dist/oagent
+```
+
+Details: [Web development](apps/web/docs/development.md), [engine development](services/engine/docs/development.md), and [architecture](AGENTS.md).

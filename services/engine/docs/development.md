@@ -2,18 +2,23 @@
 
 ## Running
 
-`pnpm dev` from repo root starts engine + web in parallel (see also the [web dev doc](../../../apps/web/docs/development.md)). To run the engine alone:
+Start the development engine from `services/engine`:
 
 ```sh
-pnpm --filter '@oagent/engine' dev
+bun dev
 ```
+
+Agents should start it when needed, or reuse the dev engine already running for this checkout. Wait for the engine's listening log before starting clients; `running.json` is written during startup, before the server binds.
+
+The dev script restarts on engine source changes. A restart marks in-flight jobs as errored, so avoid editing engine source while a test turn is running.
+
+To run the web app against this engine, see [web development](../../../apps/web/docs/development.md#full-app-local-engine).
 
 ## Sessions
 
-`pnpm dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session is used as `OAGENT_HOME_DIR` and contains:
+`bun dev` manages dev state under `services/engine/.data/sessions/<slug>/`. Each session is used as `OAGENT_HOME_DIR` and contains:
 
 - `sqlite.db` — engine DB
-- `logs/` — development JSONL logs
 - `sess.json` — per-session persistent state (sticky port, etc.)
 
 By default `services/engine/scripts/dev.ts` picks the most recently used session, or creates a new one with a random-noun slug on first run. The session home keeps development config and data separate from the installed app; without a session `config.json`, portless stays disabled.
@@ -22,23 +27,22 @@ To force a fresh session: delete the latest slug dir, or delete all of `services
 
 ## Live URL discovery
 
-While `pnpm dev` is running, `services/engine/.data/running.json` contains the live engine URL:
+While `bun dev` is running, `services/engine/.data/running.json` contains the engine URL. From the repo root:
 
-```json
-{ "url": "http://127.0.0.1:17777" }
+```sh
+cat services/engine/.data/running.json
 ```
 
-Written by `services/engine/scripts/dev.ts` on startup; cleaned up on shutdown.
+Read its `url` field rather than assuming port `17777`: the dev script selects a per-session sticky port. The file is written on startup and removed on shutdown. Stop the foreground engine with Ctrl-C when finished.
 
-For probing tools on the running engine, see the `test-oagent-mcp` skill at `.claude/skills/test-oagent-mcp/SKILL.md`.
+Use this URL for clients, including `--engine-url` on CLI commands. It uses `127.0.0.1`, avoiding IPv6 resolution issues.
 
-## Environment variables
+## Probing MCP tools
 
-| Variable          | Default            | Description                                                                                       |
-| ----------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
-| `OAGENT_HOME_DIR` | `~/.config/oagent` | Base directory for oagent-owned files. `config.json`, `sqlite.db`, and `logs/` are derived from it. |
-| `OAGENT_LOG_DIR`  | `$OAGENT_HOME_DIR/logs` | Overrides the directory used for JSONL service logs.                                             |
+Use the [MCP inspector](https://github.com/modelcontextprotocol/inspector) CLI against the dev engine's `/mcp` endpoint rather than hand-crafting JSON-RPC requests. Always use the discovered URL: port `17777` can belong to the user's running app, with a different engine version and real data affected by mutations.
 
-## Logging
-
-`oagent service start` passes `<OAGENT_LOG_DIR>/oagent.jsonl` (or the default `$OAGENT_HOME_DIR/logs` directory) to `serve`, which writes one JSON record per line. Entries older than 30 days are pruned at startup and once per day. `oagent serve --log-file <path>` remains available for a single JSONL file.
+```sh
+URL=$(jq -r .url services/engine/.data/running.json)
+pnpx -y @modelcontextprotocol/inspector --cli "$URL/mcp" --method tools/list
+pnpx -y @modelcontextprotocol/inspector --cli "$URL/mcp" --method tools/call --tool-name <tool> --tool-arg key=value
+```

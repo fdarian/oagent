@@ -11,6 +11,8 @@ MCP server that exposes OpenCode to Claude Code as a subagent via ACP, with a Re
 - @orpc/server + @orpc/experimental-effect — typed RPC with native Effect handlers
 - React 19 + Vite + Tailwind v4 — web SPA, embedded into the binary at build time
 
+Checks: `pnpm check` (typecheck + biome), `pnpm run build` (standalone binary at `apps/cli/dist/oagent`).
+
 ## Workspace
 
 Declared in `pnpm-workspace.yaml` (`apps/*`, `packages/*`, `services/*`).
@@ -19,20 +21,6 @@ Declared in `pnpm-workspace.yaml` (`apps/*`, `packages/*`, `services/*`).
 - `apps/web` (`@oagent/web`) — Vite + React SPA; type-imports `EngineRouter` from `@oagent/engine`.
 - `services/engine` (`@oagent/engine`) — Effect services (`Sessions`, `Jobs`, `OpenCode`), HTTP handlers, oRPC router.
 
-## Dev
-
-Quick commands:
-
-```sh
-pnpm dev       # parallel: engine + vite; engine picks port and DB session, web polls for engine URL
-pnpm check     # typecheck + biome across all packages
-pnpm run build # produce standalone binary at apps/cli/dist/oagent
-```
-
-For details see:
-- [Engine dev](services/engine/docs/development.md) — sessions, sticky port, env vars
-- [Web dev](apps/web/docs/development.md) — Vite proxy, `ENGINE_URL`
-
 ## Architecture
 
 - `apps/cli/src/index.ts` — Effect CLI with `serve`, `service`, `stdio`, `jobs`, `doctor`, and `claude mcp serve` subcommands. `serve` loads the embedded SPA filemap from `.gen/web-ui.gen.ts` and delegates to the engine's `createServer`; `--log-file` writes JSONL records with 30-day retention. `service start` launches the `serve` command in the background with the resolved service log file and Info-level logging, then records its PID; `service install|restart|status|stop|uninstall` manage the macOS-only launchd LaunchAgent and that background process. `stdio` serves MCP through `serveStdio` and `registerTools`. Only the commands that need the in-process engine provide `Engine.layer`; the CLI root provides only `BunContext`, deliberately, so `claude mcp serve` (which does NOT need it) never opens the DB and runs orphan-recovery against a live engine's jobs.
@@ -40,7 +28,7 @@ For details see:
 - `apps/cli/src/commands/service` — launchd-backed login-item management for macOS. `install` writes `~/Library/LaunchAgents/com.oagent.service.plist` with the compiled binary's `service start` command and loads it with `launchctl bootstrap`; `start` detaches `oagent serve`, passes the resolved `oagent.jsonl` path, and records `$OAGENT_HOME_DIR/service.pid` (default `~/.config/oagent/service.pid`); `stop` terminates that server and unloads the login item while retaining the plist; `uninstall` terminates the server, unloads, and removes the plist. `status` reports installation, RunAtLoad, binary, port, and process state. Installing the login item requires the built `oagent` binary; direct development starts can use Bun.
 - `apps/cli/src/commands/claude.ts` + `apps/cli/src/lib/channel.ts` — `oagent claude mcp serve` runs a dedicated [Claude Code channel](https://code.claude.com/docs/en/channels-reference) MCP over stdio. Unlike `stdio`, it does not run jobs in-process: it is a thin oRPC client (`@orpc/client`) bridging to a running engine (`--engine-url`, default `http://localhost:17777` or `$OPENCODE_MCP_PORT`). `start` and `send_message` use session RPC procedures and return markdown with session/job IDs; background turns listen to `/jobs/:id/events` until the `__terminal__` sentinel, fetch the final job result once, and push it as a `notifications/claude/channel` event (`<channel source="oagent" job_id status session_id>…</channel>`). `read` and `cancel` are available as fallbacks. Enable with `claude --dangerously-load-development-channels server:<configKey>` during the research preview.
 - `services/engine/src/server.ts` — the actual HTTP dispatcher. `createServer({ port, serverInfo, filemap? })` builds the Bun.serve fetch handler and binds it. Routes, in order: `/mcp` → stateless `createMcpHandler` (modern 2026-07-28 and stateless 2025 clients), `/rpc/*` → engine oRPC handler, `/jobs/:id/events` → raw SSE, `/jobs/:id/wait` → long-poll JSON. SPA fallback only fires when `filemap` is provided; otherwise returns 404. Defaults to port 17777 (overridable via `--port` or `OPENCODE_MCP_PORT`); falls back to port 0 on EADDRINUSE. Startup notifications go through the Effect logger, so foreground `serve` prints prettily and `serve --log-file` captures the same events as JSONL.
-- `services/engine/src/cli.ts` — dev-only `@effect/cli` entrypoint for the engine. Exposes a single `serve` subcommand that calls `createServer` without a filemap. Used by `services/engine/scripts/dev.ts`.
+- `services/engine/scripts/dev.ts` — dev entrypoint using `devsess`: selects an isolated session home and sticky port, publishes the engine URL, writes MCP client configs in `spaces/tester`, and starts `Engine` directly.
 - `apps/cli/scripts/build.ts` — runs `vite build` in `apps/web`, walks `apps/web/dist/`, generates `apps/cli/.gen/web-ui.gen.ts` with `import ... with { type: 'file' }` plus a default-export filemap, then `Bun.build({ compile: true })` listing both entrypoints so assets embed into the standalone binary.
 - `services/engine/src/paths.ts` — resolves `OAGENT_HOME_DIR` (default `~/.config/oagent`) and derives the config, SQLite, logs, and other oagent-owned paths used by the engine and CLI.
 - `services/engine/src/db/schema.ts` — Drizzle SQLite schema. `sessions` and `jobs` have UUIDv7 public ids + internal autoincrement PKs; jobs reference their session and a partial unique index allows one running job per session. `events` is a polymorphic base with per-variant tables (`chunk_events`, `tool_call_events`, `plan_events`, etc.). All 11 `SessionUpdate` variants are modeled. Opaque nested fields stay JSON; structured fields are decomposed. Property names are snake_case so they map verbatim to SQL.
