@@ -159,29 +159,22 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const dbService = yield* Db;
 		const db = dbService.db;
 
-		const resolveModel = (
-			model: string,
+		const unsupportedSuffixBackends: ReadonlySet<Backend> = new Set([
+			'cursor',
+			'grok',
+		]);
+		const resolveModelName = (
+			modelName: string,
 		): Effect.Effect<
 			{
 				backend: Backend;
 				modelId: string;
 				reasoningEffort: string | undefined;
-				suffixEffort: string | undefined;
 			},
 			ModelResolutionError,
 			never
 		> =>
 			Effect.gen(function* () {
-				const hashIdx = model.lastIndexOf('#');
-				const suffixEffort =
-					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
-				if (suffixEffort === '') {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `Model "${model}" has an empty reasoning-effort suffix.`,
-					});
-				}
-				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
 				const colonIdx = modelName.indexOf(':');
 				if (colonIdx !== -1) {
 					const backend = modelName.slice(0, colonIdx);
@@ -192,16 +185,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
 						});
 					}
-					if (
-						suffixEffort !== undefined &&
-						(backend === 'cursor' || backend === 'grok')
-					) {
-						return yield* new ModelResolutionError({
-							code: 'INVALID_FORMAT',
-							message: `${backend} does not support reasoning-effort suffixes.`,
-						});
-					}
-					return { backend, modelId, reasoningEffort: undefined, suffixEffort };
+					return { backend, modelId, reasoningEffort: undefined };
 				}
 
 				const alias = db
@@ -214,30 +198,47 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (alias === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_ALIAS',
-						message: `Model "${model}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
+						message: `Model "${modelName}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
 					});
 				}
 				if (!isBackend(alias.backend)) {
 					return yield* new ModelResolutionError({
 						code: 'UNKNOWN_BACKEND',
-						message: `Model alias "${model}" references unknown backend "${alias.backend}".`,
+						message: `Model alias "${modelName}" references unknown backend "${alias.backend}".`,
 					});
 				}
-				if (
-					suffixEffort !== undefined &&
-					(alias.backend === 'cursor' || alias.backend === 'grok')
-				) {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `${alias.backend} does not support reasoning-effort suffixes.`,
-					});
-				}
-
 				return {
 					backend: alias.backend,
 					modelId: alias.model_id,
 					reasoningEffort: alias.reasoning_effort ?? undefined,
-					suffixEffort,
+				};
+			});
+
+		const resolveModel = (model: string) =>
+			Effect.gen(function* () {
+				const hashIdx = model.lastIndexOf('#');
+				const suffixEffort =
+					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
+				if (suffixEffort === '') {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `Model "${model}" has an empty reasoning-effort suffix.`,
+					});
+				}
+				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
+				const resolved = yield* resolveModelName(modelName);
+				if (
+					suffixEffort !== undefined &&
+					unsupportedSuffixBackends.has(resolved.backend)
+				) {
+					return yield* new ModelResolutionError({
+						code: 'INVALID_FORMAT',
+						message: `${resolved.backend} does not support reasoning-effort suffixes.`,
+					});
+				}
+				return {
+					...resolved,
+					reasoningEffort: suffixEffort ?? resolved.reasoningEffort,
 				};
 			});
 
@@ -554,9 +555,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 				const reasoningEffort =
-					input.reasoningEffort ??
-					resolvedModel.suffixEffort ??
-					resolvedModel.reasoningEffort;
+					input.reasoningEffort ?? resolvedModel.reasoningEffort;
 				const agentTarget =
 					input.agentType === undefined
 						? undefined
