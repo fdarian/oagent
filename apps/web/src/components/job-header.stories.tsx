@@ -75,7 +75,6 @@ export const SwitchModel: Story = {
 						{ id: base.model, label: 'Kimi K2.6' },
 						{ id: 'provider/next-model', label: 'Next model' },
 					],
-					isLoadingModels: false,
 					onChange: setModel,
 					isPending: false,
 				}}
@@ -109,5 +108,59 @@ export const UnsupportedModelSwitch: Story = {
 			canvas.queryByRole('combobox', { name: 'Session model' }),
 		).not.toBeInTheDocument();
 		await expect(canvas.getByText('grok-4')).toBeVisible();
+	},
+};
+
+export const ModelsNotReady: Story = {
+	args: { ...base, status: 'done', model: 'provider/next-model' },
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.queryByRole('combobox', { name: 'Session model' }),
+		).not.toBeInTheDocument();
+		await expect(canvas.getByText('provider/next-model')).toBeVisible();
+	},
+};
+
+export const ModelChangePending: Story = {
+	args: {
+		...base,
+		status: 'running',
+		sessionModelControl: {
+			model: base.model,
+			models: [{ id: base.model, label: 'Kimi K2.6' }],
+			onChange: fn(),
+			isPending: true,
+		},
+	},
+	play: async (context) => {
+		await expect(
+			within(context.canvasElement).getByRole('combobox', {
+				name: 'Session model',
+			}),
+		).toBeDisabled();
+	},
+};
+
+export const ModelChangeError: Story = {
+	args: {
+		...base,
+		status: 'done',
+		sessionModelControl: {
+			model: base.model,
+			models: [{ id: base.model, label: 'Kimi K2.6' }],
+			onChange: fn(),
+			isPending: false,
+			error: 'Could not persist the session model.',
+		},
+	},
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		).toBeEnabled();
+		await expect(canvas.getByRole('alert')).toHaveTextContent(
+			'Could not persist the session model.',
+		);
 	},
 };

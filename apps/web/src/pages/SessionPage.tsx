@@ -496,14 +496,18 @@ function SessionConversation(props: {
 										worktreePath={selectedJob.worktreePath}
 										worktreeBranch={selectedJob.worktreeBranch}
 										backend={selectedJob.backend}
-										model={selectedJob.model}
-										sessionModelControl={
+										model={
 											props.session.supportsModelSwitch
+												? props.session.model
+												: selectedJob.model
+										}
+										sessionModelControl={
+											props.session.supportsModelSwitch &&
+											modelsQuery.isSuccess &&
+											modelsQuery.data.length > 0
 												? {
 														model: props.session.model,
 														models: modelsQuery.data,
-														isLoadingModels: modelsQuery.isPending,
-														modelsError: modelsQuery.error?.message,
 														onChange: (model) =>
 															setModel.mutate({
 																sessionId: props.session.id,
