@@ -22,6 +22,21 @@ import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
+import {
+	Select,
+	SelectContent,
+	SelectItem,
+	SelectTrigger,
+	SelectValue,
+} from './ui/select';
+
+type SessionModelControl = {
+	model?: string;
+	models: ReadonlyArray<{ id: string; label?: string }>;
+	onChange: (model: string) => void;
+	isPending: boolean;
+	error?: string;
+};
 
 export type JobHeaderProps = {
 	id: string;
@@ -32,6 +47,7 @@ export type JobHeaderProps = {
 	worktreeBranch?: string;
 	backend: Backend;
 	model?: string;
+	sessionModelControl?: SessionModelControl;
 	agentType?: string;
 	sessionId?: string;
 	harnessSessionId?: string;
@@ -234,6 +250,42 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	);
 }
 
+function SessionModelSelect(props: { control: SessionModelControl }) {
+	return (
+		<span className="flex min-w-0 flex-col gap-1">
+			<Select
+				value={props.control.model ?? null}
+				disabled={props.control.isPending}
+				onValueChange={(model) => {
+					if (model !== props.control.model) props.control.onChange(model);
+				}}
+			>
+				<SelectTrigger
+					aria-label="Session model"
+					title="Model for the next turn; running turns are unchanged"
+					className="flex h-auto max-w-full items-center justify-between gap-2 rounded-none border border-border bg-transparent px-1.5 py-0 text-caption font-light text-muted-foreground outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+				>
+					<SelectValue placeholder="Select model">
+						{props.control.model}
+					</SelectValue>
+				</SelectTrigger>
+				<SelectContent align="start">
+					{props.control.models.map((model) => (
+						<SelectItem key={model.id} value={model.id}>
+							{model.label ?? model.id}
+						</SelectItem>
+					))}
+				</SelectContent>
+			</Select>
+			{props.control.error !== undefined && (
+				<span role="alert" className="text-destructive">
+					{props.control.error}
+				</span>
+			)}
+		</span>
+	);
+}
+
 export function JobHeader(props: JobHeaderProps) {
 	const [copied, setCopied] = useState(false);
 
@@ -270,8 +322,13 @@ export function JobHeader(props: JobHeaderProps) {
 						<span>{elapsed}</span>
 						<span>·</span>
 						<span className="flex min-w-0 max-w-full items-center gap-10">
-							{props.model !== undefined && props.model !== '' && (
-								<span className="truncate">{props.model}</span>
+							{props.sessionModelControl !== undefined ? (
+								<SessionModelSelect control={props.sessionModelControl} />
+							) : (
+								props.model !== undefined &&
+								props.model !== '' && (
+									<span className="truncate">{props.model}</span>
+								)
 							)}
 							{props.agentType !== undefined && props.agentType !== '' && (
 								<Badge

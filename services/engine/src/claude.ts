@@ -106,6 +106,7 @@ export class Claude extends Context.Service<Claude>()('oagent/Claude', {
 
 		return {
 			backend: 'claude',
+			supportsModelSwitch: false,
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) =>
 				acpAgent.runTurn({
 					...input,

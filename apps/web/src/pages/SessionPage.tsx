@@ -68,11 +68,17 @@ function SessionContent(props: { sessionId: string }) {
 			</div>
 		);
 	return (
-		<SessionConversation key={latest.id} jobs={session.jobs} latest={latest} />
+		<SessionConversation
+			key={latest.id}
+			session={session}
+			jobs={session.jobs}
+			latest={latest}
+		/>
 	);
 }
 
 function SessionConversation(props: {
+	session: Awaited<ReturnType<typeof client.sessions.get>>;
 	jobs: SessionJob[];
 	latest: SessionJob;
 }) {
@@ -89,6 +95,24 @@ function SessionConversation(props: {
 	const setChildSelection = activeChildState[1];
 	const events = useJobEvents(jobId);
 	const queryClient = useQueryClient();
+	const modelsQuery = useQuery(
+		orpc.models.list.queryOptions({
+			input: { backend: props.session.backend },
+			enabled: props.session.supportsModelSwitch,
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
+	const setModel = useMutation(
+		orpc.sessions.setModel.mutationOptions({
+			onSuccess: async () => {
+				await queryClient.invalidateQueries({
+					queryKey: orpc.sessions.get.key({
+						input: { sessionId: props.session.id },
+					}),
+				});
+			},
+		}),
+	);
 	const [drawerState, setDrawerState] = useState({
 		sourceJobId: jobId,
 		drawerInstance: 0,
@@ -472,7 +496,28 @@ function SessionConversation(props: {
 										worktreePath={selectedJob.worktreePath}
 										worktreeBranch={selectedJob.worktreeBranch}
 										backend={selectedJob.backend}
-										model={selectedJob.model}
+										model={
+											props.session.supportsModelSwitch
+												? props.session.model
+												: selectedJob.model
+										}
+										sessionModelControl={
+											props.session.supportsModelSwitch &&
+											modelsQuery.isSuccess &&
+											modelsQuery.data.length > 0
+												? {
+														model: props.session.model,
+														models: modelsQuery.data,
+														onChange: (model) =>
+															setModel.mutate({
+																sessionId: props.session.id,
+																model,
+															}),
+														isPending: setModel.isPending,
+														error: setModel.error?.message,
+													}
+												: undefined
+										}
 										agentType={selectedJob.agentType}
 										sessionId={selectedJob.sessionId}
 										harnessSessionId={selectedJob.harnessSessionId}
