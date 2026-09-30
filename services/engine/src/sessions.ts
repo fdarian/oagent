@@ -465,8 +465,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 
 				const latest = latestJob(session);
-				const currentSession = yield* findSession(input.sessionId);
-				const model = currentSession.model ?? latest?.model;
+				const model = session.model ?? latest?.model;
 				if (model === undefined || model === null) {
 					return yield* new SessionNotReady({
 						sessionId: session.uuid,
@@ -479,8 +478,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						prompt: input.prompt,
 						model: `${parseBackend(session.backend)}:${model}`,
 						reasoningEffort:
-							(currentSession.model !== null
-								? currentSession.reasoning_effort
+							(session.model !== null
+								? session.reasoning_effort
 								: latest?.reasoning_effort) ?? undefined,
 						agentType: latest?.agent_type ?? undefined,
 					})
