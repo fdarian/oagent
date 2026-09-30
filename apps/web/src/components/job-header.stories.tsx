@@ -1,8 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { expect, fn, userEvent, within } from 'storybook/test';
-import { orpc } from '@/lib/orpc';
 import { JobHeader } from './job-header';
 
 const meta: Meta<typeof JobHeader> = {
@@ -68,24 +66,20 @@ export const SwitchModel: Story = {
 	args: { ...base, status: 'running' },
 	render: function Render(args) {
 		const [model, setModel] = useState(base.model);
-		const [queryClient] = useState(() => {
-			const client = new QueryClient();
-			client.setQueryData(
-				orpc.models.list.key({ input: { backend: 'opencode' }, type: 'query' }),
-				[
-					{ id: base.model, label: 'Kimi K2.6' },
-					{ id: 'provider/next-model', label: 'Next model' },
-				],
-			);
-			return client;
-		});
 		return (
-			<QueryClientProvider client={queryClient}>
-				<JobHeader
-					{...args}
-					sessionModelControl={{ model, onChange: setModel, isPending: false }}
-				/>
-			</QueryClientProvider>
+			<JobHeader
+				{...args}
+				sessionModelControl={{
+					model,
+					models: [
+						{ id: base.model, label: 'Kimi K2.6' },
+						{ id: 'provider/next-model', label: 'Next model' },
+					],
+					isLoadingModels: false,
+					onChange: setModel,
+					isPending: false,
+				}}
+			/>
 		);
 	},
 	play: async (context) => {

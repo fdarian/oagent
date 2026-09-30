@@ -1,4 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
 import { CheckIcon, CopyIcon, EllipsisIcon, XCircleIcon } from 'lucide-react';
 import {
 	type ComponentProps,
@@ -21,7 +20,6 @@ import {
 } from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
-import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
 import {
@@ -34,6 +32,9 @@ import {
 
 type SessionModelControl = {
 	model?: string;
+	models?: ReadonlyArray<{ id: string; label?: string }>;
+	isLoadingModels: boolean;
+	modelsError?: string;
 	onChange: (model: string) => void;
 	isPending: boolean;
 	error?: string;
@@ -251,27 +252,17 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	);
 }
 
-function SessionModelSelect(props: {
-	backend: Backend;
-	control: SessionModelControl;
-}) {
-	const modelsQuery = useQuery(
-		orpc.models.list.queryOptions({
-			input: { backend: props.backend },
-			staleTime: 5 * 60 * 1000,
-		}),
-	);
-	const models = modelsQuery.data;
-	const error = props.control.error ?? modelsQuery.error?.message;
+function SessionModelSelect(props: { control: SessionModelControl }) {
+	const error = props.control.error ?? props.control.modelsError;
 	return (
 		<span className="flex min-w-0 flex-col gap-1">
 			<Select
 				value={props.control.model ?? null}
 				disabled={
 					props.control.isPending ||
-					modelsQuery.isPending ||
-					modelsQuery.isError ||
-					models?.length === 0
+					props.control.isLoadingModels ||
+					props.control.modelsError !== undefined ||
+					props.control.models?.length === 0
 				}
 				onValueChange={(model) => {
 					if (model !== props.control.model) props.control.onChange(model);
@@ -284,14 +275,14 @@ function SessionModelSelect(props: {
 				>
 					<SelectValue
 						placeholder={
-							modelsQuery.isPending ? 'Loading models…' : 'Select model'
+							props.control.isLoadingModels ? 'Loading models…' : 'Select model'
 						}
 					>
 						{props.control.model}
 					</SelectValue>
 				</SelectTrigger>
 				<SelectContent align="start">
-					{models?.map((model) => (
+					{props.control.models?.map((model) => (
 						<SelectItem key={model.id} value={model.id}>
 							{model.label ?? model.id}
 						</SelectItem>
@@ -344,10 +335,7 @@ export function JobHeader(props: JobHeaderProps) {
 						<span>·</span>
 						<span className="flex min-w-0 max-w-full items-center gap-10">
 							{props.sessionModelControl !== undefined ? (
-								<SessionModelSelect
-									backend={props.backend}
-									control={props.sessionModelControl}
-								/>
+								<SessionModelSelect control={props.sessionModelControl} />
 							) : (
 								props.model !== undefined &&
 								props.model !== '' && (

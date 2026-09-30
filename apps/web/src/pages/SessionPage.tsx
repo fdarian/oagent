@@ -95,6 +95,13 @@ function SessionConversation(props: {
 	const setChildSelection = activeChildState[1];
 	const events = useJobEvents(jobId);
 	const queryClient = useQueryClient();
+	const modelsQuery = useQuery(
+		orpc.models.list.queryOptions({
+			input: { backend: props.session.backend },
+			enabled: props.session.supportsModelSwitch,
+			staleTime: 5 * 60 * 1000,
+		}),
+	);
 	const setModel = useMutation(
 		orpc.sessions.setModel.mutationOptions({
 			onSuccess: async () => {
@@ -494,6 +501,9 @@ function SessionConversation(props: {
 											props.session.supportsModelSwitch
 												? {
 														model: props.session.model,
+														models: modelsQuery.data,
+														isLoadingModels: modelsQuery.isPending,
+														modelsError: modelsQuery.error?.message,
 														onChange: (model) =>
 															setModel.mutate({
 																sessionId: props.session.id,
