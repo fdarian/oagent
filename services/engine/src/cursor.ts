@@ -118,6 +118,7 @@ export class Cursor extends Context.Service<Cursor>()('oagent/Cursor', {
 
 		return {
 			backend: 'cursor',
+			supportsModelSwitch: true,
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const model =
 					input.model !== undefined && input.model in CURSOR_MODEL_ALIASES

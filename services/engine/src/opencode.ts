@@ -676,6 +676,7 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 
 		return {
 			backend: 'opencode',
+			supportsModelSwitch: true,
 			runTurn,
 			forkSession,
 			forkSessionBefore,

@@ -64,6 +64,15 @@ export class SessionPersistenceError extends Schema.TaggedError<SessionPersisten
 	{ message: Schema.String, cause: Schema.Defect() },
 ) {}
 
+export class SessionModelError extends Schema.TaggedError<SessionModelError>()(
+	'SessionModelError',
+	{
+		sessionId: Schema.String,
+		code: Schema.Literals(['UNSUPPORTED_BACKEND', 'INVALID_MODEL']),
+		message: Schema.String,
+	},
+) {}
+
 type StartInput = {
 	title: string;
 	prompt: string;
@@ -366,6 +375,41 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				return { sessionId: session.uuid, ...result };
 			});
 
+		const setModel = (sessionId: string, model: string) =>
+			Effect.gen(function* () {
+				const session = yield* findSession(sessionId);
+				const harness = harnessRegistry.get(parseBackend(session.backend));
+				if (!harness.supportsModelSwitch) {
+					return yield* new SessionModelError({
+						sessionId,
+						code: 'UNSUPPORTED_BACKEND',
+						message: `The ${session.backend} backend does not support switching models on a session.`,
+					});
+				}
+				const models = yield* harness.listModels();
+				if (!models.some((entry) => entry.id === model)) {
+					return yield* new SessionModelError({
+						sessionId,
+						code: 'INVALID_MODEL',
+						message: `Model ${model} is not available for ${session.backend}.`,
+					});
+				}
+				yield* Effect.try({
+					try: () =>
+						db
+							.update(schema.sessions)
+							.set({ model, reasoning_effort: null })
+							.where(eq(schema.sessions.id, session.id))
+							.run(),
+					catch: (cause) =>
+						new SessionPersistenceError({
+							message: 'Could not persist the session model.',
+							cause,
+						}),
+				});
+				return { ok: true as const };
+			});
+
 		const sendMessage = (input: { sessionId: string; prompt: string }) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(input.sessionId);
@@ -421,7 +465,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 
 				const latest = latestJob(session);
-				if (latest === undefined || latest.model === null) {
+				const currentSession = yield* findSession(input.sessionId);
+				const model = currentSession.model ?? latest?.model;
+				if (model === undefined || model === null) {
 					return yield* new SessionNotReady({
 						sessionId: session.uuid,
 						message: `Session ${session.uuid} has no prior turn from which to inherit a model.`,
@@ -431,9 +477,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.start({
 						session,
 						prompt: input.prompt,
-						model: `${parseBackend(session.backend)}:${latest.model}`,
-						reasoningEffort: latest.reasoning_effort ?? undefined,
-						agentType: latest.agent_type ?? undefined,
+						model: `${parseBackend(session.backend)}:${model}`,
+						reasoningEffort:
+							(currentSession.model !== null
+								? currentSession.reasoning_effort
+								: latest?.reasoning_effort) ?? undefined,
+						agentType: latest?.agent_type ?? undefined,
 					})
 					.pipe(
 						Effect.mapError((error) =>
@@ -552,6 +601,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					title: session.title,
 					cwd: session.cwd,
 					createdAt: session.created_at.getTime(),
+					backend: parseBackend(session.backend),
+					model: session.model ?? last?.model,
+					supportsModelSwitch: harnessRegistry.get(
+						parseBackend(session.backend),
+					).supportsModelSwitch,
 					status: last?.status,
 					jobs: rootJobs,
 				};
@@ -607,6 +661,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		return {
 			start,
+			setModel,
 			sendMessage,
 			read,
 			cancel,
