@@ -20,8 +20,15 @@ import {
 } from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import type { client } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from './ui/tooltip';
 
 export type JobHeaderProps = {
 	id: string;
@@ -35,6 +42,9 @@ export type JobHeaderProps = {
 	agentType?: string;
 	sessionId?: string;
 	harnessSessionId?: string;
+	cost?: Awaited<ReturnType<typeof client.sessions.cost>>;
+	costLoading?: boolean;
+	costError?: string;
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
@@ -234,6 +244,60 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	);
 }
 
+function SessionCost(
+	props: Pick<JobHeaderProps, 'cost' | 'costLoading' | 'costError'>,
+) {
+	if (props.costError !== undefined)
+		return (
+			<TooltipProvider>
+				<Tooltip>
+					<TooltipTrigger className="cursor-help text-muted-foreground">
+						—
+					</TooltipTrigger>
+					<TooltipContent>{props.costError}</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+		);
+	if (props.cost === undefined)
+		return props.costLoading ? (
+			<span
+				role="status"
+				aria-label="Loading session cost"
+				className="animate-pulse text-muted-foreground"
+			>
+				…
+			</span>
+		) : null;
+	if (props.cost.status === 'unsupported') return null;
+	const cost = props.cost;
+	const details = [
+		'API-price-equivalent cost (USD)',
+		`Input: ${cost.inputTokens.toLocaleString()} tokens`,
+		`Output: ${cost.outputTokens.toLocaleString()} tokens`,
+		`Cache write: ${cost.cacheCreationTokens.toLocaleString()} tokens`,
+		`Cache read: ${cost.cacheReadTokens.toLocaleString()} tokens`,
+		...(cost.stale ? ['Updates when the turn ends'] : []),
+	].join('\n');
+	return (
+		<TooltipProvider>
+			<Tooltip>
+				<TooltipTrigger
+					aria-label={`Session API-price-equivalent cost: $${cost.totalCostUsd.toFixed(2)}`}
+					className={cn(
+						'cursor-help tabular-nums',
+						cost.stale ? 'text-muted-foreground opacity-60' : 'text-foreground',
+					)}
+				>
+					${cost.totalCostUsd.toFixed(2)}
+				</TooltipTrigger>
+				<TooltipContent className="whitespace-pre-line">
+					{details}
+				</TooltipContent>
+			</Tooltip>
+		</TooltipProvider>
+	);
+}
+
 export function JobHeader(props: JobHeaderProps) {
 	const [copied, setCopied] = useState(false);
 
@@ -286,6 +350,11 @@ export function JobHeader(props: JobHeaderProps) {
 								backend={props.backend}
 								sessionId={props.sessionId}
 								harnessSessionId={props.harnessSessionId}
+							/>
+							<SessionCost
+								cost={props.cost}
+								costLoading={props.costLoading}
+								costError={props.costError}
 							/>
 						</span>
 					</div>

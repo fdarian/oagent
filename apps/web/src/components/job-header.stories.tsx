@@ -60,3 +60,37 @@ export const Errored: Story = {
 		onNewSideChat: fn(),
 	},
 };
+
+const cost = {
+	status: 'ready' as const,
+	inputTokens: 12345,
+	outputTokens: 6789,
+	cacheCreationTokens: 2000,
+	cacheReadTokens: 123456,
+	totalCostUsd: 1.23,
+	computedAt: Date.now(),
+	stale: false,
+};
+
+export const WithCost: Story = {
+	args: { ...Completed.args, cost },
+};
+
+export const StaleCost: Story = {
+	args: { ...Running.args, cost: { ...cost, stale: true } },
+};
+
+export const LoadingCost: Story = {
+	args: { ...Completed.args, costLoading: true },
+};
+
+export const CostError: Story = {
+	args: {
+		...Completed.args,
+		costError: 'No Codex session found with ID: missing-session',
+	},
+};
+
+export const UnsupportedCost: Story = {
+	args: { ...Completed.args, backend: 'grok', cost: { status: 'unsupported' } },
+};
