@@ -1,5 +1,8 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { fn } from 'storybook/test';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useState } from 'react';
+import { expect, fn, userEvent, within } from 'storybook/test';
+import { orpc } from '@/lib/orpc';
 import { JobHeader } from './job-header';
 
 const meta: Meta<typeof JobHeader> = {
@@ -58,5 +61,59 @@ export const Errored: Story = {
 		terminatedAt: Date.now() - 15_000,
 		onCancel: undefined,
 		onNewSideChat: fn(),
+	},
+};
+
+export const SwitchModel: Story = {
+	args: { ...base, status: 'running' },
+	render: function Render(args) {
+		const [model, setModel] = useState(base.model);
+		const [queryClient] = useState(() => {
+			const client = new QueryClient();
+			client.setQueryData(
+				orpc.models.list.key({ input: { backend: 'opencode' }, type: 'query' }),
+				[
+					{ id: base.model, label: 'Kimi K2.6' },
+					{ id: 'provider/next-model', label: 'Next model' },
+				],
+			);
+			return client;
+		});
+		return (
+			<QueryClientProvider client={queryClient}>
+				<JobHeader
+					{...args}
+					sessionModelControl={{ model, onChange: setModel, isPending: false }}
+				/>
+			</QueryClientProvider>
+		);
+	},
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await userEvent.click(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		);
+		await userEvent.click(
+			await within(context.canvasElement.ownerDocument.body).findByRole(
+				'option',
+				{
+					name: 'Next model',
+				},
+			),
+		);
+		await expect(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		).toHaveTextContent('provider/next-model');
+	},
+};
+
+export const UnsupportedModelSwitch: Story = {
+	args: { ...base, backend: 'grok', status: 'done', model: 'grok-4' },
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.queryByRole('combobox', { name: 'Session model' }),
+		).not.toBeInTheDocument();
+		await expect(canvas.getByText('grok-4')).toBeVisible();
 	},
 };
