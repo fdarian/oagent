@@ -191,10 +191,13 @@ test('backfills legacy jobs into sessions without losing side chats or events', 
 test('backfills session titles from the lowest job id and names empty sessions', () => {
 	const sqlite = new Database(':memory:');
 	try {
-		const latest = bundle.journal.entries.at(-1);
-		if (latest === undefined) throw new Error('Missing latest migration');
+		const titleMigration = bundle.journal.entries.find(
+			(entry) => entry.tag === '0016_parched_menace',
+		);
+		if (titleMigration === undefined)
+			throw new Error('Missing session title migration');
 		const previousMigrations = bundle.journal.entries.filter(
-			(entry) => entry.idx < latest.idx,
+			(entry) => entry.idx < titleMigration.idx,
 		);
 		for (const migration of previousMigrations) {
 			const migrationSql = bundle.files[migration.tag];

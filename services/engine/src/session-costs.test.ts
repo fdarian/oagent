@@ -19,6 +19,7 @@ function withCosts(
 	backend: string,
 	run: (services: {
 		costs: SessionCosts['Service'];
+		settings: Settings['Service'];
 		database: ReturnType<typeof createTestDatabase>;
 		session: typeof schema.sessions.$inferSelect;
 	}) => Effect.Effect<void, unknown>,
@@ -45,7 +46,7 @@ function withCosts(
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Settings, settings),
 		);
-		yield* run({ costs, database, session });
+		yield* run({ costs, settings, database, session });
 	}).pipe(Effect.ensuring(Effect.sync(() => database.sqlite.close())));
 }
 
@@ -103,6 +104,7 @@ describe('SessionCosts', () => {
 						]);
 						if (backend === 'codex')
 							expect(args?.[1]?.env?.CODEX_HOME).toBe('/test/codex-home');
+						else expect(args?.[1]?.env).toBeUndefined();
 						yield* services.costs.get('session');
 						expect(command).toHaveBeenCalledTimes(1);
 						const job = services.database.db
@@ -179,6 +181,72 @@ describe('SessionCosts', () => {
 			);
 		});
 	}
+
+	for (const backend of ['claude', 'codex', 'opencode']) {
+		test(`${backend}: not-found response names the backend and does not cache zeros`, async () => {
+			const command = mockCommand(
+				backend === 'opencode' ? { sessions: [] } : null,
+			);
+			const name =
+				backend === 'opencode'
+					? 'OpenCode'
+					: backend === 'codex'
+						? 'Codex'
+						: 'Claude';
+			await Effect.runPromise(
+				withCosts(backend, (services) =>
+					Effect.gen(function* () {
+						const result = yield* Effect.exit(services.costs.get('session'));
+						expect(Exit.isFailure(result)).toBe(true);
+						if (Exit.isFailure(result))
+							expect(Exit.findErrorOption(result)).toMatchObject({
+								value: {
+									_tag: 'SessionCostError',
+									message: `No ${name} session found with ID: harness-id`,
+								},
+							});
+						expect(
+							services.database.db.select().from(schema.sessionCosts).all(),
+						).toHaveLength(0);
+					}),
+				).pipe(Effect.ensuring(Effect.sync(() => command.mockRestore()))),
+			);
+		});
+
+		test(`${backend}: malformed response retains the backend-specific decode error`, async () => {
+			const command = mockCommand({});
+			await Effect.runPromise(
+				withCosts(backend, (services) =>
+					Effect.gen(function* () {
+						const result = yield* Effect.exit(services.costs.get('session'));
+						expect(Exit.isFailure(result)).toBe(true);
+						if (Exit.isFailure(result))
+							expect(Exit.findErrorOption(result)).toMatchObject({
+								value: {
+									_tag: 'SessionCostError',
+									message: `Invalid ccusage ${backend} response`,
+								},
+							});
+					}),
+				).pipe(Effect.ensuring(Effect.sync(() => command.mockRestore()))),
+			);
+		});
+	}
+
+	test('Codex inherits the environment when no home is configured', async () => {
+		const command = mockCommand(cost);
+		await Effect.runPromise(
+			withCosts('codex', (services) =>
+				Effect.gen(function* () {
+					services.settings.setCodexHome(null);
+					expect(yield* services.costs.get('session')).toMatchObject({
+						status: 'ready',
+					});
+					expect(command.mock.calls[0]?.[1]?.env).toBeUndefined();
+				}),
+			).pipe(Effect.ensuring(Effect.sync(() => command.mockRestore()))),
+		);
+	});
 
 	test('unknown session and absent harness ID are typed errors', async () => {
 		const command = mockCommand(cost);

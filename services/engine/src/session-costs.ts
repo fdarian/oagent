@@ -15,21 +15,6 @@ const CostEntry = Schema.Struct({
 	...TokenCounts.fields,
 	totalCost: Schema.Number,
 });
-const ClaudeCost = Schema.fromJsonString(
-	Schema.Struct({
-		sessionId: Schema.String,
-		totalCost: Schema.Number,
-		entries: Schema.Array(TokenCounts),
-	}),
-);
-const CodexCost = Schema.fromJsonString(CostEntry);
-const OpenCodeCosts = Schema.fromJsonString(
-	Schema.Struct({
-		sessions: Schema.Array(
-			Schema.Struct({ ...CostEntry.fields, sessionId: Schema.String }),
-		),
-	}),
-);
 
 export class SessionCostError extends Schema.TaggedError<SessionCostError>()(
 	'SessionCostError',
@@ -47,7 +32,7 @@ type Cost = {
 	totalCostUsd: number;
 };
 
-function runCcusage(args: string[], env: Record<string, string>) {
+function runCcusage(args: string[], env?: NodeJS.ProcessEnv) {
 	return Effect.scoped(
 		Effect.gen(function* () {
 			const child = yield* Effect.acquireRelease(
@@ -100,66 +85,127 @@ function runCcusage(args: string[], env: Record<string, string>) {
 	);
 }
 
-function computeCost(backend: string, id: string, env: Record<string, string>) {
+function computeClaudeCost(id: string) {
+	const response = Schema.fromJsonString(
+		Schema.NullOr(
+			Schema.Struct({
+				sessionId: Schema.String,
+				totalCost: Schema.Number,
+				entries: Schema.Array(TokenCounts),
+			}),
+		),
+	);
 	return Effect.gen(function* () {
-		if (backend === 'claude') {
-			const raw = yield* runCcusage(['session', '--json', '--id', id], env);
-			const result = yield* Schema.decodeUnknownEffect(ClaudeCost)(raw);
-			if (result.sessionId !== id)
-				return yield* new SessionCostError({
-					message: `No Claude session found with ID: ${id}`,
-				});
-			const tokens = result.entries.reduce(
-				(total, entry) => ({
-					inputTokens: total.inputTokens + entry.inputTokens,
-					outputTokens: total.outputTokens + entry.outputTokens,
-					cacheCreationTokens:
-						total.cacheCreationTokens + entry.cacheCreationTokens,
-					cacheReadTokens: total.cacheReadTokens + entry.cacheReadTokens,
-				}),
-				{
-					inputTokens: 0,
-					outputTokens: 0,
-					cacheCreationTokens: 0,
-					cacheReadTokens: 0,
-				},
-			);
-			return { ...tokens, totalCostUsd: result.totalCost };
-		}
+		const raw = yield* runCcusage(['session', '--json', '--id', id]);
+		const result = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
+			Effect.mapError(
+				(cause) =>
+					new SessionCostError({
+						message: 'Invalid ccusage claude response',
+						cause,
+					}),
+			),
+		);
+		if (result === null || result.sessionId !== id)
+			return yield* new SessionCostError({
+				message: `No Claude session found with ID: ${id}`,
+			});
+		const tokens = result.entries.reduce(
+			(total, entry) => ({
+				inputTokens: total.inputTokens + entry.inputTokens,
+				outputTokens: total.outputTokens + entry.outputTokens,
+				cacheCreationTokens:
+					total.cacheCreationTokens + entry.cacheCreationTokens,
+				cacheReadTokens: total.cacheReadTokens + entry.cacheReadTokens,
+			}),
+			{
+				inputTokens: 0,
+				outputTokens: 0,
+				cacheCreationTokens: 0,
+				cacheReadTokens: 0,
+			},
+		);
+		return { ...tokens, totalCostUsd: result.totalCost };
+	});
+}
+
+function toCost(entry: Schema.Schema.Type<typeof CostEntry>): Cost {
+	return {
+		inputTokens: entry.inputTokens,
+		outputTokens: entry.outputTokens,
+		cacheCreationTokens: entry.cacheCreationTokens,
+		cacheReadTokens: entry.cacheReadTokens,
+		totalCostUsd: entry.totalCost,
+	};
+}
+
+function computeCodexCost(id: string, codexHome: string | undefined) {
+	const response = Schema.fromJsonString(Schema.NullOr(CostEntry));
+	const env =
+		codexHome === undefined
+			? undefined
+			: { ...process.env, CODEX_HOME: codexHome };
+	return Effect.gen(function* () {
 		const raw = yield* runCcusage(
-			backend === 'codex'
-				? ['codex', 'session', '--json', '--id', id]
-				: ['opencode', 'session', '--json'],
+			['codex', 'session', '--json', '--id', id],
 			env,
 		);
-		const entry =
-			backend === 'codex'
-				? yield* Schema.decodeUnknownEffect(CodexCost)(raw)
-				: (yield* Schema.decodeUnknownEffect(OpenCodeCosts)(raw)).sessions.find(
-						(entry) => entry.sessionId === id,
-					);
+		const entry = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
+			Effect.mapError(
+				(cause) =>
+					new SessionCostError({
+						message: 'Invalid ccusage codex response',
+						cause,
+					}),
+			),
+		);
+		if (entry === null)
+			return yield* new SessionCostError({
+				message: `No Codex session found with ID: ${id}`,
+			});
+		return toCost(entry);
+	});
+}
+
+function computeOpenCodeCost(id: string) {
+	const response = Schema.fromJsonString(
+		Schema.Struct({
+			sessions: Schema.Array(
+				Schema.Struct({ ...CostEntry.fields, sessionId: Schema.String }),
+			),
+		}),
+	);
+	return Effect.gen(function* () {
+		const raw = yield* runCcusage(['opencode', 'session', '--json']);
+		const result = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
+			Effect.mapError(
+				(cause) =>
+					new SessionCostError({
+						message: 'Invalid ccusage opencode response',
+						cause,
+					}),
+			),
+		);
+		const entry = result.sessions.find((entry) => entry.sessionId === id);
 		if (entry === undefined)
 			return yield* new SessionCostError({
 				message: `No OpenCode session found with ID: ${id}`,
 			});
-		return {
-			inputTokens: entry.inputTokens,
-			outputTokens: entry.outputTokens,
-			cacheCreationTokens: entry.cacheCreationTokens,
-			cacheReadTokens: entry.cacheReadTokens,
-			totalCostUsd: entry.totalCost,
-		};
-	}).pipe(
-		Effect.mapError((cause) =>
-			cause instanceof SessionCostError
-				? cause
-				: new SessionCostError({
-						message: `Invalid ccusage ${backend} response`,
-						cause,
-					}),
-		),
-	);
+		return toCost(entry);
+	});
 }
+
+const costComputers = new Map<
+	string,
+	(
+		id: string,
+		codexHome: string | undefined,
+	) => Effect.Effect<Cost, SessionCostError>
+>([
+	['claude', computeClaudeCost],
+	['codex', computeCodexCost],
+	['opencode', computeOpenCodeCost],
+]);
 
 export class SessionCosts extends Context.Service<SessionCosts>()(
 	'oagent/SessionCosts',
@@ -210,7 +256,8 @@ export class SessionCosts extends Context.Service<SessionCosts>()(
 						return yield* new SessionCostError({
 							message: `Session not found: ${sessionId}`,
 						});
-					if (!['claude', 'codex', 'opencode'].includes(session.backend))
+					const computeCost = costComputers.get(session.backend);
+					if (computeCost === undefined)
 						return { status: 'unsupported' as const };
 					if (session.harness_session_id === null)
 						return yield* new SessionCostError({
@@ -276,17 +323,7 @@ export class SessionCosts extends Context.Service<SessionCosts>()(
 							// Timestamp the start so a turn ending during the scan invalidates this snapshot.
 							const computedAt = new Date();
 							const codexHome = settings.getCodexHome();
-							const env = {
-								...Object.fromEntries(
-									Object.entries(Bun.env).flatMap((entry) =>
-										typeof entry[1] === 'string' ? [[entry[0], entry[1]]] : [],
-									),
-								),
-								...(session.backend === 'codex' && codexHome !== undefined
-									? { CODEX_HOME: codexHome }
-									: {}),
-							};
-							const cost = yield* computeCost(session.backend, harnessId, env);
+							const cost = yield* computeCost(harnessId, codexHome);
 							yield* Effect.try({
 								try: () => {
 									const values = {
