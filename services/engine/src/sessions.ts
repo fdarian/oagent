@@ -1,7 +1,7 @@
 /// <reference types="bun" />
 
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -548,15 +548,31 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const list = (input: { cwd?: string }) =>
 			Effect.sync(() => {
+				const activity = db
+					.select({
+						sessionId: schema.jobs.session_id,
+						lastActivityAt:
+							sql<number>`max(coalesce(${schema.jobs.terminated_at}, ${schema.jobs.created_at}))`.as(
+								'last_activity_at',
+							),
+					})
+					.from(schema.jobs)
+					.where(isNull(schema.jobs.side_chat_id))
+					.groupBy(schema.jobs.session_id)
+					.as('activity');
 				const rows = db
-					.select()
+					.select({
+						...getTableColumns(schema.sessions),
+						lastActivityAt: activity.lastActivityAt,
+					})
 					.from(schema.sessions)
+					.innerJoin(activity, eq(activity.sessionId, schema.sessions.id))
 					.where(
 						input.cwd === undefined
 							? undefined
 							: eq(schema.sessions.cwd, input.cwd),
 					)
-					.orderBy(desc(schema.sessions.created_at), desc(schema.sessions.id))
+					.orderBy(desc(activity.lastActivityAt), desc(schema.sessions.id))
 					.limit(100)
 					.all();
 				const sessions: Array<{
@@ -570,6 +586,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					model?: string;
 					agentType?: string;
 					createdAt: number;
+					lastActivityAt: number;
 				}> = [];
 				for (const session of rows) {
 					const job = latestJob(session);
@@ -585,6 +602,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						model: job.model ?? undefined,
 						agentType: job.agent_type ?? undefined,
 						createdAt: session.created_at.getTime(),
+						lastActivityAt: session.lastActivityAt,
 					});
 				}
 				return sessions;

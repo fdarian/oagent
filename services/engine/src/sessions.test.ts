@@ -635,6 +635,75 @@ describe('session turns', () => {
 		database.sqlite.close();
 	});
 
+	test('lists sessions by root-job activity before limiting, with creation time preserved', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(database, 'opencode', () =>
+			Effect.die('Unexpected turn'),
+		);
+		const older = insertSession(database, {
+			uuid: 'older',
+			title: 'Older',
+			backend: 'opencode',
+			harnessSessionId: 'older',
+			cwd: '/repo',
+		});
+		database.db
+			.update(schema.sessions)
+			.set({ created_at: new Date(1) })
+			.where(eq(schema.sessions.id, older.id))
+			.run();
+		for (let index = 0; index < 101; index++) {
+			const newer = insertSession(database, {
+				uuid: `newer-${index}`,
+				title: 'Newer',
+				backend: 'opencode',
+				harnessSessionId: `newer-${index}`,
+				cwd: '/repo',
+			});
+			database.db
+				.insert(schema.jobs)
+				.values({
+					uuid: `job-${index}`,
+					session_id: newer.id,
+					status: 'done',
+					prompt: 'newer',
+					created_at: new Date(200),
+				})
+				.run();
+		}
+		database.db
+			.insert(schema.jobs)
+			.values([
+				{
+					uuid: 'older-completed',
+					session_id: older.id,
+					status: 'done',
+					prompt: 'completed',
+					created_at: new Date(100),
+					terminated_at: new Date(400),
+				},
+				{
+					uuid: 'older-latest',
+					session_id: older.id,
+					status: 'done',
+					prompt: 'latest',
+					created_at: new Date(300),
+					terminated_at: new Date(350),
+				},
+			])
+			.run();
+		const listed = await Effect.runPromise(services.sessions.list({}));
+		expect(listed).toHaveLength(100);
+		expect(listed[0]).toMatchObject({
+			id: 'older',
+			jobId: 'older-latest',
+			createdAt: 1,
+			lastActivityAt: 400,
+		});
+		expect(listed[1]).toMatchObject({ id: 'newer-100', lastActivityAt: 200 });
+		database.sqlite.close();
+	});
+
 	test('steers a running OpenCode turn and rejects busy sessions on other backends', async () => {
 		const database = createTestDatabase();
 		const turnStarted = Promise.withResolvers<void>();
