@@ -16,12 +16,5 @@
 		"@biomejs/biome": "^2.4.15",
 		"@changesets/cli": "^2.29.7",
 		"turbo": "^2.9.14"
-	},
-	"devEngines": {
-		"runtime": {
-			"name": "bun",
-			"version": "latest",
-			"onFail": "download"
-		}
 	}
 }
