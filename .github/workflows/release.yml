@@ -46,7 +46,7 @@ jobs:
 
       - name: Build binaries
         if: steps.changesets.outputs.published == 'true'
-        run: bun run --cwd apps/cli build:binaries
+        run: bun run --cwd apps/cli build:binaries --prod
 
       - name: Upload release assets
         if: steps.changesets.outputs.published == 'true'
