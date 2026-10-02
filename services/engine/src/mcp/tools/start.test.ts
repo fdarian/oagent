@@ -99,7 +99,7 @@ Configured agent types (use as \`agent_type\`):
 
 	test('describes session continuation and read handles', () => {
 		expect(buildDescription()).toBe(
-			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. Use `read` to check a background turn.',
+			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. Use `read` to check a background turn. Model accepts `<backend>:<modelId>[#effort]` or `<alias>[#effort]`.',
 		);
 	});
 
