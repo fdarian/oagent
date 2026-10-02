@@ -4,7 +4,7 @@
 	"private": true,
 	"description": "MCP server that exposes OpenCode to Claude Code as a subagent (via ACP)",
 	"license": "Apache-2.0",
-	"packageManager": "pnpm@12.6.0",
+	"packageManager": "pnpm@12.8.1",
 	"scripts": {
 		"check": "turbo run check",
 		"format": "biome check --write",
