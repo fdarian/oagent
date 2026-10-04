@@ -16,6 +16,7 @@ import { SideChats } from '../side-chats.ts';
 import { validateWorktreeTemplate } from '../worktree.ts';
 
 export type EngineServices =
+	| AliasPresets
 	| Jobs
 	| Sessions
 	| SessionCosts
@@ -425,6 +426,32 @@ const router = procedure.router({
 				return yield* sideChats.send(options.input);
 			}),
 	},
+	aliasPresets: {
+		state: procedure.input(v.void_()).effect(function* () {
+			const presets = yield* AliasPresets;
+			return yield* presets.state();
+		}),
+		create: procedure
+			.input(v.object({ name: v.string() }))
+			.effect(function* (options) {
+				const presets = yield* AliasPresets;
+				return yield* presets.create(options.input.name);
+			}),
+		activate: procedure
+			.input(v.object({ id: v.string() }))
+			.effect(function* (options) {
+				const presets = yield* AliasPresets;
+				return yield* presets.activate(options.input.id);
+			}),
+		save: procedure.input(v.void_()).effect(function* () {
+			const presets = yield* AliasPresets;
+			return yield* presets.save();
+		}),
+		discard: procedure.input(v.void_()).effect(function* () {
+			const presets = yield* AliasPresets;
+			return yield* presets.discard();
+		}),
+	},
 	aliases: {
 		list: procedure
 			.input(Schema.toStandardSchemaV1(Schema.Void))
@@ -700,3 +727,5 @@ const router = procedure.router({
 
 export type EngineRouter = typeof router;
 export { router };
+
+import { AliasPresets } from '../alias-presets.ts';
