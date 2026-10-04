@@ -1,4 +1,4 @@
-import { Engine, parseIdleDuration } from '@oagent/engine';
+import { acquireHttpListener, Engine, parseIdleDuration } from '@oagent/engine';
 import { type Duration, Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import { getLoggerLayer } from '#/lib/logging.ts';
@@ -30,16 +30,22 @@ function runServe(params: {
 	idleExit?: Duration.Duration;
 }) {
 	const baseProgram = Effect.gen(function* () {
-		const engine = yield* Engine;
-
-		yield* engine.startServer({
-			port: params.port,
-			serverInfo: { name: 'oagent', version: params.version },
-			filemap: yield* webFilemap,
-			portless: params.portless,
-			idleExit: params.idleExit,
-		});
-	}).pipe(Effect.provide(Engine.layer));
+		const listener =
+			params.idleExit === undefined
+				? undefined
+				: yield* acquireHttpListener(params.port);
+		yield* Effect.gen(function* () {
+			const engine = yield* Engine;
+			yield* engine.startServer({
+				port: params.port,
+				serverInfo: { name: 'oagent', version: params.version },
+				filemap: yield* webFilemap,
+				portless: params.portless,
+				idleExit: params.idleExit,
+				listener,
+			});
+		}).pipe(Effect.provide(Engine.layer));
+	}).pipe(Effect.scoped);
 
 	const loggerLayer = getLoggerLayer(params.logFile);
 

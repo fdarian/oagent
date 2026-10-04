@@ -1,7 +1,6 @@
 /// <reference types="bun" />
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { Context, Duration, Effect, Layer, Schema } from 'effect';
-import { createIdleTracker } from './idle.ts';
+import { Context, Deferred, Duration, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
@@ -11,6 +10,7 @@ import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
+import { createIdleTracker } from './idle.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
@@ -33,12 +33,52 @@ class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationE
 	}
 }
 
+type RequestHandler = (request: Request) => Response | Promise<Response>;
+
+export function acquireHttpListener(port: number) {
+	return Effect.gen(function* () {
+		const ready = yield* Deferred.make<RequestHandler, Error>();
+		const resolvedPort =
+			process.env.OPENCODE_MCP_PORT === undefined
+				? port
+				: Number.parseInt(process.env.OPENCODE_MCP_PORT, 10);
+		const server = yield* Effect.acquireRelease(
+			Effect.try(() =>
+				Bun.serve({
+					hostname: '127.0.0.1',
+					port: resolvedPort,
+					idleTimeout: 0,
+					fetch: async (request) => {
+						const handler = await Effect.runPromise(Deferred.await(ready));
+						return handler(request);
+					},
+				}),
+			),
+			(server) =>
+				Deferred.fail(
+					ready,
+					new Error('Engine stopped before becoming ready'),
+				).pipe(
+					Effect.andThen(
+						Effect.sync(() => {
+							server.stop(true);
+						}),
+					),
+				),
+		);
+		return { server, ready };
+	});
+}
+
+type HttpListener = Effect.Success<ReturnType<typeof acquireHttpListener>>;
+
 type ServerOptions = {
 	port: number;
 	serverInfo: { name: string; version: string };
 	filemap?: Record<string, string>;
 	portless?: boolean;
 	idleExit?: Duration.Duration;
+	listener?: HttpListener;
 };
 
 export class Engine extends Context.Service<Engine>()('engine', {
@@ -74,6 +114,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 				filemap,
 				portless,
 				idleExit,
+				listener,
 			}: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
@@ -226,13 +267,18 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 					}
 
-					const bindResult = yield* Effect.try({
-						try: () => tryBind(resolvedPort),
-						catch: (cause) =>
-							new Error(
-								`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
-							),
-					});
+					const bindResult =
+						listener === undefined
+							? yield* Effect.try({
+									try: () => tryBind(resolvedPort),
+									catch: (cause) =>
+										new Error(
+											`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
+										),
+								})
+							: { server: listener.server, didFallback: false };
+					if (listener !== undefined)
+						yield* Deferred.succeed(listener.ready, fetchHandler);
 					yield* Effect.addFinalizer(() =>
 						Effect.gen(function* () {
 							lifecycle.accepting = false;
@@ -257,12 +303,6 @@ export class Engine extends Context.Service<Engine>()('engine', {
 									Effect.logWarning('HTTP forced shutdown failed', cause),
 								),
 							);
-						}),
-					);
-
-					yield* Effect.addFinalizer(() =>
-						Effect.sync(() => {
-							bindResult.server.stop(true);
 						}),
 					);
 					if (bindResult.didFallback) {
