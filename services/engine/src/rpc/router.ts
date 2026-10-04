@@ -190,6 +190,13 @@ const router = procedure.router({
 						prompt: Schema.String,
 						cwd: Schema.String,
 						model: Schema.optional(Schema.String),
+						agent: Schema.optional(
+							Schema.Struct({
+								name: agentNameSchema,
+								description: Schema.optional(Schema.String),
+								targets: Schema.Array(agentTargetSchema),
+							}),
+						),
 						agent_type: Schema.optional(Schema.String),
 						title: Schema.optional(Schema.String),
 						sessionId: Schema.optional(Schema.String),
@@ -315,6 +322,7 @@ const router = procedure.router({
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
 					model: options.input.model,
+					agent: options.input.agent,
 					agentType: options.input.agent_type,
 					forkId: options.input.forkId,
 					worktree: options.input.worktree,

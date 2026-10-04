@@ -29,7 +29,7 @@ export class SessionNotReady extends Schema.TaggedError<SessionNotReady>()(
 export class SessionStartError extends Schema.TaggedError<SessionStartError>()(
 	'SessionStartError',
 	{
-		code: Schema.Literals(['MISSING_CWD']),
+		code: Schema.Literals(['MISSING_CWD', 'CONFLICTING_AGENT']),
 		message: Schema.String,
 	},
 ) {}
@@ -79,6 +79,7 @@ type StartInput = {
 	cwd?: string;
 	model?: string;
 	agentType?: string;
+	agent?: import('./agents.ts').AgentDefinition;
 	forkId?: string;
 	worktree?: boolean;
 };
@@ -322,6 +323,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const start = (input: StartInput) =>
 			Effect.gen(function* () {
+				if (input.agent !== undefined && input.agentType !== undefined) {
+					return yield* new SessionStartError({
+						code: 'CONFLICTING_AGENT',
+						message: 'agent and agent_type are mutually exclusive',
+					});
+				}
 				const source =
 					input.forkId === undefined ? undefined : findForkSource(input.forkId);
 				if (source?.job !== undefined && source.job.model !== null) {
@@ -330,7 +337,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							input.model ??
 							`${parseBackend(source.session.backend)}:${source.job.model}`,
 						backend: parseBackend(source.session.backend),
-						agentType: input.agentType ?? source.job.agent_type ?? undefined,
+						agentType:
+							input.agent === undefined
+								? (input.agentType ?? source.job.agent_type ?? undefined)
+								: undefined,
+						agent: input.agent,
 					});
 				}
 				const fork =
@@ -351,9 +362,17 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				const model =
 					input.model ??
 					(fork === undefined ? undefined : `${fork.backend}:${fork.model}`);
-				const agentType = input.agentType ?? fork?.agentType;
+				const agentType =
+					input.agent === undefined
+						? (input.agentType ?? fork?.agentType)
+						: undefined;
 				if (fork === undefined && model !== undefined) {
-					yield* jobs.validateStart({ model, backend, agentType });
+					yield* jobs.validateStart({
+						model,
+						backend,
+						agentType,
+						agent: input.agent,
+					});
 				}
 				const session = yield* insertSession({
 					title: input.title,
@@ -369,6 +388,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					prompt: input.prompt,
 					model,
 					reasoningEffort: fork?.reasoningEffort,
+					agent: input.agent,
 					agentType,
 					worktree: input.worktree,
 				});
