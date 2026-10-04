@@ -188,6 +188,9 @@ catalogs:
     typescript:
       specifier: ^7.0.2
       version: 7.0.2
+    zod:
+      specifier: ^4.5.4
+      version: 4.5.4
 
 importers:
 
@@ -206,7 +209,7 @@ importers:
   apps/cli:
     dependencies:
       zod:
-        specifier: ^4.5.4
+        specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
       '@effect/platform-bun':
@@ -451,7 +454,7 @@ importers:
         specifier: ^7.2.0
         version: 7.2.0
       zod:
-        specifier: ^4.4.3
+        specifier: 'catalog:'
         version: 4.5.4
     devDependencies:
       '@oagent/config':

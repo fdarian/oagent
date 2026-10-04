@@ -46,6 +46,6 @@
 		"typescript": "catalog:"
 	},
 	"dependencies": {
-		"zod": "^4.5.4"
+		"zod": "catalog:"
 	}
 }
