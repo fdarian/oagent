@@ -45,6 +45,7 @@ test.each([null, process.pid])(
 	'scope shutdown preserves the running row and recovery finishes the same job with runner_pid=%s',
 	async (runnerPid) => {
 		const database = createDatabase();
+		const shutdownEvents: string[] = [];
 		const session = insertSession(database, {
 			uuid: 'shutdown-session',
 			title: 'Shutdown',
@@ -74,6 +75,9 @@ test.each([null, process.pid])(
 						prompt: 'original',
 						model: 'opencode:test#high',
 					});
+					jobs.subscribe(started.jobId, (payload) => {
+						shutdownEvents.push(payload.type);
+					});
 					yield* Effect.sleep(10);
 					return started.jobId;
 				}),
@@ -87,6 +91,7 @@ test.each([null, process.pid])(
 		expect(interrupted?.status).toBe('running');
 		expect(interrupted?.interrupted_at).toBeInstanceOf(Date);
 		expect(interrupted?.terminated_at).toBeNull();
+		expect(shutdownEvents).toEqual(['shutdown']);
 		database.db
 			.update(schema.jobs)
 			.set({ runner_pid: runnerPid })

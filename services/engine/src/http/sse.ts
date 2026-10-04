@@ -1,4 +1,3 @@
-import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import type { Jobs } from '../jobs.ts';
 
 export function handleJobEvents(
@@ -29,8 +28,7 @@ export function handleJobEvents(
 			};
 
 			const buffer: Array<
-				| { type: 'event'; event: SessionUpdate; sequence: number }
-				| { type: 'terminal' }
+				Parameters<Parameters<Jobs['Service']['subscribe']>[1]>[0]
 			> = [];
 			let maxSequence = 0;
 			let live = false;
@@ -47,10 +45,13 @@ export function handleJobEvents(
 			}
 
 			const listener = (
-				payload:
-					| { type: 'event'; event: SessionUpdate; sequence: number }
-					| { type: 'terminal' },
+				payload: Parameters<Parameters<Jobs['Service']['subscribe']>[1]>[0],
 			) => {
+				if (payload.type === 'shutdown') {
+					onAbort();
+					signal.removeEventListener('abort', onAbort);
+					return;
+				}
 				if (live) {
 					if (payload.type === 'terminal') {
 						safeEnqueue(encode('__terminal__'));
@@ -72,10 +73,14 @@ export function handleJobEvents(
 
 			// Kick off history replay asynchronously so HTTP headers flush immediately.
 			(async () => {
+				if (closed) {
+					unsubscribe();
+					return;
+				}
 				const BATCH_SIZE = 100;
 				let cursor = 0;
 				while (true) {
-					if (signal.aborted) {
+					if (closed || signal.aborted) {
 						onAbort();
 						return;
 					}
@@ -97,6 +102,7 @@ export function handleJobEvents(
 				live = true;
 				let sawTerminal = false;
 				for (const payload of buffer) {
+					if (payload.type === 'shutdown') return;
 					if (signal.aborted) {
 						onAbort();
 						return;

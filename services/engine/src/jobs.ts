@@ -4,7 +4,7 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { Context, Effect, Exit, Fiber, Layer, Schema } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Option, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
 	Agents,
@@ -132,6 +132,7 @@ type JobsChange = {
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
+export const SHUTDOWN_EVENT = '__shutdown__';
 
 function isRunningSideChatTurnConflict(cause: unknown): boolean {
 	if (cause === null || typeof cause !== 'object' || !('message' in cause)) {
@@ -874,7 +875,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						),
 						Effect.onExit((exit) =>
 							Exit.isFailure(exit)
-								? captureLastMessageId.pipe(
+								? (shutdownJobs.has(input.reservation.jobId)
+										? captureLastMessageId.pipe(
+												Effect.timeoutOption(1_000),
+												Effect.map(Option.getOrUndefined),
+											)
+										: captureLastMessageId
+									).pipe(
 										Effect.flatMap((messageId) =>
 											messageId === undefined
 												? Effect.void
@@ -1296,11 +1303,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listener: (
 				payload:
 					| { type: 'event'; event: SessionUpdate; sequence: number }
-					| { type: 'terminal' },
+					| { type: 'terminal' }
+					| { type: 'shutdown' },
 			) => void,
 		): (() => void) => {
 			const emitter = liveEmitters.get(jobId);
 			if (emitter === undefined) {
+				if (lifecycle.shuttingDown) listener({ type: 'shutdown' });
 				return () => {};
 			}
 
@@ -1311,13 +1320,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					sequence: payload.sequence,
 				});
 			const onTerminal = () => listener({ type: 'terminal' });
+			const onShutdown = () => listener({ type: 'shutdown' });
 
 			emitter.on('event', onEvent);
 			emitter.once(TERMINAL_EVENT, onTerminal);
+			emitter.once(SHUTDOWN_EVENT, onShutdown);
+			if (lifecycle.shuttingDown) onShutdown();
 
 			return () => {
 				emitter.off('event', onEvent);
 				emitter.off(TERMINAL_EVENT, onTerminal);
+				emitter.off(SHUTDOWN_EVENT, onShutdown);
 			};
 		};
 
@@ -1392,17 +1405,20 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return true;
 		};
 
-		yield* Effect.addFinalizer(() =>
+		const shutdown = yield* Effect.cached(
 			Effect.gen(function* () {
 				lifecycle.shuttingDown = true;
 				const running = Array.from(liveFibers.entries());
 				for (const entry of running) shutdownJobs.add(entry[0]);
+				for (const entry of running)
+					liveEmitters.get(entry[0])?.emit(SHUTDOWN_EVENT);
 				yield* Effect.forEach(running, (entry) => Fiber.interrupt(entry[1]), {
 					concurrency: 'unbounded',
 					discard: true,
 				});
 			}),
 		);
+		yield* Effect.addFinalizer(() => shutdown);
 
 		const stranded = db
 			.select({ job: schema.jobs, session: schema.sessions })
@@ -1482,6 +1498,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		return {
 			start,
+			shutdown,
 			reserve,
 			resolveBackend,
 			validateStart,

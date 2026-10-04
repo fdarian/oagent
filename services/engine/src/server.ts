@@ -83,8 +83,14 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						registerTools(server, jobs, sessionService, settings, services);
 						return server;
 					});
+					const lifecycle = { accepting: true };
 
 					const fetchHandler = async (request: Request) => {
+						if (!lifecycle.accepting)
+							return new Response('oagent is restarting', {
+								status: 503,
+								headers: { 'retry-after': '30' },
+							});
 						const url = new URL(request.url);
 
 						// 1. MCP endpoint
@@ -180,6 +186,32 @@ export class Engine extends Context.Service<Engine>()('engine', {
 								`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
 							),
 					});
+					yield* Effect.addFinalizer(() =>
+						Effect.gen(function* () {
+							lifecycle.accepting = false;
+							yield* jobs.shutdown;
+							yield* Effect.tryPromise({
+								try: () => bindResult.server.stop(false),
+								catch: (cause) => cause,
+							}).pipe(
+								Effect.timeout(1_000),
+								Effect.catch((cause) =>
+									Effect.logDebug(
+										'Forcing HTTP shutdown after drain budget',
+										cause,
+									),
+								),
+							);
+							yield* Effect.tryPromise({
+								try: () => bindResult.server.stop(true),
+								catch: (cause) => cause,
+							}).pipe(
+								Effect.catch((cause) =>
+									Effect.logWarning('HTTP forced shutdown failed', cause),
+								),
+							);
+						}),
+					);
 
 					if (bindResult.didFallback) {
 						yield* Effect.logWarning(
@@ -236,7 +268,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					}
 
 					yield* Effect.never;
-				}).pipe(Effect.provideService(Jobs, jobs)),
+				}).pipe(Effect.provideService(Jobs, jobs), Effect.scoped),
 		};
 	}),
 }) {

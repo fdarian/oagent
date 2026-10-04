@@ -17,9 +17,10 @@ import {
 	startInputSchema,
 	startWorktreeInputSchema,
 } from '@oagent/engine';
-import { Effect, Schema } from 'effect';
+import { Effect } from 'effect';
 import { createEngineClient, type EngineClient } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';
+import { listenForTerminal } from './channel-stream.ts';
 
 type WaitResult = Awaited<ReturnType<EngineClient['jobs']['wait']>>;
 
@@ -78,66 +79,6 @@ function channelEventFor(jobId: string, sessionId: string, result: WaitResult) {
 	};
 }
 
-async function listenForTerminal(
-	engineUrl: string,
-	jobId: string,
-	signal: AbortSignal,
-	onEvent: (event: unknown) => Promise<void>,
-) {
-	for (;;) {
-		const sseUrl = new URL(`/jobs/${jobId}/events`, engineUrl);
-		const res = await fetch(sseUrl, { signal });
-		if (!res.ok)
-			throw new Error(`Job event stream returned HTTP ${res.status}`);
-		if (!res.body) {
-			throw new Error('SSE stream has no body');
-		}
-
-		const reader = res.body.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-		let gotTerminal = false;
-
-		while (!gotTerminal) {
-			const chunk = await reader.read();
-			if (chunk.done) break;
-
-			buffer += decoder.decode(chunk.value, { stream: true });
-			const frames = buffer.split('\n\n');
-			const tail = frames.pop();
-			buffer = tail === undefined ? '' : tail;
-
-			for (const frame of frames) {
-				const lines = frame.split('\n');
-				let payload: string | undefined;
-				for (const line of lines) {
-					if (line.startsWith('data:')) {
-						payload = line.slice('data:'.length).trim();
-						break;
-					}
-				}
-				if (payload === undefined) continue;
-				if (payload === '"__terminal__"') {
-					gotTerminal = true;
-					break;
-				}
-				await onEvent(
-					await Effect.runPromise(
-						Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown))(
-							payload,
-						),
-					),
-				);
-			}
-		}
-
-		await reader.cancel().catch(() => {});
-
-		if (gotTerminal) return;
-		// Stream ended without terminal sentinel; reconnect and resume listening.
-	}
-}
-
 async function waitForChannelJob(
 	client: EngineClient,
 	engineUrl: string,
@@ -146,14 +87,12 @@ async function waitForChannelJob(
 ) {
 	const report = progressReporter(ctx);
 	await report('Agent is working');
-	await listenForTerminal(
-		engineUrl,
-		jobId,
-		ctx.mcpReq.signal,
-		async (event) => {
+	await Effect.runPromise(
+		listenForTerminal(engineUrl, jobId, async (event) => {
 			const message = progressMessage(event);
 			if (message !== undefined) await report(message);
-		},
+		}),
+		{ signal: ctx.mcpReq.signal },
 	);
 	return client.jobs.wait({ jobId, timeoutMs: 0 });
 }
@@ -168,7 +107,10 @@ async function waitAndNotify(
 ) {
 	const ac = new AbortController();
 	try {
-		await listenForTerminal(engineUrl, jobId, ac.signal, async () => {});
+		await Effect.runPromise(
+			listenForTerminal(engineUrl, jobId, async () => {}),
+			{ signal: ac.signal },
+		);
 		const result = await client.jobs.wait({ jobId, timeoutMs: 0 });
 		const event = channelEventFor(jobId, sessionId, result);
 		await pushChannelEvent(server, event.content, event.meta);
