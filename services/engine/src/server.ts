@@ -38,6 +38,10 @@ type RequestHandler = (request: Request) => Response | Promise<Response>;
 export function acquireHttpListener(port: number) {
 	return Effect.gen(function* () {
 		const ready = yield* Deferred.make<RequestHandler, Error>();
+		const state: {
+			handler?: RequestHandler;
+			pending?: Promise<RequestHandler>;
+		} = {};
 		const resolvedPort =
 			process.env.OPENCODE_MCP_PORT === undefined
 				? port
@@ -48,9 +52,10 @@ export function acquireHttpListener(port: number) {
 					hostname: '127.0.0.1',
 					port: resolvedPort,
 					idleTimeout: 0,
-					fetch: async (request) => {
-						const handler = await Effect.runPromise(Deferred.await(ready));
-						return handler(request);
+					fetch: (request) => {
+						if (state.handler !== undefined) return state.handler(request);
+						state.pending ??= Effect.runPromise(Deferred.await(ready));
+						return state.pending.then((handler) => handler(request));
 					},
 				}),
 			),
@@ -66,7 +71,13 @@ export function acquireHttpListener(port: number) {
 					),
 				),
 		);
-		return { server, ready };
+		return {
+			server,
+			activate: (handler: RequestHandler) =>
+				Effect.sync(() => {
+					state.handler = handler;
+				}).pipe(Effect.andThen(Deferred.succeed(ready, handler))),
+		};
 	});
 }
 
@@ -108,25 +119,21 @@ export class Engine extends Context.Service<Engine>()('engine', {
 				registerTools: (server: McpServer, services: Context.Context<never>) =>
 					registerTools(server, jobs, sessionService, settings, services),
 			},
-			startServer: ({
-				port,
-				serverInfo,
-				filemap,
-				portless,
-				idleExit,
-				listener,
-			}: ServerOptions) =>
+			startServer: (options: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
 
 					const resolvedPort =
 						process.env.OPENCODE_MCP_PORT !== undefined
 							? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
-							: port;
+							: options.port;
 
 					const mcpHandler = createMcpHandler(() => {
 						const server = new McpServer(
-							{ name: serverInfo.name, version: serverInfo.version },
+							{
+								name: options.serverInfo.name,
+								version: options.serverInfo.version,
+							},
 							{ instructions: getMcpInstructions() },
 						);
 						registerTools(server, jobs, sessionService, settings, services);
@@ -134,7 +141,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					});
 					const lifecycle = { accepting: true };
 
-					const tracker = createIdleTracker();
+					const tracker =
+						options.idleExit === undefined ? undefined : createIdleTracker();
 					const dispatch = async (request: Request) => {
 						if (!lifecycle.accepting)
 							return new Response('oagent is restarting', {
@@ -184,8 +192,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 
 						// 6. SPA fallback
-						if (filemap !== undefined) {
-							const spaResponse = serveSPA(filemap, url.pathname);
+						if (options.filemap !== undefined) {
+							const spaResponse = serveSPA(options.filemap, url.pathname);
 							if (spaResponse !== undefined) return spaResponse;
 						}
 
@@ -193,6 +201,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					};
 
 					const fetchHandler = async (request: Request) => {
+						if (tracker === undefined) return dispatch(request);
 						const finish = tracker.enter(new URL(request.url).pathname);
 						request.signal.addEventListener('abort', finish, { once: true });
 						try {
@@ -248,7 +257,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 									? (cause as { code?: string }).code
 									: undefined;
 							if (
-								idleExit === undefined &&
+								options.idleExit === undefined &&
 								(code === 'EADDRINUSE' ||
 									msg.includes('EADDRINUSE') ||
 									msg.includes('address already in use'))
@@ -268,7 +277,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					}
 
 					const bindResult =
-						listener === undefined
+						options.listener === undefined
 							? yield* Effect.try({
 									try: () => tryBind(resolvedPort),
 									catch: (cause) =>
@@ -276,9 +285,9 @@ export class Engine extends Context.Service<Engine>()('engine', {
 											`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
 										),
 								})
-							: { server: listener.server, didFallback: false };
-					if (listener !== undefined)
-						yield* Deferred.succeed(listener.ready, fetchHandler);
+							: { server: options.listener.server, didFallback: false };
+					if (options.listener !== undefined)
+						yield* options.listener.activate(fetchHandler);
 					yield* Effect.addFinalizer(() =>
 						Effect.gen(function* () {
 							lifecycle.accepting = false;
@@ -317,7 +326,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 
 					const fileConfig = yield* loadConfig();
 					const portlessEnabled =
-						portless === true || fileConfig.portless === true;
+						options.portless === true || fileConfig.portless === true;
 
 					if (portlessEnabled) {
 						const portlessBin = Bun.which('portless');
@@ -359,9 +368,10 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 					}
 
-					if (idleExit === undefined) yield* Effect.never;
+					if (options.idleExit === undefined || tracker === undefined)
+						yield* Effect.never;
 					else {
-						const ms = Duration.toMillis(idleExit);
+						const ms = Duration.toMillis(options.idleExit);
 						while (!tracker.shouldExit(ms, jobs.hasRunning()))
 							yield* Effect.sleep(Math.min(30_000, ms));
 					}
