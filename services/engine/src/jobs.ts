@@ -1415,7 +1415,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			.all();
 		for (const row of stranded) {
 			const alive =
-				row.job.runner_pid === null
+				row.job.runner_pid === null || row.job.runner_pid === process.pid
 					? false
 					: yield* isRunnerAlive(row.job.runner_pid).pipe(Effect.orDie);
 			const decision = recoveryDecision({

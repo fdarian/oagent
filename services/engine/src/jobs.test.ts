@@ -41,82 +41,87 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 	};
 }
 
-test('scope shutdown preserves the running row and recovery finishes the same job', async () => {
-	const database = createDatabase();
-	const session = insertSession(database, {
-		uuid: 'shutdown-session',
-		title: 'Shutdown',
-		cwd: '/tmp',
-	});
-	database.db
-		.update(schema.sessions)
-		.set({ harness_session_id: 'ses_shutdown' })
-		.where(eq(schema.sessions.id, session.id))
-		.run();
-	const make = (harness: Harness) =>
-		Jobs.make.pipe(
-			Effect.provideService(Db, database),
-			Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
-			Effect.provideService(Agents, {} as Agents['Service']),
-			Effect.provideService(Worktrees, {} as Worktrees['Service']),
+test.each([null, process.pid])(
+	'scope shutdown preserves the running row and recovery finishes the same job with runner_pid=%s',
+	async (runnerPid) => {
+		const database = createDatabase();
+		const session = insertSession(database, {
+			uuid: 'shutdown-session',
+			title: 'Shutdown',
+			cwd: '/tmp',
+		});
+		database.db
+			.update(schema.sessions)
+			.set({ harness_session_id: 'ses_shutdown' })
+			.where(eq(schema.sessions.id, session.id))
+			.run();
+		const make = (harness: Harness) =>
+			Jobs.make.pipe(
+				Effect.provideService(Db, database),
+				Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
+				Effect.provideService(Agents, {} as Agents['Service']),
+				Effect.provideService(Worktrees, {} as Worktrees['Service']),
+			);
+		const jobId = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const jobs = yield* make({
+						backend: 'opencode',
+						runTurn: () => Effect.never,
+					} as unknown as Harness);
+					const started = yield* jobs.start({
+						session,
+						prompt: 'original',
+						model: 'opencode:test#high',
+					});
+					yield* Effect.sleep(10);
+					return started.jobId;
+				}),
+			),
 		);
-	const jobId = await Effect.runPromise(
-		Effect.scoped(
-			Effect.gen(function* () {
-				const jobs = yield* make({
-					backend: 'opencode',
-					runTurn: () => Effect.never,
-				} as unknown as Harness);
-				const started = yield* jobs.start({
-					session,
-					prompt: 'original',
-					model: 'opencode:test#high',
-				});
-				yield* Effect.sleep(10);
-				return started.jobId;
-			}),
-		),
-	);
-	const interrupted = database.db
-		.select()
-		.from(schema.jobs)
-		.where(eq(schema.jobs.uuid, jobId))
-		.get();
-	expect(interrupted?.status).toBe('running');
-	expect(interrupted?.interrupted_at).toBeInstanceOf(Date);
-	expect(interrupted?.terminated_at).toBeNull();
-	database.db
-		.update(schema.jobs)
-		.set({ runner_pid: null })
-		.where(eq(schema.jobs.uuid, jobId))
-		.run();
-	await Effect.runPromise(
-		Effect.scoped(
-			Effect.gen(function* () {
-				const jobs = yield* make({
-					backend: 'opencode',
-					runTurn: (input: {
-						model?: string;
-						reasoningEffort?: string;
-						sessionId?: string;
-					}) => {
-						expect(input.model).toBe('test');
-						expect(input.reasoningEffort).toBe('high');
-						expect(input.sessionId).toBe('ses_shutdown');
-						return Effect.succeed({
-							sessionId: 'ses_shutdown',
-							text: 'resumed',
-							stopReason: 'end_turn',
-						});
-					},
-				} as unknown as Harness);
-				expect((yield* jobs.wait({ jobId })).status).toBe('done');
-			}),
-		),
-	);
-	expect(database.db.select().from(schema.jobs).get()?.resume_count).toBe(1);
-	database.sqlite.close();
-});
+		const interrupted = database.db
+			.select()
+			.from(schema.jobs)
+			.where(eq(schema.jobs.uuid, jobId))
+			.get();
+		expect(interrupted?.status).toBe('running');
+		expect(interrupted?.interrupted_at).toBeInstanceOf(Date);
+		expect(interrupted?.terminated_at).toBeNull();
+		database.db
+			.update(schema.jobs)
+			.set({ runner_pid: runnerPid })
+			.where(eq(schema.jobs.uuid, jobId))
+			.run();
+		await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const jobs = yield* make({
+						backend: 'opencode',
+						runTurn: (input: {
+							model?: string;
+							reasoningEffort?: string;
+							sessionId?: string;
+						}) => {
+							expect(input.model).toBe('test');
+							expect(input.reasoningEffort).toBe('high');
+							expect(input.sessionId).toBe('ses_shutdown');
+							return Effect.succeed({
+								sessionId: 'ses_shutdown',
+								text: 'resumed',
+								stopReason: 'end_turn',
+							});
+						},
+					} as unknown as Harness);
+					expect((yield* jobs.wait({ jobId, timeoutMs: 1_000 })).status).toBe(
+						'done',
+					);
+				}),
+			),
+		);
+		expect(database.db.select().from(schema.jobs).get()?.resume_count).toBe(1);
+		database.sqlite.close();
+	},
+);
 
 describe('start model reasoning effort', () => {
 	const cases = [
