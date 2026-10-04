@@ -36,6 +36,7 @@ export type AcpTurnConnection = {
 	>;
 	processExited?: Promise<number>;
 	close?: () => void;
+	cancelPermissions?: (sessionId: string) => void;
 };
 
 export type AcpTurnEnvironment = AcpTurnConnection & {
@@ -98,6 +99,7 @@ export function createAcpTurnRecovery(
 			eventCount: 0,
 			lastEventAt: Date.now(),
 			promptDispatched: false,
+			pendingPrompt: undefined as Promise<PromptResponse> | undefined,
 			reconnected: false,
 			recoveryAttempts: 0,
 		};
@@ -298,28 +300,21 @@ export function createAcpTurnRecovery(
 			onPromptDispatch?: () => void,
 		): Effect.Effect<PromptResponse, AcpTurnFailed, never> =>
 			Effect.tryPromise({
-				try: async (signal) => {
+				try: async () => {
 					const connection = state.current;
 					const sessionId = state.sessionId;
 					if (sessionId === undefined) {
 						throw new Error('Missing ACP session ID');
 					}
-					const onAbort = () => {
-						void connection.conn.cancel({ sessionId });
-					};
-					signal.addEventListener('abort', onAbort, { once: true });
-					try {
-						const promptRequest = connection.conn.prompt({
-							sessionId,
-							prompt: [{ type: 'text', text: prompt }],
-						});
-						state.promptDispatched = true;
-						state.lastEventAt = Date.now();
-						if (onPromptDispatch !== undefined) onPromptDispatch();
-						return await promptRequest;
-					} finally {
-						signal.removeEventListener('abort', onAbort);
-					}
+					const promptRequest = connection.conn.prompt({
+						sessionId,
+						prompt: [{ type: 'text', text: prompt }],
+					});
+					state.pendingPrompt = promptRequest;
+					state.promptDispatched = true;
+					state.lastEventAt = Date.now();
+					if (onPromptDispatch !== undefined) onPromptDispatch();
+					return await promptRequest;
 				},
 				catch: (cause) =>
 					new AcpTurnFailed({
@@ -329,7 +324,25 @@ export function createAcpTurnRecovery(
 					}),
 			});
 
-		const runPrompt = (
+		const cancelAndAwait = Effect.gen(function* () {
+			const sessionId = state.sessionId;
+			if (sessionId === undefined) return;
+			state.current.cancelPermissions?.(sessionId);
+			yield* Effect.tryPromise({
+				try: async () => {
+					await state.current.conn.cancel({ sessionId });
+					await state.pendingPrompt;
+				},
+				catch: (cause) => cause,
+			}).pipe(
+				Effect.timeout(20_000),
+				Effect.catch((cause) =>
+					Effect.logWarning('ACP cancel did not settle cleanly', cause),
+				),
+			);
+		});
+
+		const runPromptEffect = (
 			prompt: string,
 			onPromptDispatch?: () => void,
 		): Effect.Effect<PromptResponse, AcpTurnFailed, Scope> => {
@@ -438,7 +451,10 @@ export function createAcpTurnRecovery(
 				);
 			},
 			currentConnection: () => state.current,
-			runPrompt,
+			runPrompt: (prompt, onPromptDispatch) =>
+				runPromptEffect(prompt, onPromptDispatch).pipe(
+					Effect.onInterrupt(() => cancelAndAwait),
+				),
 			cleanup: Effect.sync(() => {
 				state.unregister();
 				for (const connection of connections) {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
-import { Effect, Fiber } from 'effect';
+import { Effect, Fiber, Scope } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -136,6 +136,7 @@ async function createSideChatServices(
 	} as unknown as Db['Service'];
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, dbService),
 			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
 			Effect.provideService(Settings, {} as Settings['Service']),

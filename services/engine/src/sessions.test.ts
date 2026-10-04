@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { Effect } from 'effect';
+import { Effect, Scope } from 'effect';
 import { Agents, AgentTypeNotFound } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -63,6 +63,7 @@ function createServices(
 
 	return Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, dbService),
 			Effect.provideService(HarnessRegistry, registry),
 			Effect.provideService(Settings, settings),

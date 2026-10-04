@@ -10,7 +10,7 @@ bun dev
 
 Agents should start it when needed, or reuse the dev engine already running for this checkout. Wait for the engine's listening log before starting clients; `running.json` is written during startup, before the server binds.
 
-The dev script restarts on engine source changes. A restart marks in-flight jobs as errored, so avoid editing engine source while a test turn is running.
+The dev script restarts on engine source changes. Running jobs with persisted harness conversations resume under the same job ID; crash recovery is capped at three resumptions and requires a clean interruption for Cursor.
 
 To run the web app against this engine, see [web development](../../../apps/web/docs/development.md#full-app-local-engine).
 
