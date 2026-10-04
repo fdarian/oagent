@@ -1,5 +1,5 @@
 import { Engine } from '@oagent/engine';
-import { Effect, Option } from 'effect';
+import { Duration, Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
@@ -27,6 +27,7 @@ function runServe(params: {
 	portless: boolean;
 	logFile: string | undefined;
 	version: Version;
+	idleExit?: Duration.Duration;
 }) {
 	const baseProgram = Effect.gen(function* () {
 		const engine = yield* Engine;
@@ -36,6 +37,7 @@ function runServe(params: {
 			serverInfo: { name: 'oagent', version: params.version },
 			filemap: yield* webFilemap,
 			portless: params.portless,
+			idleExit: params.idleExit,
 		});
 	}).pipe(Effect.provide(Engine.layer));
 
@@ -48,6 +50,7 @@ export const serveCmd = (version: Version) =>
 	Command.make(
 		'serve',
 		{
+			idleExit: Flag.optional(Flag.String('idle-exit')),
 			port: Flag.Int('port').pipe(
 				Flag.withAlias('p'),
 				Flag.withDefault(17_777),
@@ -71,5 +74,8 @@ export const serveCmd = (version: Version) =>
 				portless: params.portless,
 				logFile: Option.getOrUndefined(params.logFile),
 				version,
+				idleExit: Option.isSome(params.idleExit)
+					? Duration.fromInputUnsafe(params.idleExit.value as Duration.Input)
+					: undefined,
 			}),
 	);

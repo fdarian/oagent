@@ -1,6 +1,7 @@
 /// <reference types="bun" />
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { Context, Effect, Layer, Schema } from 'effect';
+import { Context, Duration, Effect, Layer, Schema } from 'effect';
+import { createIdleTracker } from './idle.ts';
 import { Agents } from './agents.ts';
 import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
@@ -37,6 +38,7 @@ type ServerOptions = {
 	serverInfo: { name: string; version: string };
 	filemap?: Record<string, string>;
 	portless?: boolean;
+	idleExit?: Duration.Duration;
 };
 
 export class Engine extends Context.Service<Engine>()('engine', {
@@ -66,7 +68,13 @@ export class Engine extends Context.Service<Engine>()('engine', {
 				registerTools: (server: McpServer, services: Context.Context<never>) =>
 					registerTools(server, jobs, sessionService, settings, services),
 			},
-			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
+			startServer: ({
+				port,
+				serverInfo,
+				filemap,
+				portless,
+				idleExit,
+			}: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
 
@@ -85,7 +93,8 @@ export class Engine extends Context.Service<Engine>()('engine', {
 					});
 					const lifecycle = { accepting: true };
 
-					const fetchHandler = async (request: Request) => {
+					const tracker = createIdleTracker();
+					const dispatch = async (request: Request) => {
 						if (!lifecycle.accepting)
 							return new Response('oagent is restarting', {
 								status: 503,
@@ -142,6 +151,43 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						return new Response('Not Found', { status: 404 });
 					};
 
+					const fetchHandler = async (request: Request) => {
+						const finish = tracker.enter(new URL(request.url).pathname);
+						request.signal.addEventListener('abort', finish, { once: true });
+						try {
+							const response = await dispatch(request);
+							if (response.body === null) {
+								finish();
+								return response;
+							}
+							const reader = response.body.getReader();
+							return new Response(
+								new ReadableStream({
+									async pull(controller) {
+										try {
+											const chunk = await reader.read();
+											if (chunk.done) {
+												finish();
+												controller.close();
+											} else controller.enqueue(chunk.value);
+										} catch (cause) {
+											finish();
+											controller.error(cause);
+										}
+									},
+									async cancel(reason) {
+										finish();
+										await reader.cancel(reason);
+									},
+								}),
+								response,
+							);
+						} catch (cause) {
+							finish();
+							throw cause;
+						}
+					};
+
 					function tryBind(targetPort: number) {
 						try {
 							return {
@@ -161,9 +207,10 @@ export class Engine extends Context.Service<Engine>()('engine', {
 									? (cause as { code?: string }).code
 									: undefined;
 							if (
-								code === 'EADDRINUSE' ||
-								msg.includes('EADDRINUSE') ||
-								msg.includes('address already in use')
+								idleExit === undefined &&
+								(code === 'EADDRINUSE' ||
+									msg.includes('EADDRINUSE') ||
+									msg.includes('address already in use'))
 							) {
 								return {
 									server: Bun.serve({
@@ -213,6 +260,11 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}),
 					);
 
+					yield* Effect.addFinalizer(() =>
+						Effect.sync(() => {
+							bindResult.server.stop(true);
+						}),
+					);
 					if (bindResult.didFallback) {
 						yield* Effect.logWarning(
 							`port ${resolvedPort} in use, falling back to a free port`,
@@ -267,8 +319,13 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 					}
 
-					yield* Effect.never;
-				}).pipe(Effect.provideService(Jobs, jobs), Effect.scoped),
+					if (idleExit === undefined) yield* Effect.never;
+					else {
+						const ms = Duration.toMillis(idleExit);
+						while (!tracker.shouldExit(ms, jobs.hasRunning()))
+							yield* Effect.sleep(Math.min(30_000, ms));
+					}
+				}).pipe(Effect.scoped, Effect.provideService(Jobs, jobs)),
 		};
 	}),
 }) {

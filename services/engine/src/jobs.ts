@@ -1507,6 +1507,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			start,
 			shutdown,
 			reserve,
+			hasRunning: () =>
+				db
+					.select({ id: schema.jobs.id })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.status, 'running'))
+					.limit(1)
+					.get() !== undefined,
 			resolveBackend,
 			validateStart,
 			runReserved,
