@@ -1,0 +1,173 @@
+import { McpServer, type ServerContext } from '@modelcontextprotocol/server';
+import { StdioServerTransport } from '@modelcontextprotocol/server/stdio';
+import {
+	type AgentDefinition,
+	type AliasPreset,
+	cancelTool,
+	formatCancellation,
+	formatMcpInstructions,
+	formatSessions,
+	formatToolError,
+	formatTurnResult,
+	listTool,
+	readTool,
+	sendMessageTool,
+	startInputSchema,
+	startWorktreeInputSchema,
+} from '@oagent/engine';
+import { Effect } from 'effect';
+import { waitForChannelJob } from './channel.ts';
+import { createEngineClient } from './engine-client.ts';
+import { ensureEngine } from './engine-spawn.ts';
+import { overlay, resolveAgent, resolveModel } from './ephemeral-config.ts';
+import type { Version } from './misc.ts';
+
+export function runMcpStdio(params: {
+	version: Version;
+	engineUrl: string;
+	idleExit: string;
+	bare: boolean;
+	aliases: AliasPreset[];
+	agents: AgentDefinition[];
+}) {
+	return Effect.gen(function* () {
+		const client = createEngineClient(params.engineUrl);
+		const services = yield* Effect.context<import('effect/Path').Path>();
+		const ensure = () =>
+			ensureEngine(params.engineUrl, params.idleExit).pipe(
+				Effect.provide(services),
+			);
+		yield* ensure();
+		const aliases = params.bare
+			? params.aliases
+			: overlay(
+					yield* Effect.tryPromise(() => client.aliases.list()),
+					params.aliases,
+				);
+		const agents = params.bare
+			? params.agents
+			: overlay(
+					yield* Effect.tryPromise(() => client.agents.list()),
+					params.agents,
+				);
+		const worktree = yield* Effect.tryPromise(() =>
+			client.settings.getWorktree(),
+		);
+		const server = new McpServer(
+			{ name: 'oagent', version: params.version },
+			{ instructions: formatMcpInstructions(aliases, agents) },
+		);
+		const text = (value: string) => ({
+			content: [{ type: 'text' as const, text: value }],
+		});
+		const register = <A>(
+			name: string,
+			tool: { description: string; inputSchema: import('zod').ZodType<A> },
+			handle: (args: A, ctx: ServerContext) => Promise<ReturnType<typeof text>>,
+		) => {
+			server.registerTool(name, tool, (args, ctx) =>
+				Effect.runPromise(
+					ensure().pipe(
+						Effect.flatMap(() =>
+							Effect.tryPromise(() => handle(args as A, ctx)),
+						),
+						Effect.catch((error) =>
+							Effect.succeed({
+								...text(formatToolError(error.message)),
+								isError: true,
+							}),
+						),
+					),
+				),
+			);
+		};
+		const wait = (jobId: string, ctx: ServerContext) =>
+			waitForChannelJob(client, params.engineUrl, jobId, ctx);
+		register(
+			'start',
+			{
+				description:
+					'Start a coding-agent session or fork an existing session/job.',
+				inputSchema:
+					worktree.enabled && worktree.createCommand.trim() !== ''
+						? startWorktreeInputSchema
+						: startInputSchema,
+			},
+			async (args, ctx) => {
+				const model = await Effect.runPromise(
+					resolveModel(args.model, params.aliases, params.bare),
+				);
+				const agent = await Effect.runPromise(
+					resolveAgent(args.agent_type, params.agents, params.bare),
+				);
+				const started = await client.sessions.start({
+					...args,
+					model,
+					...agent,
+					agent:
+						agent.agent === undefined
+							? undefined
+							: {
+									name: agent.agent.name,
+									description: agent.agent.description ?? undefined,
+									targets: [...agent.agent.targets],
+								},
+					worktree: 'worktree' in args && args.worktree === true,
+				});
+				return text(
+					formatTurnResult({
+						...started,
+						result: args.background
+							? { status: 'running' }
+							: await wait(started.jobId, ctx),
+					}),
+				);
+			},
+		);
+		register('send_message', sendMessageTool, async (args, ctx) => {
+			const started = await client.sessions.sendMessage(args);
+			return text(
+				formatTurnResult({
+					...started,
+					steered: started.delivery === 'steered',
+					result:
+						args.background || started.delivery === 'steered'
+							? { status: 'running' }
+							: await wait(started.jobId, ctx),
+				}),
+			);
+		});
+		register('read', readTool, async (args, ctx) => {
+			const result = await client.sessions.read(args);
+			return text(
+				formatTurnResult({
+					sessionId: args.sessionId,
+					jobId: result.jobId,
+					result:
+						args.wait && result.status === 'running'
+							? await wait(result.jobId, ctx)
+							: result,
+				}),
+			);
+		});
+		register('cancel', cancelTool, async (args) => {
+			const result = await client.sessions.cancel(args);
+			return text(
+				result.ok
+					? formatCancellation({
+							sessionId: args.sessionId,
+							status: result.status,
+						})
+					: formatToolError(`Session not found: ${args.sessionId}`),
+			);
+		});
+		register('list', listTool, async (args) =>
+			text(formatSessions(await client.sessions.list(args))),
+		);
+		yield* Effect.acquireRelease(
+			Effect.tryPromise(() => server.connect(new StdioServerTransport())),
+			() => Effect.promise(() => server.close()),
+		);
+		yield* Effect.never;
+	}).pipe(Effect.scoped);
+}

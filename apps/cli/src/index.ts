@@ -7,6 +7,7 @@ import cliPackage from '../package.json' with { type: 'json' };
 import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';
 import { jobsCmd } from './commands/jobs';
+import { mcpCmd } from './commands/mcp';
 import { serveCmd } from './commands/serve';
 import { serviceCmd } from './commands/service';
 import { stdioCmd } from './commands/stdio';
@@ -25,6 +26,7 @@ const cli = Command.make('oagent').pipe(
 	),
 	Command.withSubcommands([
 		serveCmd(version),
+		mcpCmd(version),
 		stdioCmd(version),
 		claudeCmd(version),
 		jobsCmd(version),

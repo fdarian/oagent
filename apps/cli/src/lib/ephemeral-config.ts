@@ -20,7 +20,7 @@ const agentsSchema = Schema.Record(
 	text,
 	Schema.Struct({
 		description: Schema.optional(Schema.String),
-		targets: Schema.Record(backend, text),
+		targets: Schema.Record(text, text),
 	}),
 );
 
@@ -50,12 +50,18 @@ export function parseAgents(value: string | undefined) {
 		const decoded = yield* Schema.decodeUnknownEffect(
 			Schema.fromJsonString(agentsSchema),
 		)(json);
-		return Object.entries(decoded).map(
-			(entry): AgentDefinition => ({
+		return yield* Effect.forEach(Object.entries(decoded), (entry) =>
+			Schema.decodeUnknownEffect(
+				Schema.Struct({
+					name: text,
+					description: Schema.optional(Schema.String),
+					targets: Schema.Array(Schema.Struct({ backend, target: text })),
+				}),
+			)({
 				name: entry[0],
 				description: entry[1].description,
 				targets: Object.entries(entry[1].targets).map((target) => ({
-					backend: target[0] as AgentDefinition['targets'][number]['backend'],
+					backend: target[0],
 					target: target[1],
 				})),
 			}),
@@ -97,7 +103,10 @@ export function resolveAgent(
 	name: string | undefined,
 	agents: ReadonlyArray<AgentDefinition>,
 	bare: boolean,
-) {
+): Effect.Effect<
+	{ agent: AgentDefinition | undefined; agent_type: string | undefined },
+	Error
+> {
 	const agent = agents.find((entry) => entry.name === name);
 	if (agent !== undefined)
 		return Effect.succeed({ agent, agent_type: undefined });

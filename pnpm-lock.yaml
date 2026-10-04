@@ -204,6 +204,10 @@ importers:
         version: 2.10.12
 
   apps/cli:
+    dependencies:
+      zod:
+        specifier: ^4.5.4
+        version: 4.5.4
     devDependencies:
       '@effect/platform-bun':
         specifier: 'catalog:'

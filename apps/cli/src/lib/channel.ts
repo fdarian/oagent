@@ -79,7 +79,7 @@ function channelEventFor(jobId: string, sessionId: string, result: WaitResult) {
 	};
 }
 
-async function waitForChannelJob(
+export async function waitForChannelJob(
 	client: EngineClient,
 	engineUrl: string,
 	jobId: string,
