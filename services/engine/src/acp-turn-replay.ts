@@ -77,7 +77,8 @@ export function createAcpTurnReplay(input: AcpTurnReplayInput): AcpTurnReplay {
 			state.replayEvents.push(event);
 			return;
 		}
-		if (state.baselineEventKeys.has(key)) return;
+		// Adapters without message IDs can emit live chunks identical to history.
+		// Only session/load replay may be deduplicated against that baseline.
 		appendEvent(event);
 	};
 

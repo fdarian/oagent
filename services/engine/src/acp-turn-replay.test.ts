@@ -54,3 +54,23 @@ test('emits only the unseen suffix from a replayed full message', () => {
 		},
 	]);
 });
+test('does not suppress live chunks identical to loaded history', () => {
+	const event: SessionUpdate = {
+		sessionUpdate: 'agent_message_chunk',
+		content: { type: 'text', text: 'OK' },
+	};
+	const events: SessionUpdate[] = [];
+	const replay = createAcpTurnReplay({
+		initialLoad: true,
+		onEvent: (update) => events.push(update),
+	});
+	replay.observe(event);
+	replay.finishInitialLoad();
+	replay.observe(event);
+	replay.observe(event);
+	expect(events).toEqual([event, event]);
+	replay.beginReplay();
+	replay.observe(event);
+	replay.completeReplay();
+	expect(events).toEqual([event, event]);
+});
