@@ -5,7 +5,7 @@ dist
 .DS_Store
 .env
 **.local*
-services/engine/.data/
+**/.data/
 apps/cli/dist/
 apps/web/dist/
 apps/web/storybook-static/
