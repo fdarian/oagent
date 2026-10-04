@@ -90,16 +90,20 @@ export function AliasPresetCombobox(props: {
 								<CommandItem
 									value={`new:${name}`}
 									disabled={name.length === 0}
-									className={
-										name.length === 0 ? 'text-muted-foreground' : undefined
-									}
 									onSelect={() => {
 										props.onCreate(name);
 										setOpen(false);
 										setSearch('');
 									}}
 								>
-									{name.length === 0 ? 'New preset' : `New preset "${name}"`}
+									{name.length === 0 ? (
+										<span>
+											New preset "
+											<span className="text-muted-foreground">Type name…</span>"
+										</span>
+									) : (
+										`New preset "${name}"`
+									)}
 								</CommandItem>
 							)}
 						</CommandGroup>
