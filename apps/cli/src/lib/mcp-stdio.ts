@@ -19,9 +19,13 @@ import {
 import { Effect } from 'effect';
 import { waitForChannelJob } from './channel.ts';
 import { createEngineClient } from './engine-client.ts';
-import { ensureEngine } from './engine-spawn.ts';
+import { ensureEngine, isConnectionRefused } from './engine-spawn.ts';
 import { overlay, resolveAgent, resolveModel } from './ephemeral-config.ts';
 import type { Version } from './misc.ts';
+
+function errorMessage(cause: unknown) {
+	return cause instanceof Error ? cause.message : String(cause);
+}
 
 export function runMcpStdio(params: {
 	version: Version;
@@ -38,22 +42,47 @@ export function runMcpStdio(params: {
 			ensureEngine(params.engineUrl, params.idleExit).pipe(
 				Effect.provide(services),
 			);
-		yield* ensure();
-		const aliases = params.bare
-			? params.aliases
-			: overlay(
-					yield* Effect.tryPromise(() => client.aliases.list()),
-					params.aliases,
-				);
-		const agents = params.bare
-			? params.agents
-			: overlay(
-					yield* Effect.tryPromise(() => client.agents.list()),
-					params.agents,
-				);
-		const worktree = yield* Effect.tryPromise(() =>
-			client.settings.getWorktree(),
-		);
+		const rpc = <A>(call: () => Promise<A>) =>
+			Effect.runPromise(
+				Effect.tryPromise({
+					try: call,
+					catch: (cause) => new Error(errorMessage(cause), { cause }),
+				}).pipe(
+					Effect.catch((error) =>
+						isConnectionRefused(error)
+							? ensure().pipe(
+									Effect.andThen(
+										Effect.tryPromise({
+											try: call,
+											catch: (cause) =>
+												new Error(errorMessage(cause), { cause }),
+										}),
+									),
+								)
+							: Effect.fail(error),
+					),
+				),
+			);
+		const data = yield* Effect.tryPromise({
+			try: () =>
+				Promise.all([
+					params.bare
+						? Promise.resolve(params.aliases)
+						: rpc(() => client.aliases.list()).then((rows) =>
+								overlay(rows, params.aliases),
+							),
+					params.bare
+						? Promise.resolve(params.agents)
+						: rpc(() => client.agents.list()).then((rows) =>
+								overlay(rows, params.agents),
+							),
+					rpc(() => client.settings.getWorktree()),
+				]),
+			catch: (cause) => new Error(errorMessage(cause), { cause }),
+		});
+		const aliases = data[0];
+		const agents = data[1];
+		const worktree = data[2];
 		const server = new McpServer(
 			{ name: 'oagent', version: params.version },
 			{ instructions: formatMcpInstructions(aliases, agents) },
@@ -66,21 +95,17 @@ export function runMcpStdio(params: {
 			tool: { description: string; inputSchema: import('zod').ZodType<A> },
 			handle: (args: A, ctx: ServerContext) => Promise<ReturnType<typeof text>>,
 		) => {
-			server.registerTool(name, tool, (args, ctx) =>
-				Effect.runPromise(
-					ensure().pipe(
-						Effect.flatMap(() =>
-							Effect.tryPromise(() => handle(args as A, ctx)),
-						),
-						Effect.catch((error) =>
-							Effect.succeed({
-								...text(formatToolError(error.message)),
-								isError: true,
-							}),
-						),
-					),
-				),
-			);
+			server.registerTool(name, tool, async (args, ctx) => {
+				try {
+					return await handle(args as A, ctx);
+				} catch (cause) {
+					if (ctx.mcpReq.signal.aborted) throw cause;
+					return {
+						...text(formatToolError(errorMessage(cause))),
+						isError: true,
+					};
+				}
+			});
 		};
 		const wait = (jobId: string, ctx: ServerContext) =>
 			waitForChannelJob(client, params.engineUrl, jobId, ctx);
@@ -100,20 +125,22 @@ export function runMcpStdio(params: {
 				const agent = await Effect.runPromise(
 					resolveAgent(args.agent_type, params.agents, params.bare),
 				);
-				const started = await client.sessions.start({
-					...args,
-					model,
-					...agent,
-					agent:
-						agent.agent === undefined
-							? undefined
-							: {
-									name: agent.agent.name,
-									description: agent.agent.description ?? undefined,
-									targets: [...agent.agent.targets],
-								},
-					worktree: 'worktree' in args && args.worktree === true,
-				});
+				const started = await rpc(() =>
+					client.sessions.start({
+						...args,
+						model,
+						...agent,
+						agent:
+							agent.agent === undefined
+								? undefined
+								: {
+										name: agent.agent.name,
+										description: agent.agent.description ?? undefined,
+										targets: [...agent.agent.targets],
+									},
+						worktree: 'worktree' in args && args.worktree === true,
+					}),
+				);
 				return text(
 					formatTurnResult({
 						...started,
@@ -125,7 +152,7 @@ export function runMcpStdio(params: {
 			},
 		);
 		register('send_message', sendMessageTool, async (args, ctx) => {
-			const started = await client.sessions.sendMessage(args);
+			const started = await rpc(() => client.sessions.sendMessage(args));
 			return text(
 				formatTurnResult({
 					...started,
@@ -138,7 +165,7 @@ export function runMcpStdio(params: {
 			);
 		});
 		register('read', readTool, async (args, ctx) => {
-			const result = await client.sessions.read(args);
+			const result = await rpc(() => client.sessions.read(args));
 			return text(
 				formatTurnResult({
 					sessionId: args.sessionId,
@@ -151,7 +178,7 @@ export function runMcpStdio(params: {
 			);
 		});
 		register('cancel', cancelTool, async (args) => {
-			const result = await client.sessions.cancel(args);
+			const result = await rpc(() => client.sessions.cancel(args));
 			return text(
 				result.ok
 					? formatCancellation({
@@ -162,7 +189,7 @@ export function runMcpStdio(params: {
 			);
 		});
 		register('list', listTool, async (args) =>
-			text(formatSessions(await client.sessions.list(args))),
+			text(formatSessions(await rpc(() => client.sessions.list(args)))),
 		);
 		yield* Effect.acquireRelease(
 			Effect.tryPromise(() => server.connect(new StdioServerTransport())),

@@ -3,12 +3,12 @@ import { createEngineClient } from './engine-client.ts';
 import { getServiceStartCommand } from './service/environment.ts';
 import { getServiceLogFile } from './service/paths.ts';
 
-function refused(cause: unknown): boolean {
+export function isConnectionRefused(cause: unknown): boolean {
 	if (typeof cause !== 'object' || cause === null) return false;
 	return (
 		('code' in cause &&
 			(cause.code === 'ECONNREFUSED' || cause.code === 'ConnectionRefused')) ||
-		('cause' in cause && refused(cause.cause))
+		('cause' in cause && isConnectionRefused(cause.cause))
 	);
 }
 
@@ -20,7 +20,7 @@ export function ensureEngine(url: string, idleExit = '10m') {
 		if (first._tag === 'Success') return;
 		const parsed = yield* Effect.try(() => new URL(url));
 		if (
-			!refused(first.failure) ||
+			!isConnectionRefused(first.failure) ||
 			!['localhost', '127.0.0.1'].includes(parsed.hostname)
 		)
 			return yield* Effect.fail(first.failure);
@@ -38,7 +38,13 @@ export function ensureEngine(url: string, idleExit = '10m') {
 					'--log-file',
 					logFile,
 				],
-				{ detached: true, stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' },
+				{
+					env: { ...process.env, OPENCODE_MCP_PORT: parsed.port || '80' },
+					detached: true,
+					stdin: 'ignore',
+					stdout: 'ignore',
+					stderr: 'ignore',
+				},
 			);
 			child.unref();
 		});
