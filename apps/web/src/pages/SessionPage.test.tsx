@@ -50,7 +50,12 @@ const sideChatCreateRequests: SideChatCreateRequest[] = [];
 const sideChatListRequests: string[] = [];
 
 const fakeClient = {
+	models: {
+		list: async () => [],
+	},
 	sessions: {
+		cost: async () => ({ status: 'unsupported' }),
+		setModel: async () => ({ ok: true }),
 		get: async (input: { sessionId: string }) => ({
 			id: input.sessionId,
 			title:
