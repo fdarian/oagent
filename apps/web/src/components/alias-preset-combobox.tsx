@@ -3,7 +3,6 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import {
 	Command,
-	CommandEmpty,
 	CommandGroup,
 	CommandInput,
 	CommandItem,
@@ -28,8 +27,7 @@ export function AliasPresetCombobox(props: {
 	const [open, setOpen] = useState(false);
 	const [search, setSearch] = useState('');
 	const name = search.trim();
-	const canCreate =
-		name.length > 0 && !props.presets.some((preset) => preset.name === name);
+	const showCreate = !props.presets.some((preset) => preset.name === name);
 	return (
 		<Popover
 			open={open}
@@ -61,7 +59,6 @@ export function AliasPresetCombobox(props: {
 						onValueChange={setSearch}
 					/>
 					<CommandList>
-						<CommandEmpty>No matching presets.</CommandEmpty>
 						<CommandGroup>
 							{props.presets
 								.filter((preset) =>
@@ -89,16 +86,20 @@ export function AliasPresetCombobox(props: {
 										{preset.name}
 									</CommandItem>
 								))}
-							{canCreate && (
+							{showCreate && (
 								<CommandItem
 									value={`new:${name}`}
+									disabled={name.length === 0}
+									className={
+										name.length === 0 ? 'text-muted-foreground' : undefined
+									}
 									onSelect={() => {
 										props.onCreate(name);
 										setOpen(false);
 										setSearch('');
 									}}
 								>
-									New preset "{name}"
+									{name.length === 0 ? 'New preset' : `New preset "${name}"`}
 								</CommandItem>
 							)}
 						</CommandGroup>

@@ -18,6 +18,7 @@ const meta: Meta<typeof AliasPresetCombobox> = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 export const NoPreset: Story = {};
+export const NoPresets: Story = { args: { presets: [] } };
 export const Active: Story = {
 	args: { active: { id: 'first', name: 'Everyday' } },
 };
