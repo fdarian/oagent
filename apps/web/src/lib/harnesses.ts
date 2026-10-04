@@ -9,6 +9,7 @@ export const HARNESS_NAMES: Record<Backend, string> = {
 	grok: 'Grok',
 	codex: 'Codex',
 	claude: 'Claude',
+	pi: 'Pi',
 };
 
 export function isBackend(value: string): value is Backend {
@@ -17,7 +18,8 @@ export function isBackend(value: string): value is Backend {
 		value === 'cursor' ||
 		value === 'grok' ||
 		value === 'codex' ||
-		value === 'claude'
+		value === 'claude' ||
+		value === 'pi'
 	);
 }
 

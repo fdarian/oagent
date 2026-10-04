@@ -262,6 +262,7 @@ function AliasForm(props: AliasFormProps) {
 			const supportsReasoningEffort =
 				value.backend === 'opencode' ||
 				value.backend === 'claude' ||
+				value.backend === 'pi' ||
 				(value.backend === 'codex' &&
 					isCodexReasoningEffort(value.reasoning_effort));
 			const reasoningEffort =
@@ -288,7 +289,7 @@ function AliasForm(props: AliasFormProps) {
 		orpc.models.efforts.queryOptions({
 			input: { backend, model_id: modelId.trim() },
 			enabled:
-				(backend === 'opencode' || backend === 'claude') &&
+				(backend === 'opencode' || backend === 'claude' || backend === 'pi') &&
 				modelId.trim() !== '',
 			staleTime: 5 * 60 * 1000,
 		}),
@@ -298,7 +299,9 @@ function AliasForm(props: AliasFormProps) {
 			? CODEX_REASONING_EFFORT_OPTIONS
 			: effortsQuery.data === undefined
 				? []
-				: effortsQuery.data;
+				: backend === 'pi'
+					? [{ value: 'default', label: 'Default' }, ...effortsQuery.data]
+					: effortsQuery.data;
 
 	return (
 		<form
@@ -364,6 +367,7 @@ function AliasForm(props: AliasFormProps) {
 								<SelectItem value="grok">grok</SelectItem>
 								<SelectItem value="codex">codex</SelectItem>
 								<SelectItem value="claude">claude</SelectItem>
+								<SelectItem value="pi">Pi</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
@@ -430,7 +434,7 @@ function AliasForm(props: AliasFormProps) {
 				</form.Field>
 			)}
 
-			{(backend === 'opencode' || backend === 'claude') &&
+			{(backend === 'opencode' || backend === 'claude' || backend === 'pi') &&
 				modelId.trim() !== '' && (
 					<form.Field name="reasoning_effort">
 						{(field) => {
