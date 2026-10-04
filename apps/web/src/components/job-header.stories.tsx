@@ -77,6 +77,69 @@ export const WithCost: Story = {
 	args: { ...Completed.args, cost },
 };
 
+export const TinyCost: Story = {
+	args: {
+		...Completed.args,
+		title: 'Say hi',
+		cost: {
+			...cost,
+			inputTokens: 7856,
+			outputTokens: 6,
+			cacheCreationTokens: 0,
+			cacheReadTokens: 0,
+			totalCostUsd: 0.004321,
+		},
+	},
+	play: async (context) => {
+		const trigger = within(context.canvasElement).getByRole('button', {
+			name: 'Session API-price-equivalent cost: $0.0043',
+		});
+		await expect(trigger).toHaveTextContent('$0.0043');
+		await userEvent.hover(trigger);
+		await expect(
+			await within(context.canvasElement.ownerDocument.body).findByRole(
+				'tooltip',
+			),
+		).toHaveTextContent('Cost: $0.004321 USD');
+	},
+};
+
+const costFormattingCases = [
+	{ amount: 1.23, label: '$1.23' },
+	{ amount: 12.4, label: '$12.40' },
+	{ amount: 0.4321, label: '$0.43' },
+	{ amount: 0.04321, label: '$0.043' },
+	{ amount: 0.004321, label: '$0.0043' },
+	{ amount: 0.0001, label: '$0.00010' },
+	{ amount: 0.000099, label: '<$0.0001' },
+	{ amount: 0, label: '$0' },
+];
+
+export const CostFormatting: Story = {
+	args: { ...Completed.args },
+	render: (args) => (
+		<div className="flex flex-col gap-15">
+			{costFormattingCases.map((entry) => (
+				<JobHeader
+					key={entry.label}
+					{...args}
+					cost={{ ...cost, totalCostUsd: entry.amount }}
+				/>
+			))}
+		</div>
+	),
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		for (const entry of costFormattingCases) {
+			await expect(
+				canvas.getByRole('button', {
+					name: `Session API-price-equivalent cost: ${entry.label}`,
+				}),
+			).toHaveTextContent(entry.label);
+		}
+	},
+};
+
 export const StaleCost: Story = {
 	args: { ...Running.args, cost: { ...cost, stale: true } },
 };

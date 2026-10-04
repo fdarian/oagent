@@ -260,6 +260,18 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	);
 }
 
+function formatSessionCost(amount: number): string {
+	if (amount === 0) return '$0';
+	if (amount > 0 && amount < 0.0001) return '<$0.0001';
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		...(amount >= 1
+			? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+			: { minimumSignificantDigits: 2, maximumSignificantDigits: 2 }),
+	}).format(amount);
+}
+
 function SessionCost(
 	props: Pick<JobHeaderProps, 'cost' | 'costLoading' | 'costError'>,
 ) {
@@ -286,8 +298,10 @@ function SessionCost(
 		) : null;
 	if (props.cost.status === 'unsupported') return null;
 	const cost = props.cost;
+	const formattedCost = formatSessionCost(cost.totalCostUsd);
 	const details = [
 		'API-price-equivalent cost (USD)',
+		`Cost: $${cost.totalCostUsd} USD`,
 		`Input: ${cost.inputTokens.toLocaleString()} tokens`,
 		`Output: ${cost.outputTokens.toLocaleString()} tokens`,
 		`Cache write: ${cost.cacheCreationTokens.toLocaleString()} tokens`,
@@ -298,13 +312,13 @@ function SessionCost(
 		<TooltipProvider>
 			<Tooltip>
 				<TooltipTrigger
-					aria-label={`Session API-price-equivalent cost: $${cost.totalCostUsd.toFixed(2)}`}
+					aria-label={`Session API-price-equivalent cost: ${formattedCost}`}
 					className={cn(
 						'cursor-help tabular-nums',
 						cost.stale ? 'text-muted-foreground opacity-60' : 'text-foreground',
 					)}
 				>
-					${cost.totalCostUsd.toFixed(2)}
+					{formattedCost}
 				</TooltipTrigger>
 				<TooltipContent className="whitespace-pre-line">
 					{details}
