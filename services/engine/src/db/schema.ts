@@ -268,6 +268,56 @@ export const modelAliases = sqliteTable(
 	(table) => [uniqueIndex('model_aliases_name_uq').on(table.name)],
 );
 
+export const aliasPresets = sqliteTable(
+	'alias_presets',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		uuid: text().notNull(),
+		name: text().notNull(),
+		active: integer({ mode: 'boolean' }).notNull().default(false),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex('alias_presets_uuid_uq').on(table.uuid),
+		uniqueIndex('alias_presets_name_uq').on(table.name),
+		uniqueIndex('alias_presets_active_uq')
+			.on(table.active)
+			.where(sql`${table.active} = 1`),
+	],
+);
+
+export const aliasPresetItems = sqliteTable(
+	'alias_preset_items',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		preset_id: integer({ mode: 'number' })
+			.notNull()
+			.references(() => aliasPresets.id, { onDelete: 'cascade' }),
+		name: text().notNull(),
+		backend: text().notNull(),
+		model_id: text().notNull(),
+		reasoning_effort: text(),
+		description: text(),
+		created_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+		updated_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [
+		uniqueIndex('alias_preset_items_preset_name_uq').on(
+			table.preset_id,
+			table.name,
+		),
+	],
+);
+
 export const agents = sqliteTable(
 	'agents',
 	{

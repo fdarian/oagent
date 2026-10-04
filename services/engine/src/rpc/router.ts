@@ -4,6 +4,7 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect, Schema } from 'effect';
 import { Agents } from '../agents.ts';
+import { AliasPresets } from '../alias-presets.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
@@ -16,6 +17,7 @@ import { SideChats } from '../side-chats.ts';
 import { validateWorktreeTemplate } from '../worktree.ts';
 
 export type EngineServices =
+	| AliasPresets
 	| Jobs
 	| Sessions
 	| SessionCosts
@@ -384,7 +386,9 @@ const router = procedure.router({
 				return yield* sessions.get(options.input);
 			}),
 		cost: procedure
-			.input(v.object({ sessionId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ sessionId: Schema.String })),
+			)
 			.effect(function* (options) {
 				const costs = yield* SessionCosts;
 				return yield* costs.get(options.input.sessionId);
@@ -423,6 +427,38 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const sideChats = yield* SideChats;
 				return yield* sideChats.send(options.input);
+			}),
+	},
+	aliasPresets: {
+		state: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.state();
+			}),
+		create: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ name: Schema.String })))
+			.effect(function* (options) {
+				const presets = yield* AliasPresets;
+				return yield* presets.create(options.input.name);
+			}),
+		activate: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ id: Schema.String })))
+			.effect(function* (options) {
+				const presets = yield* AliasPresets;
+				return yield* presets.activate(options.input.id);
+			}),
+		save: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.save();
+			}),
+		discard: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.discard();
 			}),
 	},
 	aliases: {
