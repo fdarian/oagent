@@ -52,7 +52,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const services = yield* Effect.context<EngineServices>();
 		const getMcpInstructions = () =>
 			formatMcpInstructions(jobs.listAliases(), agents.list());
-		yield* Effect.forkDetach(
+		yield* Effect.forkScoped(
 			harnesses
 				.refresh()
 				.pipe(

@@ -1,4 +1,5 @@
-import { Effect, Option } from 'effect';
+import { parseIdleDuration } from '@oagent/engine';
+import { Effect, Layer, Logger, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import { defaultEngineUrl } from '../lib/engine-client.ts';
 import { parseAgents, parseAliases } from '../lib/ephemeral-config.ts';
@@ -21,12 +22,13 @@ export const mcpCmd = (version: Version) =>
 				},
 				(params) =>
 					Effect.gen(function* () {
+						yield* parseIdleDuration(params.idleExit);
 						const aliases = yield* parseAliases(params.aliases);
 						const agents = yield* parseAgents(
 							Option.getOrUndefined(params.agents),
 						);
 						yield* runMcpStdio({ ...params, version, aliases, agents });
-					}),
+					}).pipe(Effect.provide(Layer.succeed(Logger.LogToStderr, true))),
 			),
 		]),
 	);

@@ -6,7 +6,8 @@ import { getServiceStartCommand } from './service/environment.ts';
 function refused(cause: unknown): boolean {
 	if (typeof cause !== 'object' || cause === null) return false;
 	return (
-		('code' in cause && cause.code === 'ECONNREFUSED') ||
+		('code' in cause &&
+			(cause.code === 'ECONNREFUSED' || cause.code === 'ConnectionRefused')) ||
 		('cause' in cause && refused(cause.cause))
 	);
 }

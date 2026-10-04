@@ -1,5 +1,5 @@
-import { Engine } from '@oagent/engine';
-import { Duration, Effect, Option } from 'effect';
+import { Engine, parseIdleDuration } from '@oagent/engine';
+import { type Duration, Effect, Option } from 'effect';
 import { Command, Flag } from 'effect/unstable/cli';
 import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
@@ -69,13 +69,16 @@ export const serveCmd = (version: Version) =>
 			),
 		},
 		(params) =>
-			runServe({
-				port: params.port,
-				portless: params.portless,
-				logFile: Option.getOrUndefined(params.logFile),
-				version,
-				idleExit: Option.isSome(params.idleExit)
-					? Duration.fromInputUnsafe(params.idleExit.value as Duration.Input)
-					: undefined,
+			Effect.gen(function* () {
+				const idleExit = Option.isSome(params.idleExit)
+					? yield* parseIdleDuration(params.idleExit.value)
+					: undefined;
+				return yield* runServe({
+					port: params.port,
+					portless: params.portless,
+					logFile: Option.getOrUndefined(params.logFile),
+					version,
+					idleExit,
+				});
 			}),
 	);

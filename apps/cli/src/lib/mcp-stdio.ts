@@ -12,6 +12,7 @@ import {
 	listTool,
 	readTool,
 	sendMessageTool,
+	startDescription,
 	startInputSchema,
 	startWorktreeInputSchema,
 } from '@oagent/engine';
@@ -86,8 +87,7 @@ export function runMcpStdio(params: {
 		register(
 			'start',
 			{
-				description:
-					'Start a coding-agent session or fork an existing session/job.',
+				description: startDescription(),
 				inputSchema:
 					worktree.enabled && worktree.createCommand.trim() !== ''
 						? startWorktreeInputSchema

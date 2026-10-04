@@ -1,5 +1,19 @@
 import { expect, test } from 'bun:test';
-import { createIdleTracker } from './idle.ts';
+import { Duration, Effect } from 'effect';
+import { createIdleTracker, parseIdleDuration } from './idle.ts';
+
+test('duration shorthand is accepted and invalid durations fail', async () => {
+	expect(
+		Duration.toMillis(await Effect.runPromise(parseIdleDuration('5s'))),
+	).toBe(5000);
+	expect(
+		Duration.toMillis(await Effect.runPromise(parseIdleDuration('10m'))),
+	).toBe(600000);
+	await expect(
+		Effect.runPromise(parseIdleDuration('invalid')),
+	).rejects.toThrow();
+	await expect(Effect.runPromise(parseIdleDuration('0s'))).rejects.toThrow();
+});
 
 test('idle decisions include requests, jobs, activity and sticky MCP', () => {
 	let now = 0;
