@@ -223,7 +223,7 @@ describe('session turns', () => {
 			database.sqlite.close();
 		});
 	}
-	for (const backend of ['claude', 'codex', 'grok'] as const) {
+	for (const backend of ['claude', 'codex', 'grok', 'pi'] as const) {
 		test(`rejects model switching on ${backend}`, async () => {
 			const database = createTestDatabase();
 			const services = await createServices(database, backend, () =>

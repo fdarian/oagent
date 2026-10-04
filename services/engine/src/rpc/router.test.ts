@@ -5,6 +5,21 @@ import type { Settings } from '../settings.ts';
 import { createHarnessEnvProcedures } from './router.ts';
 
 describe('settings.setHarnessEnv', () => {
+	test('accepts the Pi backend', async () => {
+		const procedures = await Effect.runPromise(
+			createHarnessEnvProcedures({
+				getHarnessEnv: (backend) => {
+					expect(backend).toBe('pi');
+					return { PI_TEST: 'enabled' };
+				},
+				setHarnessEnv: () => {},
+			}),
+		);
+		const getHarnessEnv = createProcedureClient(procedures.getHarnessEnv);
+		await expect(getHarnessEnv({ backend: 'pi' })).resolves.toEqual({
+			env: [{ key: 'PI_TEST', value: 'enabled' }],
+		});
+	});
 	test('accepts the Claude backend', async () => {
 		const settings: Pick<
 			Settings['Service'],

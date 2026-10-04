@@ -41,6 +41,7 @@ const backendSchema = Schema.Literals([
 	'grok',
 	'codex',
 	'claude',
+	'pi',
 ]);
 const reasoningEffortSchema = Schema.optional(
 	Schema.String.check(Schema.isMinLength(1)),

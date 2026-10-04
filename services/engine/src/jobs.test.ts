@@ -43,6 +43,12 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 
 describe('start model reasoning effort', () => {
 	const cases = [
+		{
+			model: 'pi:provider/model#off',
+			expectedModel: 'provider/model',
+			expectedEffort: 'off',
+			backend: 'pi' as const,
+		},
 		{ model: 'opencode:test', expectedModel: 'test', expectedEffort: null },
 		{
 			model: 'opencode:test#medium',
@@ -73,7 +79,7 @@ describe('start model reasoning effort', () => {
 				.run();
 			const efforts: Array<string | undefined> = [];
 			const harness = {
-				backend: 'opencode' as const,
+				backend: entry.backend ?? 'opencode',
 				runTurn: (input: { reasoningEffort?: string }) =>
 					Effect.sync(() => {
 						efforts.push(input.reasoningEffort);
@@ -100,6 +106,7 @@ describe('start model reasoning effort', () => {
 			);
 			const session = insertSession(database, {
 				uuid: 'session-model',
+				backend: entry.backend,
 				title: 'Model session',
 				cwd: '/tmp',
 			});

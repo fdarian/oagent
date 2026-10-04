@@ -6,7 +6,13 @@ import type {
 	AcpTurnFailed,
 } from './acp-agent.ts';
 
-export type Backend = 'opencode' | 'cursor' | 'grok' | 'codex' | 'claude';
+export type Backend =
+	| 'opencode'
+	| 'cursor'
+	| 'grok'
+	| 'codex'
+	| 'claude'
+	| 'pi';
 
 export function isBackend(value: string): value is Backend {
 	return (
@@ -14,7 +20,8 @@ export function isBackend(value: string): value is Backend {
 		value === 'cursor' ||
 		value === 'grok' ||
 		value === 'codex' ||
-		value === 'claude'
+		value === 'claude' ||
+		value === 'pi'
 	);
 }
 

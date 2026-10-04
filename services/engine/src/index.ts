@@ -55,3 +55,4 @@ export { Engine } from './server.ts';
 export { Sessions } from './sessions.ts';
 export { Settings } from './settings.ts';
 export { SideChats } from './side-chats.ts';
+export { Pi } from './pi.ts';
