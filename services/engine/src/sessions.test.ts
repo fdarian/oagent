@@ -31,6 +31,8 @@ function createServices(
 ) {
 	const harness = {
 		backend,
+		supportsModelSwitch: backend === 'opencode' || backend === 'cursor',
+		listModels: () => Effect.succeed([{ id: 'model' }, { id: 'new-model' }]),
 		runTurn,
 		steer: options?.steer,
 		forkSession: options?.forkSession,
@@ -133,6 +135,133 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	for (const backend of ['opencode', 'cursor'] as const) {
+		test(`persists a ${backend} model override during a running turn for future turns`, async () => {
+			const database = createTestDatabase();
+			const calls: Array<{ model?: string; effort?: string }> = [];
+			const turnStarted = Promise.withResolvers<void>();
+			const releaseTurn = Promise.withResolvers<void>();
+			const services = await createServices(database, backend, (input) =>
+				Effect.promise(async () => {
+					calls.push({ model: input.model, effort: input.reasoningEffort });
+					input.onSessionId?.('harness');
+					turnStarted.resolve();
+					await releaseTurn.promise;
+					return { sessionId: 'harness', text: 'done', stopReason: 'end_turn' };
+				}),
+			);
+			database.db
+				.insert(schema.modelAliases)
+				.values({
+					name: 'deep',
+					backend,
+					model_id: 'model',
+					reasoning_effort: 'high',
+				})
+				.run();
+			const started = await Effect.runPromise(
+				services.sessions.start({
+					title: 'Switch',
+					prompt: 'first',
+					cwd: '/repo',
+					model: 'deep',
+				}),
+			);
+			await turnStarted.promise;
+			expect(
+				await Effect.runPromise(
+					services.sessions.get({ sessionId: started.sessionId }),
+				),
+			).toMatchObject({
+				model: 'model',
+				supportsModelSwitch: true,
+			});
+			database.db
+				.update(schema.sessions)
+				.set({ reasoning_effort: 'high' })
+				.run();
+			await Effect.runPromise(
+				services.sessions.setModel(started.sessionId, 'new-model'),
+			);
+			expect(database.db.select().from(schema.sessions).get()).toMatchObject({
+				model: 'new-model',
+				reasoning_effort: null,
+			});
+			const detail = await Effect.runPromise(
+				services.sessions.get({ sessionId: started.sessionId }),
+			);
+			expect(detail.model).toBe('new-model');
+			expect(detail.jobs[0]?.model).toBe('model');
+			expect(calls).toEqual([{ model: 'model', effort: 'high' }]);
+			releaseTurn.resolve();
+			await Effect.runPromise(services.jobs.wait({ jobId: started.jobId }));
+			for (const prompt of ['second', 'third']) {
+				const turn = await Effect.runPromise(
+					services.sessions.sendMessage({
+						sessionId: started.sessionId,
+						prompt,
+					}),
+				);
+				await Effect.runPromise(services.jobs.wait({ jobId: turn.jobId }));
+			}
+			expect(calls).toEqual([
+				{ model: 'model', effort: 'high' },
+				{ model: 'new-model', effort: undefined },
+				{ model: 'new-model', effort: undefined },
+			]);
+			await expect(
+				Effect.runPromise(
+					services.sessions.setModel(started.sessionId, 'unknown'),
+				),
+			).rejects.toMatchObject({
+				_tag: 'SessionModelError',
+				code: 'INVALID_MODEL',
+			});
+			expect(database.db.select().from(schema.sessions).get()?.model).toBe(
+				'new-model',
+			);
+			database.sqlite.close();
+		});
+	}
+	for (const backend of ['claude', 'codex', 'grok'] as const) {
+		test(`rejects model switching on ${backend}`, async () => {
+			const database = createTestDatabase();
+			const services = await createServices(database, backend, () =>
+				Effect.succeed({
+					sessionId: 'harness',
+					text: 'done',
+					stopReason: 'end_turn',
+				}),
+			);
+			const session = insertSession(database, {
+				uuid: 'unsupported',
+				title: 'Unsupported',
+				backend,
+				harnessSessionId: 'harness',
+				cwd: '/repo',
+			});
+			await expect(
+				Effect.runPromise(
+					services.sessions.setModel(session.uuid, 'new-model'),
+				),
+			).rejects.toMatchObject({
+				_tag: 'SessionModelError',
+				code: 'UNSUPPORTED_BACKEND',
+			});
+			expect(
+				await Effect.runPromise(
+					services.sessions.get({ sessionId: session.uuid }),
+				),
+			).toMatchObject({ supportsModelSwitch: false });
+			expect(
+				database.db.select().from(schema.sessions).get()?.model,
+			).toBeNull();
+			await expect(
+				Effect.runPromise(services.sessions.setModel('missing', 'new-model')),
+			).rejects.toMatchObject({ _tag: 'SessionNotFound' });
+			database.sqlite.close();
+		});
+	}
 	test('lists session details and root turns in chronological order without side-chat turns', async () => {
 		const database = createTestDatabase();
 		const services = await createServices(database, 'opencode', () =>
@@ -503,6 +632,75 @@ describe('session turns', () => {
 				sessionId: 'ses_started',
 			},
 		]);
+		database.sqlite.close();
+	});
+
+	test('lists sessions by root-job activity before limiting, with creation time preserved', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(database, 'opencode', () =>
+			Effect.die('Unexpected turn'),
+		);
+		const older = insertSession(database, {
+			uuid: 'older',
+			title: 'Older',
+			backend: 'opencode',
+			harnessSessionId: 'older',
+			cwd: '/repo',
+		});
+		database.db
+			.update(schema.sessions)
+			.set({ created_at: new Date(1) })
+			.where(eq(schema.sessions.id, older.id))
+			.run();
+		for (let index = 0; index < 101; index++) {
+			const newer = insertSession(database, {
+				uuid: `newer-${index}`,
+				title: 'Newer',
+				backend: 'opencode',
+				harnessSessionId: `newer-${index}`,
+				cwd: '/repo',
+			});
+			database.db
+				.insert(schema.jobs)
+				.values({
+					uuid: `job-${index}`,
+					session_id: newer.id,
+					status: 'done',
+					prompt: 'newer',
+					created_at: new Date(200),
+				})
+				.run();
+		}
+		database.db
+			.insert(schema.jobs)
+			.values([
+				{
+					uuid: 'older-completed',
+					session_id: older.id,
+					status: 'done',
+					prompt: 'completed',
+					created_at: new Date(100),
+					terminated_at: new Date(400),
+				},
+				{
+					uuid: 'older-latest',
+					session_id: older.id,
+					status: 'done',
+					prompt: 'latest',
+					created_at: new Date(300),
+					terminated_at: new Date(350),
+				},
+			])
+			.run();
+		const listed = await Effect.runPromise(services.sessions.list({}));
+		expect(listed).toHaveLength(100);
+		expect(listed[0]).toMatchObject({
+			id: 'older',
+			jobId: 'older-latest',
+			createdAt: 1,
+			lastActivityAt: 400,
+		});
+		expect(listed[1]).toMatchObject({ id: 'newer-100', lastActivityAt: 200 });
 		database.sqlite.close();
 	});
 

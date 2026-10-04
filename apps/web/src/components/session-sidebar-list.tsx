@@ -58,7 +58,7 @@ function SessionSidebarItem(props: {
 			<div className="flex items-center gap-15 text-caption text-muted-foreground">
 				<span className="truncate">{session.cwd}</span>
 				<span>·</span>
-				<span>{formatAge(session.createdAt)}</span>
+				<span>{formatAge(session.lastActivityAt)}</span>
 			</div>
 		</Link>
 	);

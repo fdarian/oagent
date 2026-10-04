@@ -24,6 +24,8 @@ export const sessions = sqliteTable(
 		uuid: text().notNull(),
 		title: text().notNull(),
 		backend: text().notNull(),
+		model: text(),
+		reasoning_effort: text(),
 		harness_session_id: text(),
 		cwd: text().notNull(),
 		worktree_path: text(),

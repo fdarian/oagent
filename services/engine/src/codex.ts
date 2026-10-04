@@ -511,6 +511,7 @@ export class Codex extends Context.Service<Codex>()('oagent/Codex', {
 
 		return {
 			backend: 'codex',
+			supportsModelSwitch: false,
 			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) => {
 				const configOptions = getCodexConfigOptions(
 					input.model,

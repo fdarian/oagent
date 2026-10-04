@@ -158,6 +158,7 @@ export type HarnessForkSessionBefore = (input: {
 
 export type Harness = {
 	backend: Backend;
+	supportsModelSwitch: boolean;
 	runTurn: AcpAgent['Service']['runTurn'];
 	listModels: () => Effect.Effect<
 		ReadonlyArray<ModelEntry>,

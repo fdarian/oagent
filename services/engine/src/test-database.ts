@@ -10,6 +10,8 @@ CREATE TABLE sessions (
 	uuid TEXT NOT NULL UNIQUE,
 	title TEXT NOT NULL,
 	backend TEXT NOT NULL,
+	model TEXT,
+	reasoning_effort TEXT,
 	harness_session_id TEXT,
 	cwd TEXT NOT NULL,
 	worktree_path TEXT,

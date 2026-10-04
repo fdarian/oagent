@@ -12,7 +12,12 @@ import { serviceCmd } from './commands/service';
 import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
 
-const version: Version = cliPackage.version;
+declare const OAGENT_BUILD_VERSION: string;
+
+const version: Version =
+	typeof OAGENT_BUILD_VERSION === 'undefined'
+		? cliPackage.version
+		: OAGENT_BUILD_VERSION;
 
 const cli = Command.make('oagent').pipe(
 	Command.withDescription(

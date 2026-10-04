@@ -18,7 +18,7 @@ import m0013 from '../drizzle/0013_lovely_shape.sql' with { type: 'text' };
 import m0014 from '../drizzle/0014_sharp_nocturne.sql' with { type: 'text' };
 import m0015 from '../drizzle/0015_striped_elektra.sql' with { type: 'text' };
 import m0016 from '../drizzle/0016_parched_menace.sql' with { type: 'text' };
-import m0017 from '../drizzle/0017_hesitant_chronomancer.sql' with { type: 'text' };
+import m0017 from '../drizzle/0017_overrated_vengeance.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -40,6 +40,6 @@ export default {
   '0014_sharp_nocturne': m0014,
   '0015_striped_elektra': m0015,
   '0016_parched_menace': m0016,
-  '0017_hesitant_chronomancer': m0017
+  '0017_overrated_vengeance': m0017
   } as Record<string, string>,
 };

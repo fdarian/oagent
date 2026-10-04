@@ -40,14 +40,14 @@ function formatMonthDay(d: Date): string {
 		.toUpperCase();
 }
 
-export function groupByDay<T extends { createdAt: number }>(
+export function groupByDay<T extends { lastActivityAt: number }>(
 	items: T[],
 ): { label: string; items: T[] }[] {
 	const now = new Date();
 	const groups = new Map<string, T[]>();
 
 	for (const item of items) {
-		const d = new Date(item.createdAt);
+		const d = new Date(item.lastActivityAt);
 		let label: string;
 		if (isSameDay(d, now)) {
 			label = 'TODAY';

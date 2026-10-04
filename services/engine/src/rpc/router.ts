@@ -304,6 +304,20 @@ const router = procedure.router({
 				const sessions = yield* Sessions;
 				return yield* sessions.sendMessage(options.input);
 			}),
+		setModel: procedure
+			.input(
+				v.object({
+					sessionId: v.string(),
+					model: v.pipe(v.string(), v.nonEmpty()),
+				}),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.setModel(
+					options.input.sessionId,
+					options.input.model,
+				);
+			}),
 		read: procedure
 			.input(
 				v.object({

@@ -141,6 +141,7 @@ export class Grok extends Context.Service<Grok>()('oagent/Grok', {
 
 		return {
 			backend: 'grok',
+			supportsModelSwitch: false,
 			runTurn,
 			listModels,
 			listModelEfforts,

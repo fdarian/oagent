@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { fn } from 'storybook/test';
+import { useState } from 'react';
+import { expect, fn, userEvent, within } from 'storybook/test';
 import { JobHeader } from './job-header';
 
 const meta: Meta<typeof JobHeader> = {
@@ -93,4 +94,107 @@ export const CostError: Story = {
 
 export const UnsupportedCost: Story = {
 	args: { ...Completed.args, backend: 'grok', cost: { status: 'unsupported' } },
+};
+
+export const SwitchModel: Story = {
+	args: { ...base, status: 'running' },
+	render: function Render(args) {
+		const [model, setModel] = useState(base.model);
+		return (
+			<JobHeader
+				{...args}
+				sessionModelControl={{
+					model,
+					models: [
+						{ id: base.model, label: 'Kimi K2.6' },
+						{ id: 'provider/next-model', label: 'Next model' },
+					],
+					onChange: setModel,
+					isPending: false,
+				}}
+			/>
+		);
+	},
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await userEvent.click(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		);
+		await userEvent.click(
+			await within(context.canvasElement.ownerDocument.body).findByRole(
+				'option',
+				{
+					name: 'Next model',
+				},
+			),
+		);
+		await expect(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		).toHaveTextContent('provider/next-model');
+	},
+};
+
+export const UnsupportedModelSwitch: Story = {
+	args: { ...base, backend: 'grok', status: 'done', model: 'grok-4' },
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.queryByRole('combobox', { name: 'Session model' }),
+		).not.toBeInTheDocument();
+		await expect(canvas.getByText('grok-4')).toBeVisible();
+	},
+};
+
+export const ModelsNotReady: Story = {
+	args: { ...base, status: 'done', model: 'provider/next-model' },
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.queryByRole('combobox', { name: 'Session model' }),
+		).not.toBeInTheDocument();
+		await expect(canvas.getByText('provider/next-model')).toBeVisible();
+	},
+};
+
+export const ModelChangePending: Story = {
+	args: {
+		...base,
+		status: 'running',
+		sessionModelControl: {
+			model: base.model,
+			models: [{ id: base.model, label: 'Kimi K2.6' }],
+			onChange: fn(),
+			isPending: true,
+		},
+	},
+	play: async (context) => {
+		await expect(
+			within(context.canvasElement).getByRole('combobox', {
+				name: 'Session model',
+			}),
+		).toBeDisabled();
+	},
+};
+
+export const ModelChangeError: Story = {
+	args: {
+		...base,
+		status: 'done',
+		sessionModelControl: {
+			model: base.model,
+			models: [{ id: base.model, label: 'Kimi K2.6' }],
+			onChange: fn(),
+			isPending: false,
+			error: 'Could not persist the session model.',
+		},
+	},
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await expect(
+			canvas.getByRole('combobox', { name: 'Session model' }),
+		).toBeEnabled();
+		await expect(canvas.getByRole('alert')).toHaveTextContent(
+			'Could not persist the session model.',
+		);
+	},
 };

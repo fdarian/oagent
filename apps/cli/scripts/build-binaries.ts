@@ -44,6 +44,7 @@ for (const target of targets) {
 	await compileBinary({
 		outfile: `${outDir}/oagent`,
 		target: target.bunTarget,
+		production: process.argv.includes('--prod'),
 	});
 
 	if (target.label.startsWith('darwin')) signMacBinary(`${outDir}/oagent`);

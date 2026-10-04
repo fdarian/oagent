@@ -10,6 +10,7 @@ export type SessionListItem = {
 	title: string;
 	status: string;
 	createdAt: number;
+	lastActivityAt: number;
 	prompt: string;
 	cwd: string;
 };

@@ -247,6 +247,59 @@ test('backfills session titles from the lowest job id and names empty sessions',
 			{ id: 5, session_id: 5 },
 		]);
 		expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([]);
+		expect(
+			sqlite.query('SELECT model, reasoning_effort FROM sessions').all(),
+		).toEqual(
+			Array.from({ length: 5 }, () => ({
+				model: null,
+				reasoning_effort: null,
+			})),
+		);
+	} finally {
+		sqlite.close();
+	}
+});
+
+test('adds session cost caching after session model preferences without losing either', () => {
+	const sqlite = new Database(':memory:');
+	try {
+		const modelMigration = bundle.journal.entries.find(
+			(entry) => entry.tag === '0017_overrated_vengeance',
+		);
+		if (modelMigration === undefined)
+			throw new Error('Missing session model migration');
+		for (const migration of bundle.journal.entries.filter(
+			(entry) => entry.idx <= modelMigration.idx,
+		)) {
+			const migrationSql = bundle.files[migration.tag];
+			if (migrationSql === undefined)
+				throw new Error(`Missing ${migration.tag}`);
+			sqlite.exec(migrationSql);
+		}
+		sqlite.exec(`
+			CREATE TABLE __drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at numeric);
+			INSERT INTO __drizzle_migrations (hash, created_at) VALUES ('models', ${modelMigration.when});
+			PRAGMA foreign_keys=ON;
+			INSERT INTO sessions (id, uuid, title, backend, model, reasoning_effort, cwd, created_at)
+			VALUES (1, 'model-session', 'Model session', 'codex', 'gpt-6', 'high', '/repo', 100);
+		`);
+		Effect.runSync(runMigrations(drizzle(sqlite)));
+		expect(
+			sqlite.query('SELECT model, reasoning_effort FROM sessions').all(),
+		).toEqual([{ model: 'gpt-6', reasoning_effort: 'high' }]);
+		const insertCost = sqlite.query(
+			'INSERT INTO session_costs (session_id, input_tokens, output_tokens, cache_creation_tokens, cache_read_tokens, total_cost_usd, computed_at) VALUES (?, 100, 20, 30, 40, 1.23, 200)',
+		);
+		insertCost.run(1);
+		expect(() => insertCost.run(1)).toThrow();
+		expect(() => insertCost.run(999)).toThrow();
+		Effect.runSync(runMigrations(drizzle(sqlite)));
+		expect(
+			sqlite
+				.query('SELECT session_id, total_cost_usd FROM session_costs')
+				.all(),
+		).toEqual([{ session_id: 1, total_cost_usd: 1.23 }]);
+		expect(sqlite.query('PRAGMA foreign_key_check').all()).toEqual([]);
 	} finally {
 		sqlite.close();
 	}
