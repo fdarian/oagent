@@ -14,6 +14,7 @@ import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
 import { createEngineHandler } from './rpc/handler.ts';
 import type { EngineServices } from './rpc/router.ts';
+import { SessionCosts } from './session-costs.ts';
 import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { SideChats } from './side-chats.ts';
@@ -241,6 +242,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
 		Layer.provide(Sessions.layer),
+		Layer.provide(SessionCosts.layer),
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(HarnessRegistry.layer),

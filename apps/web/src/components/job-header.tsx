@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
 import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import type { client } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
 import {
@@ -29,6 +30,12 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from './ui/select';
+import {
+	Tooltip,
+	TooltipContent,
+	TooltipProvider,
+	TooltipTrigger,
+} from './ui/tooltip';
 
 type SessionModelControl = {
 	model?: string;
@@ -51,6 +58,9 @@ export type JobHeaderProps = {
 	agentType?: string;
 	sessionId?: string;
 	harnessSessionId?: string;
+	cost?: Awaited<ReturnType<typeof client.sessions.cost>>;
+	costLoading?: boolean;
+	costError?: string;
 	createdAt: number;
 	terminatedAt?: number;
 	onCancel?: () => void;
@@ -250,6 +260,74 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 	);
 }
 
+function formatSessionCost(amount: number): string {
+	if (amount === 0) return '$0';
+	if (amount > 0 && amount < 0.0001) return '<$0.0001';
+	return new Intl.NumberFormat('en-US', {
+		style: 'currency',
+		currency: 'USD',
+		...(amount >= 1
+			? { minimumFractionDigits: 2, maximumFractionDigits: 2 }
+			: { minimumSignificantDigits: 2, maximumSignificantDigits: 2 }),
+	}).format(amount);
+}
+
+function SessionCost(
+	props: Pick<JobHeaderProps, 'cost' | 'costLoading' | 'costError'>,
+) {
+	if (props.costError !== undefined)
+		return (
+			<TooltipProvider>
+				<Tooltip>
+					<TooltipTrigger className="cursor-help text-muted-foreground">
+						—
+					</TooltipTrigger>
+					<TooltipContent>{props.costError}</TooltipContent>
+				</Tooltip>
+			</TooltipProvider>
+		);
+	if (props.cost === undefined)
+		return props.costLoading ? (
+			<span
+				role="status"
+				aria-label="Loading session cost"
+				className="animate-pulse text-muted-foreground"
+			>
+				…
+			</span>
+		) : null;
+	if (props.cost.status === 'unsupported') return null;
+	const cost = props.cost;
+	const formattedCost = formatSessionCost(cost.totalCostUsd);
+	const details = [
+		'API-price-equivalent cost (USD)',
+		`Cost: $${cost.totalCostUsd} USD`,
+		`Input: ${cost.inputTokens.toLocaleString()} tokens`,
+		`Output: ${cost.outputTokens.toLocaleString()} tokens`,
+		`Cache write: ${cost.cacheCreationTokens.toLocaleString()} tokens`,
+		`Cache read: ${cost.cacheReadTokens.toLocaleString()} tokens`,
+		...(cost.stale ? ['Updates when the turn ends'] : []),
+	].join('\n');
+	return (
+		<TooltipProvider>
+			<Tooltip>
+				<TooltipTrigger
+					aria-label={`Session API-price-equivalent cost: ${formattedCost}`}
+					className={cn(
+						'cursor-help tabular-nums',
+						cost.stale ? 'text-muted-foreground opacity-60' : 'text-foreground',
+					)}
+				>
+					{formattedCost}
+				</TooltipTrigger>
+				<TooltipContent className="whitespace-pre-line">
+					{details}
+				</TooltipContent>
+			</Tooltip>
+		</TooltipProvider>
+	);
+}
+
 function SessionModelSelect(props: { control: SessionModelControl }) {
 	return (
 		<span className="flex min-w-0 flex-col gap-1">
@@ -343,6 +421,11 @@ export function JobHeader(props: JobHeaderProps) {
 								backend={props.backend}
 								sessionId={props.sessionId}
 								harnessSessionId={props.harnessSessionId}
+							/>
+							<SessionCost
+								cost={props.cost}
+								costLoading={props.costLoading}
+								costError={props.costError}
 							/>
 						</span>
 					</div>

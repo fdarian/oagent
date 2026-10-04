@@ -40,6 +40,25 @@ export const sessions = sqliteTable(
 	(table) => [uniqueIndex('sessions_uuid_uq').on(table.uuid)],
 );
 
+export const sessionCosts = sqliteTable(
+	'session_costs',
+	{
+		id: integer({ mode: 'number' }).primaryKey({ autoIncrement: true }),
+		session_id: integer({ mode: 'number' })
+			.notNull()
+			.references(() => sessions.id),
+		input_tokens: integer().notNull(),
+		output_tokens: integer().notNull(),
+		cache_creation_tokens: integer().notNull(),
+		cache_read_tokens: integer().notNull(),
+		total_cost_usd: real().notNull(),
+		computed_at: integer({ mode: 'timestamp_ms' })
+			.notNull()
+			.$defaultFn(() => new Date()),
+	},
+	(table) => [uniqueIndex('session_costs_session_id_uq').on(table.session_id)],
+);
+
 export const jobs = sqliteTable(
 	'jobs',
 	{

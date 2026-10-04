@@ -10,6 +10,7 @@ import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
+import { SessionCosts } from '../session-costs.ts';
 import { Sessions } from '../sessions.ts';
 import { Settings } from '../settings.ts';
 import { SideChats } from '../side-chats.ts';
@@ -18,6 +19,7 @@ import { validateWorktreeTemplate } from '../worktree.ts';
 export type EngineServices =
 	| Jobs
 	| Sessions
+	| SessionCosts
 	| SideChats
 	| Harnesses
 	| Settings
@@ -344,6 +346,12 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.get(options.input);
+			}),
+		cost: procedure
+			.input(v.object({ sessionId: v.string() }))
+			.effect(function* (options) {
+				const costs = yield* SessionCosts;
+				return yield* costs.get(options.input.sessionId);
 			}),
 	},
 	sideChats: {

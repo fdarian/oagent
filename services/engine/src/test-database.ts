@@ -29,6 +29,25 @@ CREATE TABLE side_chats (
 	created_at INTEGER NOT NULL
 );
 
+CREATE TABLE session_costs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	session_id INTEGER NOT NULL UNIQUE REFERENCES sessions(id),
+	input_tokens INTEGER NOT NULL,
+	output_tokens INTEGER NOT NULL,
+	cache_creation_tokens INTEGER NOT NULL,
+	cache_read_tokens INTEGER NOT NULL,
+	total_cost_usd REAL NOT NULL,
+	computed_at INTEGER NOT NULL
+);
+
+CREATE TABLE settings (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	key TEXT NOT NULL UNIQUE,
+	value TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+
 CREATE TABLE jobs (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	uuid TEXT NOT NULL UNIQUE,

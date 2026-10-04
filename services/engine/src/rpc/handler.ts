@@ -5,6 +5,7 @@ import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
 import { JobNotFound, JobSteerError } from '../jobs.ts';
+import { SessionCostError } from '../session-costs.ts';
 import { SideChatError, SideChatNotFound } from '../side-chats.ts';
 import { WorktreeError } from '../worktree.ts';
 import { type EngineServices, router } from './router.ts';
@@ -43,6 +44,7 @@ function toProcedureError(error: unknown) {
 	}
 	if (
 		error instanceof HarnessesError ||
+		error instanceof SessionCostError ||
 		error instanceof HarnessModelError ||
 		error instanceof AgentTypeNotFound ||
 		error instanceof AgentNotMappedForBackend

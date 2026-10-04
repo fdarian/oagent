@@ -83,6 +83,12 @@ function SessionConversation(props: {
 	latest: SessionJob;
 }) {
 	const selectedJob = props.latest;
+	const costQuery = useQuery(
+		orpc.sessions.cost.queryOptions({
+			input: { sessionId: selectedJob.sessionId },
+			retry: false,
+		}),
+	);
 	const jobId = selectedJob.id;
 	const search = useSearch({ from: '/console/sessions/$sessionId' });
 	const navigate = useNavigate({ from: '/sessions/$sessionId' });
@@ -93,8 +99,22 @@ function SessionConversation(props: {
 	>(undefined);
 	const childSelection = activeChildState[0];
 	const setChildSelection = activeChildState[1];
-	const events = useJobEvents(jobId);
+	const events = useJobEvents(jobId, undefined, selectedJob.sessionId);
 	const queryClient = useQueryClient();
+	useEffect(() => {
+		if (
+			events.terminal &&
+			costQuery.data?.status === 'ready' &&
+			costQuery.data.stale
+		) {
+			// Terminal invalidation can arrive while the initial cost scan is still pending.
+			void queryClient.invalidateQueries({
+				queryKey: orpc.sessions.cost.key({
+					input: { sessionId: selectedJob.sessionId },
+				}),
+			});
+		}
+	}, [events.terminal, costQuery.data, queryClient, selectedJob.sessionId]);
 	const modelsQuery = useQuery(
 		orpc.models.list.queryOptions({
 			input: { backend: props.session.backend },
@@ -521,6 +541,9 @@ function SessionConversation(props: {
 										agentType={selectedJob.agentType}
 										sessionId={selectedJob.sessionId}
 										harnessSessionId={selectedJob.harnessSessionId}
+										cost={costQuery.data}
+										costLoading={costQuery.isPending}
+										costError={costQuery.error?.message}
 										createdAt={selectedJob.createdAt}
 										terminatedAt={selectedJob.terminatedAt}
 										onCancel={() => {

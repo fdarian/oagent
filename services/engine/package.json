@@ -19,6 +19,7 @@
 		"@modelcontextprotocol/server": "catalog:",
 		"@orpc/experimental-effect": "catalog:",
 		"@orpc/server": "catalog:",
+		"ccusage-lib": "^0.1.0",
 		"drizzle-orm": "^0.45.2",
 		"effect": "catalog:",
 		"get-port": "^7.2.0",

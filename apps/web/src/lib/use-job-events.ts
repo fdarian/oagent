@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import {
 	applyEvent,
@@ -7,7 +8,7 @@ import {
 	type TimelinePart,
 	toDisplayState,
 } from './event-adapter.ts';
-import { getEngineEndpointURL } from './orpc.ts';
+import { getEngineEndpointURL, orpc } from './orpc.ts';
 
 export type JobEventsState = {
 	jobId?: string;
@@ -98,7 +99,9 @@ export function subscribeJobEvents(
 export function useJobEvents(
 	jobId: string | undefined,
 	onConnectionError?: (jobId: string) => void,
+	sessionId?: string,
 ): JobEventsState {
+	const queryClient = useQueryClient();
 	const [result, setResult] = useState<JobEventsState>({
 		parts: [],
 		streamingTail: null,
@@ -119,13 +122,24 @@ export function useJobEvents(
 			return;
 		}
 
-		return subscribeJobEvents(jobId, setResult, (id) => {
-			setResult((previous) =>
-				previous.jobId === id ? { ...previous, isLoading: false } : previous,
-			);
-			onConnectionError?.(id);
-		});
-	}, [jobId, onConnectionError]);
+		return subscribeJobEvents(
+			jobId,
+			(state) => {
+				setResult(state);
+				if (state.terminal && sessionId !== undefined) {
+					void queryClient.invalidateQueries({
+						queryKey: orpc.sessions.cost.key({ input: { sessionId } }),
+					});
+				}
+			},
+			(id) => {
+				setResult((previous) =>
+					previous.jobId === id ? { ...previous, isLoading: false } : previous,
+				);
+				onConnectionError?.(id);
+			},
+		);
+	}, [jobId, onConnectionError, sessionId, queryClient]);
 
 	return result;
 }
