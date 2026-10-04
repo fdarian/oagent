@@ -191,7 +191,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			return { session, job, latestJob: latestJob(session) };
 		};
 
-		const forkHarnessSession = (forkId: string) =>
+		const forkHarnessSession = (forkId: string, modelOverride?: string) =>
 			Effect.gen(function* () {
 				const source = findForkSource(forkId);
 				if (source === undefined) {
@@ -217,7 +217,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				const sourceHarnessSessionId = source.session.harness_session_id;
 				const selectedJob = source.job;
-				if (selectedJob.model === null) {
+				if (selectedJob.model === null && modelOverride === undefined) {
 					return yield* new SessionForkError({
 						forkId,
 						code: 'SOURCE_NOT_READY',
@@ -316,7 +316,6 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					model: selectedJob.model,
 					reasoningEffort: selectedJob.reasoning_effort ?? undefined,
 					agentType: selectedJob.agent_type ?? undefined,
-					agentTarget: selectedJob.agent_target ?? undefined,
 					backend,
 					harnessSessionId: forkedSession.sessionId,
 				};
@@ -333,7 +332,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				const source =
 					input.forkId === undefined ? undefined : findForkSource(input.forkId);
 				const forkAgentTarget =
-					source?.job !== undefined && source.job.model !== null
+					source?.job !== undefined &&
+					(input.model !== undefined || source.job.model !== null)
 						? yield* jobs.validateStart({
 								model:
 									input.model ??
@@ -353,7 +353,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				const fork =
 					input.forkId === undefined
 						? undefined
-						: yield* forkHarnessSession(input.forkId);
+						: yield* forkHarnessSession(input.forkId, input.model);
 				const backend =
 					fork === undefined
 						? yield* jobs.resolveBackend(input.model)
@@ -367,7 +367,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				const model =
 					input.model ??
-					(fork === undefined ? undefined : `${fork.backend}:${fork.model}`);
+					(fork === undefined || fork.model === null
+						? undefined
+						: `${fork.backend}:${fork.model}`);
 				const agentType =
 					input.agent === undefined
 						? (input.agentType ?? fork?.agentType)
@@ -396,7 +398,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					model,
 					reasoningEffort: fork?.reasoningEffort,
 					agent: input.agent,
-					agentTarget,
+					agentTarget:
+						input.agent !== undefined ||
+						(input.agentType === undefined && source?.job?.agent_target != null)
+							? agentTarget
+							: undefined,
 					agentType,
 					worktree: input.worktree,
 				});
