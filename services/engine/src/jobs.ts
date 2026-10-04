@@ -8,8 +8,8 @@ import { Context, Effect, Exit, Fiber, Layer, Option, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
 	Agents,
-	resolveInlineAgent,
 	type AgentTypeNotFound,
+	resolveInlineAgent,
 } from './agents.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
@@ -102,6 +102,7 @@ type ReserveJobInput = {
 	model?: string;
 	reasoningEffort?: string;
 	agentType?: string;
+	agentTarget?: string;
 	agent?: import('./agents.ts').AgentDefinition;
 	sideChatId?: number;
 };
@@ -268,6 +269,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			model: string;
 			backend: Backend;
 			agentType?: string;
+			agentTarget?: string;
 			agent?: import('./agents.ts').AgentDefinition;
 		}) =>
 			Effect.gen(function* () {
@@ -279,10 +281,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Session backend does not match model backend'),
 					});
 				}
+				if (input.agentTarget !== undefined) return input.agentTarget;
 				if (input.agent !== undefined) {
-					yield* resolveInlineAgent(input.agent, input.backend);
+					return yield* resolveInlineAgent(input.agent, input.backend);
 				} else if (input.agentType !== undefined) {
-					yield* agents.resolve(input.agentType, input.backend);
+					return yield* agents.resolve(input.agentType, input.backend);
 				}
 			});
 
@@ -578,11 +581,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const reasoningEffort =
 					input.reasoningEffort ?? resolvedModel.reasoningEffort;
 				const agentTarget =
-					input.agent !== undefined
-						? yield* resolveInlineAgent(input.agent, backend)
-						: input.agentType === undefined
-							? undefined
-							: yield* agents.resolve(input.agentType, backend);
+					input.agentTarget !== undefined
+						? input.agentTarget
+						: input.agent !== undefined
+							? yield* resolveInlineAgent(input.agent, backend)
+							: input.agentType === undefined
+								? undefined
+								: yield* agents.resolve(input.agentType, backend);
 				const uuid = randomUUIDv7();
 
 				const jobRow = yield* Effect.try({
@@ -598,6 +603,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 									model: rest,
 									reasoning_effort: reasoningEffort,
 									agent_type: input.agent?.name ?? input.agentType,
+									agent_target: agentTarget,
 									session_id: input.session.id,
 									side_chat_id: input.sideChatId,
 								})

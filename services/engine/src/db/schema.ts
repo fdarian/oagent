@@ -69,6 +69,7 @@ export const jobs = sqliteTable(
 		model: text(),
 		reasoning_effort: text(),
 		agent_type: text(),
+		agent_target: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),

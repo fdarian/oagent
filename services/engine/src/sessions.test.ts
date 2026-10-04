@@ -136,6 +136,57 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	test('continues an inline agent without a DB definition', async () => {
+		const database = createTestDatabase();
+		const modes: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					modes.push(input.mode);
+					input.onSessionId?.('inline-harness');
+					return {
+						sessionId: 'inline-harness',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				agentResolve: (name) =>
+					new AgentTypeNotFound({ agentType: name, configuredAgentTypes: [] }),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Inline',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+				agent: {
+					name: 'ephemeral',
+					targets: [{ backend: 'opencode', target: 'reviewer' }],
+				},
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: started.jobId }));
+		const continued = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: continued.jobId }));
+		expect(modes).toEqual(['reviewer', 'reviewer']);
+		expect(
+			database.db
+				.select()
+				.from(schema.jobs)
+				.all()
+				.map((job) => job.agent_target),
+		).toEqual(['reviewer', 'reviewer']);
+		database.sqlite.close();
+	});
 	for (const backend of ['opencode', 'cursor'] as const) {
 		test(`persists a ${backend} model override during a running turn for future turns`, async () => {
 			const database = createTestDatabase();
