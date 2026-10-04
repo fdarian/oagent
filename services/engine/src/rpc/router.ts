@@ -190,13 +190,6 @@ const router = procedure.router({
 						prompt: Schema.String,
 						cwd: Schema.String,
 						model: Schema.optional(Schema.String),
-						agent: Schema.optional(
-							Schema.Struct({
-								name: agentNameSchema,
-								description: Schema.optional(Schema.String),
-								targets: Schema.Array(agentTargetSchema),
-							}),
-						),
 						agent_type: Schema.optional(Schema.String),
 						title: Schema.optional(Schema.String),
 						sessionId: Schema.optional(Schema.String),
@@ -306,6 +299,13 @@ const router = procedure.router({
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
 						title: Schema.String,
+						agent: Schema.optional(
+							Schema.Struct({
+								name: agentNameSchema,
+								description: Schema.optional(Schema.String),
+								targets: Schema.Array(agentTargetSchema),
+							}),
+						),
 						prompt: Schema.String,
 						cwd: Schema.optional(Schema.String),
 						model: Schema.optional(Schema.String),
