@@ -141,6 +141,13 @@
       "when": 1791108542255,
       "tag": "0019_icy_amazoness",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "6",
+      "when": 1791111238921,
+      "tag": "0020_minor_frightful_four",
+      "breakpoints": true
     }
   ]
 }
