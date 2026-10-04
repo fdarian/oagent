@@ -1,9 +1,9 @@
 import { expect, test } from 'bun:test';
 import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
+import { formatTurnResult } from '../format/turn-result.ts';
 import type { Jobs } from '../jobs.ts';
 import { waitWithProgress } from './progress.ts';
-import { formatTurnResult } from '../format/turn-result.ts';
 
 test('shutdown resolves a normal restarting result without waiting for the job', async () => {
 	const state = {
