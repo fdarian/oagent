@@ -10,6 +10,9 @@ import {
 } from './ephemeral-config.ts';
 
 test('aliases parse, expand and allow effort overrides', async () => {
+	await expect(Effect.runPromise(resolveModel('x#', [], true))).rejects.toThrow(
+		'empty reasoning-effort',
+	);
 	const aliases = await Effect.runPromise(
 		parseAliases(['x=opencode:openai/model#high']),
 	);

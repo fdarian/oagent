@@ -1,4 +1,8 @@
-import type { AgentDefinition, AliasPreset } from '@oagent/engine';
+import {
+	type AgentDefinition,
+	type AliasPreset,
+	parseModelInput,
+} from '@oagent/engine';
 import { Effect, Schema } from 'effect';
 import { FileSystem } from 'effect/FileSystem';
 
@@ -25,19 +29,20 @@ const agentsSchema = Schema.Record(
 );
 
 export function parseAliases(values: ReadonlyArray<string>) {
-	return Effect.forEach(values, (value) => {
-		const match = /^([^=:#]+)=([^:]+):([^#]+)(?:#(.+))?$/.exec(value);
-		return Schema.decodeUnknownEffect(aliasSchema)(
-			match === null
-				? value
-				: {
-						name: match[1],
-						backend: match[2],
-						model_id: match[3],
-						reasoning_effort: match[4],
-					},
-		);
-	});
+	return Effect.forEach(values, (value) =>
+		Effect.gen(function* () {
+			const match = /^([^=:#]+)=(.+)$/.exec(value);
+			if (match === null || match[2] === undefined)
+				return yield* Schema.decodeUnknownEffect(aliasSchema)(value);
+			const parsed = yield* parseModelInput(match[2]);
+			return yield* Schema.decodeUnknownEffect(aliasSchema)({
+				name: match[1],
+				backend: parsed.explicit?.backend,
+				model_id: parsed.explicit?.modelId,
+				reasoning_effort: parsed.suffixEffort,
+			});
+		}),
+	);
 }
 
 export function parseAgents(value: string | undefined) {
@@ -85,18 +90,19 @@ export function resolveModel(
 	aliases: ReadonlyArray<AliasPreset>,
 	bare: boolean,
 ) {
-	if (value === undefined || value.includes(':')) return Effect.succeed(value);
-	const hash = value.lastIndexOf('#');
-	const name = hash < 0 ? value : value.slice(0, hash);
-	const alias = aliases.find((entry) => entry.name === name);
-	if (alias === undefined)
-		return bare
-			? Effect.fail(new Error(`Unknown alias: ${name}`))
-			: Effect.succeed(value);
-	const effort = hash < 0 ? alias.reasoning_effort : value.slice(hash + 1);
-	return Effect.succeed(
-		`${alias.backend}:${alias.model_id}${effort ? `#${effort}` : ''}`,
-	);
+	return Effect.gen(function* () {
+		if (value === undefined) return undefined;
+		const parsed = yield* parseModelInput(value);
+		if (parsed.explicit !== undefined) return value;
+		const name = parsed.name;
+		const alias = aliases.find((entry) => entry.name === name);
+		if (alias === undefined)
+			return bare
+				? yield* Effect.fail(new Error(`Unknown alias: ${name}`))
+				: value;
+		const effort = parsed.suffixEffort ?? alias.reasoning_effort;
+		return `${alias.backend}:${alias.model_id}${effort ? `#${effort}` : ''}`;
+	});
 }
 
 export function resolveAgent(

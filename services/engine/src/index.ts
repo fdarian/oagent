@@ -44,6 +44,7 @@ export {
 	inputSchema as startInputSchema,
 	worktreeInputSchema as startWorktreeInputSchema,
 } from './mcp/tools/start.ts';
+export { parseModelInput } from './model-input.ts';
 export { OpenCode } from './opencode.ts';
 export {
 	ensureOagentLogsDir,

@@ -22,7 +22,10 @@ import {
 	isRunnerAlive,
 	recoveryDecision,
 } from './job-recovery.ts';
+import { ModelResolutionError, parseModelInput } from './model-input.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
+
+export { ModelResolutionError } from './model-input.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
 	'JobNotFound',
@@ -45,19 +48,6 @@ export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
 			'VERSION_CHECK_FAILED',
 			'SESSION_NOT_READY',
 			'DELIVERY_FAILED',
-		]),
-		message: Schema.String,
-	},
-) {}
-
-export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
-	'ModelResolutionError',
-	{
-		code: Schema.Literals([
-			'MISSING',
-			'INVALID_FORMAT',
-			'UNKNOWN_BACKEND',
-			'UNKNOWN_ALIAS',
 		]),
 		message: Schema.String,
 	},
@@ -174,7 +164,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			'grok',
 		]);
 		const resolveModelName = (
-			modelName: string,
+			parsed: Effect.Success<ReturnType<typeof parseModelInput>>,
 		): Effect.Effect<
 			{
 				backend: Backend;
@@ -185,18 +175,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const colonIdx = modelName.indexOf(':');
-				if (colonIdx !== -1) {
-					const backend = modelName.slice(0, colonIdx);
-					const modelId = modelName.slice(colonIdx + 1);
-					if (!isBackend(backend)) {
-						return yield* new ModelResolutionError({
-							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
-						});
-					}
-					return { backend, modelId, reasoningEffort: undefined };
-				}
+				const modelName = parsed.name;
+				if (parsed.explicit !== undefined)
+					return { ...parsed.explicit, reasoningEffort: undefined };
 
 				const alias = db
 					.select()
@@ -226,17 +207,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		const resolveModel = (model: string) =>
 			Effect.gen(function* () {
-				const hashIdx = model.lastIndexOf('#');
-				const suffixEffort =
-					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
-				if (suffixEffort === '') {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `Model "${model}" has an empty reasoning-effort suffix.`,
-					});
-				}
-				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
-				const resolved = yield* resolveModelName(modelName);
+				const parsed = yield* parseModelInput(model);
+				const suffixEffort = parsed.suffixEffort;
+				const resolved = yield* resolveModelName(parsed);
 				if (
 					suffixEffort !== undefined &&
 					unsupportedSuffixBackends.has(resolved.backend)
