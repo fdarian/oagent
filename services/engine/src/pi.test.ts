@@ -30,6 +30,10 @@ describe('Pi ACP backend', () => {
 			{ configId: 'thought_level', value: 'off' },
 		]);
 		expect(getPiConfigOptions(undefined, undefined)).toBeUndefined();
+		expect(getPiConfigOptions('provider/model', 'default')).toEqual([
+			{ configId: 'model', value: 'provider/model' },
+		]);
+		expect(getPiConfigOptions(undefined, 'default')).toBeUndefined();
 		expect(getPiConfigOptions(undefined, 'max')).toEqual([
 			{ configId: 'thought_level', value: 'max' },
 		]);
@@ -47,7 +51,8 @@ describe('Pi ACP backend', () => {
 							stopReason: 'end_turn',
 						});
 					},
-					listModels: () => Effect.succeed([{ id: 'provider/model' }]),
+					listModels: () =>
+						Effect.succeed([{ id: 'provider/model', label: 'Model label' }]),
 					forkSession: () => Effect.die('Unexpected fork'),
 					listSessionCatalog: () => Effect.die('Unexpected mode catalog'),
 				}),
@@ -63,7 +68,16 @@ describe('Pi ACP backend', () => {
 			(await Effect.runPromise(harness.listModelEfforts())).map(
 				(entry) => entry.value,
 			),
-		).toEqual(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max']);
+		).toEqual([
+			'default',
+			'off',
+			'minimal',
+			'low',
+			'medium',
+			'high',
+			'xhigh',
+			'max',
+		]);
 		expect(await Effect.runPromise(harness.listAgentTargets())).toEqual([]);
 		expect(harness.supportsModelSwitch).toBe(false);
 		expect(harness).not.toHaveProperty('steer');

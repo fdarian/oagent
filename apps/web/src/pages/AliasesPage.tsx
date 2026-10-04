@@ -299,9 +299,7 @@ function AliasForm(props: AliasFormProps) {
 			? CODEX_REASONING_EFFORT_OPTIONS
 			: effortsQuery.data === undefined
 				? []
-				: backend === 'pi'
-					? [{ value: 'default', label: 'Default' }, ...effortsQuery.data]
-					: effortsQuery.data;
+				: effortsQuery.data;
 
 	return (
 		<form
@@ -367,7 +365,7 @@ function AliasForm(props: AliasFormProps) {
 								<SelectItem value="grok">grok</SelectItem>
 								<SelectItem value="codex">codex</SelectItem>
 								<SelectItem value="claude">claude</SelectItem>
-								<SelectItem value="pi">Pi</SelectItem>
+								<SelectItem value="pi">pi</SelectItem>
 							</SelectContent>
 						</Select>
 					</Field>
