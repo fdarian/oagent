@@ -386,7 +386,9 @@ const router = procedure.router({
 				return yield* sessions.get(options.input);
 			}),
 		cost: procedure
-			.input(v.object({ sessionId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ sessionId: Schema.String })),
+			)
 			.effect(function* (options) {
 				const costs = yield* SessionCosts;
 				return yield* costs.get(options.input.sessionId);
@@ -428,30 +430,36 @@ const router = procedure.router({
 			}),
 	},
 	aliasPresets: {
-		state: procedure.input(v.void_()).effect(function* () {
-			const presets = yield* AliasPresets;
-			return yield* presets.state();
-		}),
+		state: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.state();
+			}),
 		create: procedure
-			.input(v.object({ name: v.string() }))
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ name: Schema.String })))
 			.effect(function* (options) {
 				const presets = yield* AliasPresets;
 				return yield* presets.create(options.input.name);
 			}),
 		activate: procedure
-			.input(v.object({ id: v.string() }))
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ id: Schema.String })))
 			.effect(function* (options) {
 				const presets = yield* AliasPresets;
 				return yield* presets.activate(options.input.id);
 			}),
-		save: procedure.input(v.void_()).effect(function* () {
-			const presets = yield* AliasPresets;
-			return yield* presets.save();
-		}),
-		discard: procedure.input(v.void_()).effect(function* () {
-			const presets = yield* AliasPresets;
-			return yield* presets.discard();
-		}),
+		save: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.save();
+			}),
+		discard: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const presets = yield* AliasPresets;
+				return yield* presets.discard();
+			}),
 	},
 	aliases: {
 		list: procedure
