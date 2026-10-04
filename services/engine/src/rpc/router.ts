@@ -4,6 +4,7 @@ import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
 import { Effect, Schema } from 'effect';
 import { Agents } from '../agents.ts';
+import { AliasPresets } from '../alias-presets.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
@@ -727,5 +728,3 @@ const router = procedure.router({
 
 export type EngineRouter = typeof router;
 export { router };
-
-import { AliasPresets } from '../alias-presets.ts';
