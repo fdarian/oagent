@@ -19,3 +19,6 @@ catalog:
   '@orpc/tanstack-query': 2.0.0-beta.21
   effect: 4.0.0-rc.113
   typescript: ^7.0.2
+
+minimumReleaseAgeExclude:
+  - ccusage-lib@0.1.0

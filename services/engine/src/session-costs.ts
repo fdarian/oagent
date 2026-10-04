@@ -1,20 +1,14 @@
+import {
+	type Harness,
+	type SessionCost,
+	SessionNotFoundError,
+	sessionCost,
+} from 'ccusage-lib';
 import { and, desc, eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { Settings } from './settings.ts';
-
-const COMMAND_TIMEOUT_MS = 60_000;
-const TokenCounts = Schema.Struct({
-	inputTokens: Schema.Number,
-	outputTokens: Schema.Number,
-	cacheCreationTokens: Schema.Number,
-	cacheReadTokens: Schema.Number,
-});
-const CostEntry = Schema.Struct({
-	...TokenCounts.fields,
-	totalCost: Schema.Number,
-});
 
 export class SessionCostError extends Schema.TaggedError<SessionCostError>()(
 	'SessionCostError',
@@ -24,188 +18,37 @@ export class SessionCostError extends Schema.TaggedError<SessionCostError>()(
 	},
 ) {}
 
-type Cost = {
-	inputTokens: number;
-	outputTokens: number;
-	cacheCreationTokens: number;
-	cacheReadTokens: number;
-	totalCostUsd: number;
-};
-
-function runCcusage(args: string[], env?: NodeJS.ProcessEnv) {
-	return Effect.scoped(
-		Effect.gen(function* () {
-			const child = yield* Effect.acquireRelease(
-				Effect.try({
-					try: () =>
-						Bun.spawn(['bunx', '--yes', 'ccusage@20.0.26', ...args], {
-							stdin: 'ignore',
-							stdout: 'pipe',
-							stderr: 'pipe',
-							env,
-						}),
-					catch: (cause) =>
-						new SessionCostError({ message: 'Could not start ccusage', cause }),
-				}),
-				(child) =>
-					Effect.sync(() => {
-						if (child.exitCode === null) child.kill();
-					}),
-			);
-			const result = yield* Effect.tryPromise({
-				try: () =>
-					Promise.all([
-						new Response(child.stdout).text(),
-						new Response(child.stderr).text(),
-						child.exited,
-					]),
-				catch: (cause) =>
-					new SessionCostError({
-						message: 'Could not read ccusage output',
-						cause,
-					}),
-			});
-			if (result[2] !== 0) {
-				return yield* new SessionCostError({
-					message: `ccusage exited with code ${result[2]}: ${result[1].trim() || result[0].trim()}`,
-				});
-			}
-			return result[0];
-		}),
-	).pipe(
-		Effect.timeout(COMMAND_TIMEOUT_MS),
-		Effect.mapError((cause) =>
-			cause instanceof SessionCostError
-				? cause
-				: new SessionCostError({
-						message: 'ccusage timed out after 60 seconds',
-						cause,
-					}),
-		),
-	);
-}
-
-function computeClaudeCost(id: string) {
-	const response = Schema.fromJsonString(
-		Schema.NullOr(
-			Schema.Struct({
-				sessionId: Schema.String,
-				totalCost: Schema.Number,
-				entries: Schema.Array(TokenCounts),
-			}),
-		),
-	);
-	return Effect.gen(function* () {
-		const raw = yield* runCcusage(['session', '--json', '--id', id]);
-		const result = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
-			Effect.mapError(
-				(cause) =>
-					new SessionCostError({
-						message: 'Invalid ccusage claude response',
-						cause,
-					}),
-			),
-		);
-		if (result === null || result.sessionId !== id)
-			return yield* new SessionCostError({
-				message: `No Claude session found with ID: ${id}`,
-			});
-		const tokens = result.entries.reduce(
-			(total, entry) => ({
-				inputTokens: total.inputTokens + entry.inputTokens,
-				outputTokens: total.outputTokens + entry.outputTokens,
-				cacheCreationTokens:
-					total.cacheCreationTokens + entry.cacheCreationTokens,
-				cacheReadTokens: total.cacheReadTokens + entry.cacheReadTokens,
-			}),
-			{
-				inputTokens: 0,
-				outputTokens: 0,
-				cacheCreationTokens: 0,
-				cacheReadTokens: 0,
-			},
-		);
-		return { ...tokens, totalCostUsd: result.totalCost };
-	});
-}
-
-function toCost(entry: Schema.Schema.Type<typeof CostEntry>): Cost {
-	return {
-		inputTokens: entry.inputTokens,
-		outputTokens: entry.outputTokens,
-		cacheCreationTokens: entry.cacheCreationTokens,
-		cacheReadTokens: entry.cacheReadTokens,
-		totalCostUsd: entry.totalCost,
-	};
-}
-
-function computeCodexCost(id: string, codexHome: string | undefined) {
-	const response = Schema.fromJsonString(Schema.NullOr(CostEntry));
-	const env =
-		codexHome === undefined
-			? undefined
-			: { ...process.env, CODEX_HOME: codexHome };
-	return Effect.gen(function* () {
-		const raw = yield* runCcusage(
-			['codex', 'session', '--json', '--id', id],
-			env,
-		);
-		const entry = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
-			Effect.mapError(
-				(cause) =>
-					new SessionCostError({
-						message: 'Invalid ccusage codex response',
-						cause,
-					}),
-			),
-		);
-		if (entry === null)
-			return yield* new SessionCostError({
-				message: `No Codex session found with ID: ${id}`,
-			});
-		return toCost(entry);
-	});
-}
-
-function computeOpenCodeCost(id: string) {
-	const response = Schema.fromJsonString(
-		Schema.Struct({
-			sessions: Schema.Array(
-				Schema.Struct({ ...CostEntry.fields, sessionId: Schema.String }),
-			),
-		}),
-	);
-	return Effect.gen(function* () {
-		const raw = yield* runCcusage(['opencode', 'session', '--json']);
-		const result = yield* Schema.decodeUnknownEffect(response)(raw).pipe(
-			Effect.mapError(
-				(cause) =>
-					new SessionCostError({
-						message: 'Invalid ccusage opencode response',
-						cause,
-					}),
-			),
-		);
-		const entry = result.sessions.find((entry) => entry.sessionId === id);
-		if (entry === undefined)
-			return yield* new SessionCostError({
-				message: `No OpenCode session found with ID: ${id}`,
-			});
-		return toCost(entry);
-	});
-}
-
-const costComputers = new Map<
-	string,
-	(
-		id: string,
-		codexHome: string | undefined,
-	) => Effect.Effect<Cost, SessionCostError>
->([
-	['claude', computeClaudeCost],
-	['codex', computeCodexCost],
-	['opencode', computeOpenCodeCost],
+const costHarnesses = new Map<string, Harness>([
+	['claude', 'claude'],
+	['codex', 'codex'],
+	['opencode', 'opencode'],
 ]);
+
+function computeCost(
+	harness: Harness,
+	sessionId: string,
+	codexHome: string | undefined,
+) {
+	return Effect.tryPromise({
+		try: () =>
+			sessionCost({
+				harness,
+				sessionId,
+				env:
+					harness === 'codex' && codexHome !== undefined
+						? { CODEX_HOME: codexHome }
+						: undefined,
+			}),
+		catch: (cause) =>
+			new SessionCostError({
+				message:
+					cause instanceof SessionNotFoundError
+						? `No ${harness} session found with ID: ${sessionId}`
+						: `Could not compute ${harness} session cost: ${cause instanceof Error ? cause.message : String(cause)}`,
+				cause,
+			}),
+	});
+}
 
 export class SessionCosts extends Context.Service<SessionCosts>()(
 	'oagent/SessionCosts',
@@ -216,11 +59,14 @@ export class SessionCosts extends Context.Service<SessionCosts>()(
 			const settings = yield* Settings;
 			const inFlight = new Map<
 				number,
-				Effect.Effect<Cost & { computedAt: number }, SessionCostError>
+				Effect.Effect<SessionCost & { computedAt: number }, SessionCostError>
 			>();
 			const dedupe = (
 				id: number,
-				work: Effect.Effect<Cost & { computedAt: number }, SessionCostError>,
+				work: Effect.Effect<
+					SessionCost & { computedAt: number },
+					SessionCostError
+				>,
 			) =>
 				Effect.uninterruptibleMask((restore) =>
 					Effect.gen(function* () {
@@ -256,9 +102,8 @@ export class SessionCosts extends Context.Service<SessionCosts>()(
 						return yield* new SessionCostError({
 							message: `Session not found: ${sessionId}`,
 						});
-					const computeCost = costComputers.get(session.backend);
-					if (computeCost === undefined)
-						return { status: 'unsupported' as const };
+					const harness = costHarnesses.get(session.backend);
+					if (harness === undefined) return { status: 'unsupported' as const };
 					if (session.harness_session_id === null)
 						return yield* new SessionCostError({
 							message: 'Harness session ID is not available yet',
@@ -323,7 +168,7 @@ export class SessionCosts extends Context.Service<SessionCosts>()(
 							// Timestamp the start so a turn ending during the scan invalidates this snapshot.
 							const computedAt = new Date();
 							const codexHome = settings.getCodexHome();
-							const cost = yield* computeCost(harnessId, codexHome);
+							const cost = yield* computeCost(harness, harnessId, codexHome);
 							yield* Effect.try({
 								try: () => {
 									const values = {

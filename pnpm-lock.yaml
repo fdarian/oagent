@@ -437,6 +437,9 @@ importers:
       '@orpc/server':
         specifier: 'catalog:'
         version: 2.0.0-beta.21(@opentelemetry/api@1.9.1)
+      ccusage-lib:
+        specifier: ^0.1.0
+        version: 0.1.0
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@opentelemetry/api@1.9.1)(bun-types@1.4.2)
@@ -3106,6 +3109,10 @@ packages:
 
   ccount@2.0.1:
     resolution: {integrity: sha512-eyrF0jiFpY+3drT6383f1qhkbGsLSifNAjA61IUjZjmLCWjItY6LB9ft9YhoDgwfmclB2zhu51Lc7+95b8NRAg==}
+
+  ccusage-lib@0.1.0:
+    resolution: {integrity: sha512-9ZDAP+ml8RJBQnlSAt8Nd72JU/enf+DsK7TfSpiVI9Ym/UoQRAq8p459MGMOsznsx1FixEz3Vy21amaUQMkqew==}
+    engines: {node: '>=22'}
 
   ce-la-react@0.3.2:
     resolution: {integrity: sha512-QJ6k4lOD/btI08xG8jBPxRCGXvCnusGGkTsiXk0u3NqUu/W+BXRnFD4PYjwtqh8AWmGa5LDbGk0fLQsqr0nSMA==}
@@ -7401,6 +7408,8 @@ snapshots:
   caniuse-lite@1.0.30001810: {}
 
   ccount@2.0.1: {}
+
+  ccusage-lib@0.1.0: {}
 
   ce-la-react@0.3.2(react@19.2.8):
     dependencies:
