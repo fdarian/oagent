@@ -2,6 +2,7 @@ import { useForm, useStore } from '@tanstack/react-form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Check, ChevronsUpDown } from 'lucide-react';
 import { useState } from 'react';
+import { AliasPresetCombobox } from '@/components/alias-preset-combobox';
 import { Button } from '@/components/ui/button';
 import {
 	Command,
@@ -236,6 +237,9 @@ function AliasForm(props: AliasFormProps) {
 		orpc.aliases.save.mutationOptions({
 			onSuccess: () => {
 				queryClient.invalidateQueries({ queryKey: orpc.aliases.list.key() });
+				queryClient.invalidateQueries({
+					queryKey: orpc.aliasPresets.state.key(),
+				});
 				props.onSuccess();
 			},
 			onError: (error: Error) => {
@@ -539,6 +543,45 @@ export function AliasesPage() {
 	const [deleteError, setDeleteError] = useState<string | undefined>();
 
 	const listQuery = useQuery(orpc.aliases.list.queryOptions());
+	const presetQuery = useQuery(orpc.aliasPresets.state.queryOptions());
+	const [activateTarget, setActivateTarget] = useState<string | undefined>();
+	const [presetError, setPresetError] = useState<string | undefined>();
+	const invalidate = () => {
+		queryClient.invalidateQueries({ queryKey: orpc.aliases.list.key() });
+		queryClient.invalidateQueries({ queryKey: orpc.aliasPresets.state.key() });
+		setPresetError(undefined);
+		setActivateTarget(undefined);
+	};
+	const onPresetError = (error: Error) => setPresetError(error.message);
+	const createPreset = useMutation(
+		orpc.aliasPresets.create.mutationOptions({
+			onSuccess: invalidate,
+			onError: onPresetError,
+		}),
+	);
+	const activatePreset = useMutation(
+		orpc.aliasPresets.activate.mutationOptions({
+			onSuccess: invalidate,
+			onError: onPresetError,
+		}),
+	);
+	const savePreset = useMutation(
+		orpc.aliasPresets.save.mutationOptions({
+			onSuccess: invalidate,
+			onError: onPresetError,
+		}),
+	);
+	const discardPreset = useMutation(
+		orpc.aliasPresets.discard.mutationOptions({
+			onSuccess: invalidate,
+			onError: onPresetError,
+		}),
+	);
+	const presetPending =
+		createPreset.isPending ||
+		activatePreset.isPending ||
+		savePreset.isPending ||
+		discardPreset.isPending;
 
 	const deleteMutation = useMutation(
 		orpc.aliases.delete.mutationOptions({
@@ -550,6 +593,9 @@ export function AliasesPage() {
 					result.ok === true
 				) {
 					queryClient.invalidateQueries({ queryKey: orpc.aliases.list.key() });
+					queryClient.invalidateQueries({
+						queryKey: orpc.aliasPresets.state.key(),
+					});
 					setDeleteTarget(undefined);
 				} else {
 					setDeleteError('Alias not found');
@@ -591,8 +637,84 @@ export function AliasesPage() {
 				<span className="text-subheading font-light text-foreground">
 					Aliases
 				</span>
-				<Button onClick={openCreate}>Create alias</Button>
+				<div className="flex items-center gap-3">
+					{presetQuery.data !== undefined && (
+						<AliasPresetCombobox
+							presets={presetQuery.data.presets}
+							active={presetQuery.data.active}
+							disabled={presetPending}
+							onCreate={(name) => createPreset.mutate({ name })}
+							onActivate={(id) => {
+								if (presetQuery.data?.dirty) setActivateTarget(id);
+								else activatePreset.mutate({ id });
+							}}
+						/>
+					)}
+					{presetQuery.data?.dirty && (
+						<>
+							<button
+								type="button"
+								className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
+								disabled={presetPending}
+								onClick={() => discardPreset.mutate(undefined)}
+							>
+								Discard
+							</button>
+							<button
+								type="button"
+								className="text-xs text-muted-foreground hover:underline disabled:opacity-50"
+								disabled={presetPending}
+								onClick={() => savePreset.mutate(undefined)}
+							>
+								Save
+							</button>
+						</>
+					)}
+					<Button onClick={openCreate}>Create alias</Button>
+				</div>
 			</header>
+			{(presetError !== undefined || presetQuery.isError) && (
+				<p role="alert" className="px-22 py-3 text-sm text-destructive">
+					{presetError !== undefined ? presetError : presetQuery.error?.message}
+				</p>
+			)}
+			<Dialog
+				open={activateTarget !== undefined}
+				onOpenChange={(open) => {
+					if (!open) setActivateTarget(undefined);
+				}}
+			>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Discard unsaved changes?</DialogTitle>
+						<DialogDescription>
+							Switching presets will replace the live aliases with the selected
+							preset.
+						</DialogDescription>
+					</DialogHeader>
+					{presetError !== undefined && (
+						<p className="text-sm text-destructive">{presetError}</p>
+					)}
+					<DialogFooter>
+						<Button
+							variant="outline"
+							onClick={() => setActivateTarget(undefined)}
+						>
+							Cancel
+						</Button>
+						<Button
+							variant="destructive"
+							disabled={presetPending}
+							onClick={() => {
+								if (activateTarget !== undefined)
+									activatePreset.mutate({ id: activateTarget });
+							}}
+						>
+							Discard and switch
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
 
 			<main className="flex-1 overflow-y-auto px-33 py-22">
 				<div className="mx-auto max-w-[900px]">

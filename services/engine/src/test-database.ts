@@ -3,6 +3,9 @@ import { drizzle } from 'drizzle-orm/bun-sqlite';
 import * as schema from './db/schema.ts';
 
 const TEST_SCHEMA = `
+CREATE TABLE alias_presets (id INTEGER PRIMARY KEY AUTOINCREMENT, uuid TEXT NOT NULL UNIQUE, name TEXT NOT NULL UNIQUE, active INTEGER NOT NULL DEFAULT 0, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL);
+CREATE UNIQUE INDEX alias_presets_active_uq ON alias_presets(active) WHERE active = 1;
+CREATE TABLE alias_preset_items (id INTEGER PRIMARY KEY AUTOINCREMENT, preset_id INTEGER NOT NULL REFERENCES alias_presets(id) ON DELETE CASCADE, name TEXT NOT NULL, backend TEXT NOT NULL, model_id TEXT NOT NULL, reasoning_effort TEXT, description TEXT, created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, UNIQUE(preset_id, name));
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE sessions (

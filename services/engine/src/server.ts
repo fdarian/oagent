@@ -2,6 +2,7 @@
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
+import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Harnesses } from './harnesses.ts';
@@ -241,6 +242,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 }) {
 	static readonly layer = Layer.effect(Engine, Engine.make).pipe(
 		Layer.provide(Jobs.layer),
+		Layer.provide(AliasPresets.layer),
 		Layer.provide(Sessions.layer),
 		Layer.provide(SessionCosts.layer),
 		Layer.provide(SideChats.layer),

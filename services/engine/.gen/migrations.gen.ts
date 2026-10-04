@@ -20,7 +20,7 @@ import m0015 from '../drizzle/0015_striped_elektra.sql' with { type: 'text' };
 import m0016 from '../drizzle/0016_parched_menace.sql' with { type: 'text' };
 import m0017 from '../drizzle/0017_overrated_vengeance.sql' with { type: 'text' };
 import m0018 from '../drizzle/0018_military_ozymandias.sql' with { type: 'text' };
-import m0019 from '../drizzle/0019_blushing_betty_brant.sql' with { type: 'text' };
+import m0019 from '../drizzle/0019_icy_amazoness.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -44,6 +44,6 @@ export default {
   '0016_parched_menace': m0016,
   '0017_overrated_vengeance': m0017,
   '0018_military_ozymandias': m0018,
-  '0019_blushing_betty_brant': m0019
+  '0019_icy_amazoness': m0019
   } as Record<string, string>,
 };
