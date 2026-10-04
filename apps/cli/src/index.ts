@@ -10,7 +10,6 @@ import { jobsCmd } from './commands/jobs';
 import { mcpCmd } from './commands/mcp';
 import { serveCmd } from './commands/serve';
 import { serviceCmd } from './commands/service';
-import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
 
 declare const OAGENT_BUILD_VERSION: string;
@@ -27,7 +26,6 @@ const cli = Command.make('oagent').pipe(
 	Command.withSubcommands([
 		serveCmd(version),
 		mcpCmd(version),
-		stdioCmd(version),
 		claudeCmd(version),
 		jobsCmd(version),
 		doctorCmd(version),

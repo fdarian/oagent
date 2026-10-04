@@ -356,9 +356,8 @@ function registerChannelTools(
 }
 
 /**
- * Runs the dedicated Claude Code channel MCP over stdio. Unlike the in-process stdio
- * command, this bridges to a running oagent engine over HTTP and pushes job completions
- * into the session as channel events instead of requiring the caller to poll.
+ * Runs the dedicated Claude Code channel MCP over stdio, bridging to a running
+ * engine and pushing background job completions as channel events.
  */
 export function runChannelServer(params: {
 	version: Version;
