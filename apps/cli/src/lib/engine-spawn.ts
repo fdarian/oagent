@@ -1,7 +1,7 @@
-import { getOagentLogsDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import { createEngineClient } from './engine-client.ts';
 import { getServiceStartCommand } from './service/environment.ts';
+import { getServiceLogFile } from './service/paths.ts';
 
 function refused(cause: unknown): boolean {
 	if (typeof cause !== 'object' || cause === null) return false;
@@ -25,7 +25,7 @@ export function ensureEngine(url: string, idleExit = '10m') {
 		)
 			return yield* Effect.fail(first.failure);
 		const command = yield* getServiceStartCommand();
-		const logs = yield* getOagentLogsDir;
+		const logFile = yield* getServiceLogFile;
 		yield* Effect.try(() => {
 			const child = Bun.spawn(
 				[
@@ -36,7 +36,7 @@ export function ensureEngine(url: string, idleExit = '10m') {
 					'--idle-exit',
 					idleExit,
 					'--log-file',
-					`${logs}/oagent.jsonl`,
+					logFile,
 				],
 				{ detached: true, stdin: 'ignore', stdout: 'ignore', stderr: 'ignore' },
 			);
