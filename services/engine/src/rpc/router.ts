@@ -384,7 +384,9 @@ const router = procedure.router({
 				return yield* sessions.get(options.input);
 			}),
 		cost: procedure
-			.input(v.object({ sessionId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ sessionId: Schema.String })),
+			)
 			.effect(function* (options) {
 				const costs = yield* SessionCosts;
 				return yield* costs.get(options.input.sessionId);
