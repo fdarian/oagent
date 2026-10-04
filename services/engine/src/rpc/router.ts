@@ -2,8 +2,7 @@ import '@orpc/experimental-effect/extensions/effect';
 import '@orpc/experimental-effect/extensions/input-output';
 import type { WithEffectContext } from '@orpc/experimental-effect';
 import { os } from '@orpc/server';
-import { Effect } from 'effect';
-import * as v from 'valibot';
+import { Effect, Schema } from 'effect';
 import { Agents } from '../agents.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
@@ -34,33 +33,35 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 	return value;
 }
 
-const backendSchema = v.picklist([
+const backendSchema = Schema.Literals([
 	'opencode',
 	'cursor',
 	'grok',
 	'codex',
 	'claude',
 ]);
-const reasoningEffortSchema = v.optional(v.pipe(v.string(), v.nonEmpty()));
-const agentNameSchema = v.pipe(v.string(), v.nonEmpty());
-const agentTargetSchema = v.object({
+const reasoningEffortSchema = Schema.optional(
+	Schema.String.check(Schema.isMinLength(1)),
+);
+const agentNameSchema = Schema.String.check(Schema.isMinLength(1));
+const agentTargetSchema = Schema.Struct({
 	backend: backendSchema,
-	target: v.pipe(v.string(), v.nonEmpty()),
+	target: Schema.String.check(Schema.isMinLength(1)),
 });
 
-const harnessEnvEntrySchema = v.object({
-	key: v.pipe(
-		v.string(),
-		v.check((value) => value.trim().length > 0, 'Environment key is required'),
+const harnessEnvEntrySchema = Schema.Struct({
+	key: Schema.String.check(
+		Schema.makeFilter((value) => value.trim().length > 0, {
+			message: 'Environment key is required',
+		}),
 	),
-	value: v.string(),
+	value: Schema.String,
 });
-const harnessEnvEntriesSchema = v.pipe(
-	v.array(harnessEnvEntrySchema),
-	v.check(
+const harnessEnvEntriesSchema = Schema.Array(harnessEnvEntrySchema).check(
+	Schema.makeFilter(
 		(entries) =>
 			new Set(entries.map((entry) => entry.key)).size === entries.length,
-		'Environment keys must be unique',
+		{ message: 'Environment keys must be unique' },
 	),
 );
 
@@ -96,7 +97,9 @@ type HarnessEnvSettings = Pick<
 export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
 	Effect.succeed({
 		getHarnessEnv: os
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				return yield* Effect.sync(() =>
 					toHarnessEnvOutput(settings.getHarnessEnv(options.input.backend)),
@@ -104,10 +107,12 @@ export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
 			}),
 		setHarnessEnv: os
 			.input(
-				v.object({
-					backend: backendSchema,
-					env: harnessEnvEntriesSchema,
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						backend: backendSchema,
+						env: harnessEnvEntriesSchema,
+					}),
+				),
 			)
 			.effect(function* (options) {
 				return yield* Effect.sync(() => {
@@ -147,12 +152,14 @@ const toAliasDto = (alias: AliasRow) => {
 
 const router = procedure.router({
 	jobs: {
-		list: procedure.input(v.void_()).effect(function* () {
-			const jobs = yield* Jobs;
-			return jobs.list();
-		}),
+		list: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const jobs = yield* Jobs;
+				return jobs.list();
+			}),
 		get: procedure
-			.input(v.object({ jobId: v.string() }))
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ jobId: Schema.String })))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				const job = jobs.getRootJobMetadata(options.input.jobId);
@@ -176,20 +183,21 @@ const router = procedure.router({
 			}),
 		start: procedure
 			.input(
-				v.pipe(
-					v.object({
-						prompt: v.string(),
-						cwd: v.string(),
-						model: v.optional(v.string()),
-						agent_type: v.optional(v.string()),
-						title: v.optional(v.string()),
-						sessionId: v.optional(v.string()),
-						worktree: v.optional(v.boolean()),
-					}),
-					v.check(
-						(input) =>
-							input.sessionId !== undefined || input.title !== undefined,
-						'title is required when creating a session',
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						prompt: Schema.String,
+						cwd: Schema.String,
+						model: Schema.optional(Schema.String),
+						agent_type: Schema.optional(Schema.String),
+						title: Schema.optional(Schema.String),
+						sessionId: Schema.optional(Schema.String),
+						worktree: Schema.optional(Schema.Boolean),
+					}).check(
+						Schema.makeFilter(
+							(input) =>
+								input.sessionId !== undefined || input.title !== undefined,
+							{ message: 'title is required when creating a session' },
+						),
 					),
 				),
 			)
@@ -225,7 +233,7 @@ const router = procedure.router({
 				return result;
 			}),
 		cancel: procedure
-			.input(v.object({ jobId: v.string() }))
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ jobId: Schema.String })))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				return yield* jobs.cancel(options.input).pipe(
@@ -234,7 +242,11 @@ const router = procedure.router({
 				);
 			}),
 		steer: procedure
-			.input(v.object({ jobId: v.string(), prompt: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({ jobId: Schema.String, prompt: Schema.String }),
+				),
+			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				const sessionId = jobs.getJobMetadata(options.input.jobId)?.sessionId;
@@ -249,10 +261,16 @@ const router = procedure.router({
 			}),
 		wait: procedure
 			.input(
-				v.object({
-					jobId: v.string(),
-					timeoutMs: v.optional(v.number()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						jobId: Schema.String,
+						timeoutMs: Schema.optional(
+							Schema.Number.check(
+								Schema.makeFilter((value) => !Number.isNaN(value)),
+							),
+						),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
@@ -276,15 +294,17 @@ const router = procedure.router({
 	sessions: {
 		start: procedure
 			.input(
-				v.object({
-					title: v.string(),
-					prompt: v.string(),
-					cwd: v.optional(v.string()),
-					model: v.optional(v.string()),
-					agent_type: v.optional(v.string()),
-					forkId: v.optional(v.string()),
-					worktree: v.optional(v.boolean()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						title: Schema.String,
+						prompt: Schema.String,
+						cwd: Schema.optional(Schema.String),
+						model: Schema.optional(Schema.String),
+						agent_type: Schema.optional(Schema.String),
+						forkId: Schema.optional(Schema.String),
+						worktree: Schema.optional(Schema.Boolean),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
@@ -299,17 +319,23 @@ const router = procedure.router({
 				});
 			}),
 		sendMessage: procedure
-			.input(v.object({ sessionId: v.string(), prompt: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({ sessionId: Schema.String, prompt: Schema.String }),
+				),
+			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.sendMessage(options.input);
 			}),
 		setModel: procedure
 			.input(
-				v.object({
-					sessionId: v.string(),
-					model: v.pipe(v.string(), v.nonEmpty()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sessionId: Schema.String,
+						model: Schema.String.check(Schema.isMinLength(1)),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
@@ -320,29 +346,39 @@ const router = procedure.router({
 			}),
 		read: procedure
 			.input(
-				v.object({
-					sessionId: v.string(),
-					wait: v.optional(v.boolean()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sessionId: Schema.String,
+						wait: Schema.optional(Schema.Boolean),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.read(options.input);
 			}),
 		cancel: procedure
-			.input(v.object({ sessionId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ sessionId: Schema.String })),
+			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.cancel(options.input);
 			}),
 		list: procedure
-			.input(v.object({ cwd: v.optional(v.string()) }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({ cwd: Schema.optional(Schema.String) }),
+				),
+			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.list(options.input);
 			}),
 		get: procedure
-			.input(v.object({ sessionId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ sessionId: Schema.String })),
+			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.get(options.input);
@@ -356,23 +392,33 @@ const router = procedure.router({
 	},
 	sideChats: {
 		list: procedure
-			.input(v.object({ sourceJobId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({ sourceJobId: Schema.String }),
+				),
+			)
 			.effect(function* (options) {
 				const sideChats = yield* SideChats;
 				return yield* sideChats.list(options.input.sourceJobId);
 			}),
 		create: procedure
-			.input(v.object({ sourceJobId: v.string() }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({ sourceJobId: Schema.String }),
+				),
+			)
 			.effect(function* (options) {
 				const sideChats = yield* SideChats;
 				return yield* sideChats.create(options.input.sourceJobId);
 			}),
 		send: procedure
 			.input(
-				v.object({
-					sideChatId: v.string(),
-					prompt: v.pipe(v.string(), v.nonEmpty()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sideChatId: Schema.String,
+						prompt: Schema.String.check(Schema.isMinLength(1)),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const sideChats = yield* SideChats;
@@ -380,19 +426,26 @@ const router = procedure.router({
 			}),
 	},
 	aliases: {
-		list: procedure.input(v.void_()).effect(function* () {
-			const jobs = yield* Jobs;
-			return jobs.listAliases().map(toAliasDto);
-		}),
+		list: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const jobs = yield* Jobs;
+				return jobs.listAliases().map(toAliasDto);
+			}),
 		save: procedure
 			.input(
-				v.object({
-					name: v.pipe(v.string(), v.nonEmpty(), v.regex(/^[a-z0-9-]+$/)),
-					backend: backendSchema,
-					model_id: v.pipe(v.string(), v.nonEmpty()),
-					reasoning_effort: reasoningEffortSchema,
-					description: v.optional(v.string()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						name: Schema.String.check(
+							Schema.isMinLength(1),
+							Schema.isPattern(/^[a-z0-9-]+$/),
+						),
+						backend: backendSchema,
+						model_id: Schema.String.check(Schema.isMinLength(1)),
+						reasoning_effort: reasoningEffortSchema,
+						description: Schema.optional(Schema.String),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
@@ -407,37 +460,45 @@ const router = procedure.router({
 				);
 			}),
 		delete: procedure
-			.input(v.object({ name: v.string() }))
+			.input(Schema.toStandardSchemaV1(Schema.Struct({ name: Schema.String })))
 			.effect(function* (options) {
 				const jobs = yield* Jobs;
 				return { ok: jobs.deleteAlias(options.input.name) };
 			}),
 	},
 	agents: {
-		list: procedure.input(v.void_()).effect(function* () {
-			const agents = yield* Agents;
-			return agents.list();
-		}),
+		list: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const agents = yield* Agents;
+				return agents.list();
+			}),
 		save: procedure
 			.input(
-				v.object({
-					name: agentNameSchema,
-					description: v.optional(v.nullable(v.string())),
-					targets: v.array(agentTargetSchema),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						name: agentNameSchema,
+						description: Schema.optional(Schema.NullOr(Schema.String)),
+						targets: Schema.Array(agentTargetSchema),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const agents = yield* Agents;
 				return agents.save(options.input);
 			}),
 		delete: procedure
-			.input(v.object({ name: agentNameSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ name: agentNameSchema })),
+			)
 			.effect(function* (options) {
 				const agents = yield* Agents;
 				return { ok: agents.delete(options.input.name) };
 			}),
 		targets: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
 				return yield* harnessRegistry
@@ -454,23 +515,29 @@ const router = procedure.router({
 			}),
 	},
 	settings: {
-		getWorktree: procedure.input(v.void_()).effect(function* () {
-			const settings = yield* Settings;
-			return settings.getWorktree();
-		}),
+		getWorktree: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const settings = yield* Settings;
+				return settings.getWorktree();
+			}),
 		setWorktree: procedure
 			.input(
-				v.pipe(
-					v.object({
-						enabled: v.boolean(),
-						createCommand: v.string(),
-					}),
-					v.check(
-						(value) =>
-							!value.enabled ||
-							(value.createCommand.trim().length > 0 &&
-								validateWorktreeTemplate(value.createCommand)),
-						'Enabled worktrees require a nonblank command with only {{branch}}, {{base}}, and {{repo}} variables.',
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						enabled: Schema.Boolean,
+						createCommand: Schema.String,
+					}).check(
+						Schema.makeFilter(
+							(value) =>
+								!value.enabled ||
+								(value.createCommand.trim().length > 0 &&
+									validateWorktreeTemplate(value.createCommand)),
+							{
+								message:
+									'Enabled worktrees require a nonblank command with only {{branch}}, {{base}}, and {{repo}} variables.',
+							},
+						),
 					),
 				),
 			)
@@ -479,12 +546,20 @@ const router = procedure.router({
 				settings.setWorktree(options.input);
 				return settings.getWorktree();
 			}),
-		getCodexHome: procedure.input(v.void_()).effect(function* () {
-			const settings = yield* Settings;
-			return { home: settings.getCodexHome() };
-		}),
+		getCodexHome: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const settings = yield* Settings;
+				return { home: settings.getCodexHome() };
+			}),
 		setCodexHome: procedure
-			.input(v.object({ home: v.optional(v.nullable(v.string())) }))
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						home: Schema.optional(Schema.NullOr(Schema.String)),
+					}),
+				),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				const settings = yield* Settings;
@@ -495,7 +570,9 @@ const router = procedure.router({
 				return { home: settings.getCodexHome() };
 			}),
 		getHarnessEnv: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const settings = yield* Settings;
 				return toHarnessEnvOutput(
@@ -504,10 +581,12 @@ const router = procedure.router({
 			}),
 		setHarnessEnv: procedure
 			.input(
-				v.object({
-					backend: backendSchema,
-					env: harnessEnvEntriesSchema,
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						backend: backendSchema,
+						env: harnessEnvEntriesSchema,
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const settings = yield* Settings;
@@ -517,40 +596,54 @@ const router = procedure.router({
 			}),
 	},
 	harnesses: {
-		list: procedure.input(v.void_()).effect(function* () {
-			const harnesses = yield* Harnesses;
-			return (yield* harnesses.list()).map(toHarnessDto);
-		}),
-		refresh: procedure.input(v.void_()).effect(function* () {
-			const harnesses = yield* Harnesses;
-			return (yield* harnesses.refresh()).map(toHarnessDto);
-		}),
+		list: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const harnesses = yield* Harnesses;
+				return (yield* harnesses.list()).map(toHarnessDto);
+			}),
+		refresh: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const harnesses = yield* Harnesses;
+				return (yield* harnesses.refresh()).map(toHarnessDto);
+			}),
 		check: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				return yield* harnesses.check(options.input.backend);
 			}),
 		authStatus: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				return yield* harnesses.authStatus(options.input.backend);
 			}),
 		login: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				return yield* harnesses.login(options.input.backend);
 			}),
 		cancelLogin: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				return yield* harnesses.cancelLogin(options.input.backend);
 			}),
 		logout: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
 				return yield* harnesses.logout(options.input.backend);
@@ -558,7 +651,9 @@ const router = procedure.router({
 	},
 	models: {
 		list: procedure
-			.input(v.object({ backend: backendSchema }))
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
 				const models = yield* harnessRegistry
@@ -577,10 +672,12 @@ const router = procedure.router({
 			}),
 		efforts: procedure
 			.input(
-				v.object({
-					backend: backendSchema,
-					model_id: v.pipe(v.string(), v.nonEmpty()),
-				}),
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						backend: backendSchema,
+						model_id: Schema.String.check(Schema.isMinLength(1)),
+					}),
+				),
 			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
