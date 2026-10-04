@@ -16,6 +16,11 @@ import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import {
+	continuationPrompt,
+	isRunnerAlive,
+	recoveryDecision,
+} from './job-recovery.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
@@ -65,6 +70,7 @@ export class JobStartError extends Schema.TaggedError<JobStartError>()(
 			'SESSION_TURN_IN_PROGRESS',
 			'SESSION_BACKEND_MISMATCH',
 			'PERSISTENCE_FAILED',
+			'SHUTTING_DOWN',
 		]),
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -277,6 +283,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
 		const closingJobs = new Set<string>();
+		const shutdownJobs = new Set<string>();
+		const lifecycle = { shuttingDown: false };
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
@@ -536,6 +544,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		> =>
 			Effect.gen(function* () {
 				const model = input.model;
+				if (lifecycle.shuttingDown) {
+					return yield* new JobStartError({
+						code: 'SHUTTING_DOWN',
+						message: 'Engine is shutting down; no new jobs are accepted.',
+						cause: new Error('Engine shutting down'),
+					});
+				}
 				if (model === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'MISSING',
@@ -570,6 +585,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 								.values({
 									uuid,
 									status: 'running',
+									runner_pid: process.pid,
 									prompt: input.prompt,
 									model: rest,
 									reasoning_effort: reasoningEffort,
@@ -681,6 +697,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					: input.agentPrompt;
 
 			return Effect.gen(function* () {
+				if (lifecycle.shuttingDown) {
+					return yield* new JobStartError({
+						code: 'SHUTTING_DOWN',
+						message: 'Engine is shutting down; no new turns are accepted.',
+						cause: new Error('Engine shutting down'),
+					});
+				}
 				if (
 					harnessSessionId !== undefined &&
 					harnessSessionId !== input.reservation.session.harness_session_id
@@ -737,7 +760,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					closingJobs.delete(input.reservation.jobId);
 					liveEmitters.delete(input.reservation.jobId);
 					liveFibers.delete(input.reservation.jobId);
-					emitter.emit(TERMINAL_EVENT);
+					if (!shutdownJobs.has(input.reservation.jobId))
+						emitter.emit(TERMINAL_EVENT);
 				});
 
 				const captureLastMessageId = Effect.gen(function* () {
@@ -796,6 +820,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
 							Effect.gen(function* () {
+								if (shutdownJobs.has(input.reservation.jobId)) return;
 								closingJobs.add(input.reservation.jobId);
 								const messageId = yield* captureLastMessageId;
 								yield* Effect.try({
@@ -842,7 +867,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 								});
 							}),
 						),
-						Effect.tapError((error) => failReserved(input.reservation, error)),
+						Effect.tapError((error) =>
+							shutdownJobs.has(input.reservation.jobId)
+								? Effect.void
+								: failReserved(input.reservation, error),
+						),
 						Effect.onExit((exit) =>
 							Exit.isFailure(exit)
 								? captureLastMessageId.pipe(
@@ -863,6 +892,21 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 										),
 									)
 								: Effect.void,
+						),
+						Effect.ensuring(
+							Effect.sync(() => {
+								if (shutdownJobs.has(input.reservation.jobId)) {
+									db.update(schema.jobs)
+										.set({ interrupted_at: new Date() })
+										.where(
+											and(
+												eq(schema.jobs.id, input.reservation.internalId),
+												eq(schema.jobs.status, 'running'),
+											),
+										)
+										.run();
+								}
+							}),
 						),
 						Effect.ensuring(closeResources),
 					),
@@ -1347,6 +1391,94 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				.run();
 			return true;
 		};
+
+		yield* Effect.addFinalizer(() =>
+			Effect.gen(function* () {
+				lifecycle.shuttingDown = true;
+				const running = Array.from(liveFibers.entries());
+				for (const entry of running) shutdownJobs.add(entry[0]);
+				yield* Effect.forEach(running, (entry) => Fiber.interrupt(entry[1]), {
+					concurrency: 'unbounded',
+					discard: true,
+				});
+			}),
+		);
+
+		const stranded = db
+			.select({ job: schema.jobs, session: schema.sessions })
+			.from(schema.jobs)
+			.innerJoin(
+				schema.sessions,
+				eq(schema.jobs.session_id, schema.sessions.id),
+			)
+			.where(eq(schema.jobs.status, 'running'))
+			.all();
+		for (const row of stranded) {
+			const alive =
+				row.job.runner_pid === null
+					? false
+					: yield* isRunnerAlive(row.job.runner_pid).pipe(Effect.orDie);
+			const decision = recoveryDecision({
+				runnerAlive: alive,
+				resumeCount: row.job.resume_count,
+				backend: row.session.backend,
+				interruptedAt: row.job.interrupted_at,
+				harnessSessionId: row.session.harness_session_id,
+				model: row.job.model,
+			});
+			if (decision === 'skip') continue;
+			if (decision !== 'resume') {
+				db.update(schema.jobs)
+					.set({
+						status: 'error',
+						error_message: decision.error,
+						terminated_at: new Date(),
+					})
+					.where(eq(schema.jobs.id, row.job.id))
+					.run();
+				continue;
+			}
+			if (row.job.model === null) continue;
+			const backend = parseBackend(row.session.backend);
+			const reservation: JobReservation = {
+				internalId: row.job.id,
+				jobId: row.job.uuid,
+				prompt: continuationPrompt,
+				cwd: row.session.cwd,
+				backend,
+				model: row.job.model,
+				reasoningEffort: row.job.reasoning_effort ?? undefined,
+				agentTarget: undefined,
+				session: row.session,
+			};
+			yield* Effect.gen(function* () {
+				const agentTarget =
+					row.job.agent_type === null
+						? undefined
+						: yield* agents.resolve(row.job.agent_type, backend);
+				const claimed = db
+					.update(schema.jobs)
+					.set({
+						runner_pid: process.pid,
+						interrupted_at: null,
+						resume_count: row.job.resume_count + 1,
+					})
+					.where(
+						and(
+							eq(schema.jobs.id, row.job.id),
+							eq(schema.jobs.resume_count, row.job.resume_count),
+							eq(schema.jobs.status, 'running'),
+						),
+					)
+					.returning({ id: schema.jobs.id })
+					.get();
+				if (claimed !== undefined)
+					yield* runReserved({ reservation: { ...reservation, agentTarget } });
+			}).pipe(
+				Effect.catch((error) => failReserved(reservation, error)),
+				Effect.orDie,
+			);
+		}
 
 		return {
 			start,

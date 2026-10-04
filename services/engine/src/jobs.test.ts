@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { eq } from 'drizzle-orm';
-import { Effect, Fiber } from 'effect';
+import { Effect, Fiber, Scope } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -40,6 +40,83 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 		listAgentTargets: () => Effect.succeed([]),
 	};
 }
+
+test('scope shutdown preserves the running row and recovery finishes the same job', async () => {
+	const database = createDatabase();
+	const session = insertSession(database, {
+		uuid: 'shutdown-session',
+		title: 'Shutdown',
+		cwd: '/tmp',
+	});
+	database.db
+		.update(schema.sessions)
+		.set({ harness_session_id: 'ses_shutdown' })
+		.where(eq(schema.sessions.id, session.id))
+		.run();
+	const make = (harness: Harness) =>
+		Jobs.make.pipe(
+			Effect.provideService(Db, database),
+			Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
+			Effect.provideService(Agents, {} as Agents['Service']),
+			Effect.provideService(Worktrees, {} as Worktrees['Service']),
+		);
+	const jobId = await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const jobs = yield* make({
+					backend: 'opencode',
+					runTurn: () => Effect.never,
+				} as unknown as Harness);
+				const started = yield* jobs.start({
+					session,
+					prompt: 'original',
+					model: 'opencode:test#high',
+				});
+				yield* Effect.sleep(10);
+				return started.jobId;
+			}),
+		),
+	);
+	const interrupted = database.db
+		.select()
+		.from(schema.jobs)
+		.where(eq(schema.jobs.uuid, jobId))
+		.get();
+	expect(interrupted?.status).toBe('running');
+	expect(interrupted?.interrupted_at).toBeInstanceOf(Date);
+	expect(interrupted?.terminated_at).toBeNull();
+	database.db
+		.update(schema.jobs)
+		.set({ runner_pid: null })
+		.where(eq(schema.jobs.uuid, jobId))
+		.run();
+	await Effect.runPromise(
+		Effect.scoped(
+			Effect.gen(function* () {
+				const jobs = yield* make({
+					backend: 'opencode',
+					runTurn: (input: {
+						model?: string;
+						reasoningEffort?: string;
+						sessionId?: string;
+					}) => {
+						expect(input.model).toBe('test');
+						expect(input.reasoningEffort).toBe('high');
+						expect(input.sessionId).toBe('ses_shutdown');
+						return Effect.succeed({
+							sessionId: 'ses_shutdown',
+							text: 'resumed',
+							stopReason: 'end_turn',
+						});
+					},
+				} as unknown as Harness);
+				expect((yield* jobs.wait({ jobId })).status).toBe('done');
+			}),
+		),
+	);
+	expect(database.db.select().from(schema.jobs).get()?.resume_count).toBe(1);
+	database.sqlite.close();
+});
 
 describe('start model reasoning effort', () => {
 	const cases = [
@@ -86,6 +163,7 @@ describe('start model reasoning effort', () => {
 			} as unknown as Harness;
 			const jobs = await Effect.runPromise(
 				Jobs.make.pipe(
+					Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 					Effect.provideService(Db, {
 						db: database.db,
 						sqlite: database.sqlite,
@@ -148,6 +226,7 @@ describe('start model reasoning effort', () => {
 			const harness = { backend: 'opencode' } as Harness;
 			const jobs = await Effect.runPromise(
 				Jobs.make.pipe(
+					Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 					Effect.provideService(Db, {
 						db: database.db,
 						sqlite: database.sqlite,
@@ -213,6 +292,7 @@ describe('job event persistence', () => {
 		} as unknown as Db['Service'];
 		const jobs = await Effect.runPromise(
 			Jobs.make.pipe(
+				Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 				Effect.provideService(Db, dbService),
 				Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
 				Effect.provideService(Settings, {
@@ -265,6 +345,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 	} as unknown as Harness;
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, {
 				db: database.db,
 				sqlite: database.sqlite,
@@ -345,6 +426,7 @@ test('cancel during worktree creation never starts the reserved turn', async () 
 	} as unknown as Harness;
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, {
 				db: database.db,
 				sqlite: database.sqlite,
@@ -395,6 +477,7 @@ test('interrupted worktree creation releases the running reservation', async () 
 	const harness = { backend: 'opencode' as const } as unknown as Harness;
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, {
 				db: database.db,
 				sqlite: database.sqlite,
@@ -454,6 +537,7 @@ test('keeps the session busy until its completion checkpoint is saved', async ()
 	} as unknown as Harness;
 	const jobs = await Effect.runPromise(
 		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, {
 				db: database.db,
 				sqlite: database.sqlite,

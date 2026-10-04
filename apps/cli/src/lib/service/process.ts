@@ -102,7 +102,7 @@ function readPidFile(
 function waitForProcessExit(pid: number): Effect.Effect<void, ServiceError> {
 	return Effect.tryPromise({
 		try: async () => {
-			const deadline = Date.now() + 2_000;
+			const deadline = Date.now() + 30_000;
 			while (Date.now() < deadline) {
 				try {
 					process.kill(pid, 0);

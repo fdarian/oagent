@@ -73,6 +73,9 @@ export const jobs = sqliteTable(
 			.notNull()
 			.$defaultFn(() => new Date()),
 		terminated_at: integer({ mode: 'timestamp_ms' }),
+		runner_pid: integer(),
+		interrupted_at: integer({ mode: 'timestamp_ms' }),
+		resume_count: integer().notNull().default(0),
 		session_id: integer({ mode: 'number' })
 			.notNull()
 			.references(() => sessions.id),
