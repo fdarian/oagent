@@ -19,7 +19,7 @@ import {
 import { Effect } from 'effect';
 import { waitForChannelJob } from './channel.ts';
 import { createEngineClient } from './engine-client.ts';
-import { ensureEngine, isConnectionRefused } from './engine-spawn.ts';
+import { ensureEngine, retryEngineRpc } from './engine-spawn.ts';
 import { overlay, resolveAgent, resolveModel } from './ephemeral-config.ts';
 import type { Version } from './misc.ts';
 
@@ -43,26 +43,7 @@ export function runMcpStdio(params: {
 				Effect.provide(services),
 			);
 		const rpc = <A>(call: () => Promise<A>) =>
-			Effect.runPromise(
-				Effect.tryPromise({
-					try: call,
-					catch: (cause) => new Error(errorMessage(cause), { cause }),
-				}).pipe(
-					Effect.catch((error) =>
-						isConnectionRefused(error)
-							? ensure().pipe(
-									Effect.andThen(
-										Effect.tryPromise({
-											try: call,
-											catch: (cause) =>
-												new Error(errorMessage(cause), { cause }),
-										}),
-									),
-								)
-							: Effect.fail(error),
-					),
-				),
-			);
+			Effect.runPromise(retryEngineRpc(call, ensure()));
 		const data = yield* Effect.tryPromise({
 			try: () =>
 				Promise.all([

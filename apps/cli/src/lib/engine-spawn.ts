@@ -12,6 +12,30 @@ export function isConnectionRefused(cause: unknown): boolean {
 	);
 }
 
+export function retryEngineRpc<A, E>(
+	call: () => Promise<A>,
+	ensure: Effect.Effect<void, E>,
+) {
+	const request = Effect.tryPromise({
+		try: call,
+		catch: (cause) =>
+			new Error(cause instanceof Error ? cause.message : String(cause), {
+				cause,
+			}),
+	});
+	return request.pipe(
+		Effect.catch((error) =>
+			isConnectionRefused(error)
+				? ensure.pipe(Effect.andThen(request))
+				: Effect.fail(error),
+		),
+	);
+}
+
+export function engineSpawnEnvironment(port: string) {
+	return { ...process.env, OPENCODE_MCP_PORT: port };
+}
+
 export function ensureEngine(url: string, idleExit = '10m') {
 	return Effect.gen(function* () {
 		const client = createEngineClient(url);
@@ -39,7 +63,7 @@ export function ensureEngine(url: string, idleExit = '10m') {
 					logFile,
 				],
 				{
-					env: { ...process.env, OPENCODE_MCP_PORT: parsed.port || '80' },
+					env: engineSpawnEnvironment(parsed.port || '80'),
 					detached: true,
 					stdin: 'ignore',
 					stdout: 'ignore',
