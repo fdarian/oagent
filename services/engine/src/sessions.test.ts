@@ -136,6 +136,152 @@ function insertJob(
 }
 
 describe('session turns', () => {
+	test('configured agent edits apply to continuations and targets stay null', async () => {
+		const database = createTestDatabase();
+		let target = 'first-target';
+		const modes: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					modes.push(input.mode);
+					input.onSessionId?.('configured-harness');
+					return {
+						sessionId: 'configured-harness',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{ agentResolve: () => Effect.succeed(target) },
+		);
+		const first = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Configured',
+				prompt: 'one',
+				cwd: '/repo',
+				model: 'opencode:model',
+				agentType: 'configured',
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: first.jobId }));
+		target = 'edited-target';
+		const next = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: first.sessionId,
+				prompt: 'two',
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: next.jobId }));
+		expect(modes).toEqual(['first-target', 'edited-target']);
+		expect(
+			database.db
+				.select()
+				.from(schema.jobs)
+				.all()
+				.map((job) => job.agent_target),
+		).toEqual([null, null]);
+		database.sqlite.close();
+	});
+	test('fork of an inline job with no model retains its target with an explicit model', async () => {
+		const database = createTestDatabase();
+		const modes: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					modes.push(input.mode);
+					input.onSessionId?.('inline-harness');
+					return {
+						sessionId: 'inline-harness',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				forkSession: () => Effect.succeed({ sessionId: 'forked-harness' }),
+				agentResolve: (name) =>
+					new AgentTypeNotFound({ agentType: name, configuredAgentTypes: [] }),
+			},
+		);
+		const first = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Inline',
+				prompt: 'one',
+				cwd: '/repo',
+				model: 'opencode:model',
+				agent: {
+					name: 'ephemeral',
+					targets: [{ backend: 'opencode', target: 'snapshot' }],
+				},
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: first.jobId }));
+		database.db.update(schema.jobs).set({ model: null }).run();
+		const fork = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Fork',
+				prompt: 'two',
+				forkId: first.jobId,
+				model: 'opencode:model',
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: fork.jobId }));
+		expect(modes).toEqual(['snapshot', 'snapshot']);
+		database.sqlite.close();
+	});
+	test('continues an inline agent without a DB definition', async () => {
+		const database = createTestDatabase();
+		const modes: Array<string | undefined> = [];
+		const services = await createServices(
+			database,
+			'opencode',
+			(input) =>
+				Effect.sync(() => {
+					modes.push(input.mode);
+					input.onSessionId?.('inline-harness');
+					return {
+						sessionId: 'inline-harness',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				agentResolve: (name) =>
+					new AgentTypeNotFound({ agentType: name, configuredAgentTypes: [] }),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Inline',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'opencode:model',
+				agent: {
+					name: 'ephemeral',
+					targets: [{ backend: 'opencode', target: 'reviewer' }],
+				},
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: started.jobId }));
+		const continued = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		await Effect.runPromise(services.jobs.wait({ jobId: continued.jobId }));
+		expect(modes).toEqual(['reviewer', 'reviewer']);
+		expect(
+			database.db
+				.select()
+				.from(schema.jobs)
+				.all()
+				.map((job) => job.agent_target),
+		).toEqual(['reviewer', 'reviewer']);
+		database.sqlite.close();
+	});
 	for (const backend of ['opencode', 'cursor'] as const) {
 		test(`persists a ${backend} model override during a running turn for future turns`, async () => {
 			const database = createTestDatabase();

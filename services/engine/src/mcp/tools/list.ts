@@ -24,7 +24,9 @@ type SessionSummary = {
 };
 type SessionList = Pick<Sessions['Service'], 'list'>;
 
-function formatSessions(sessions: ReadonlyArray<SessionSummary>): string {
+export function formatSessions(
+	sessions: ReadonlyArray<SessionSummary>,
+): string {
 	if (sessions.length === 0) {
 		return 'No sessions found.';
 	}

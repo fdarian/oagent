@@ -69,6 +69,8 @@ export const jobs = sqliteTable(
 		model: text(),
 		reasoning_effort: text(),
 		agent_type: text(),
+		/** Inline definitions are snapshots; configured agents resolve their name each turn. */
+		agent_target: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),

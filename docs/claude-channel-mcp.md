@@ -5,14 +5,14 @@ experimental [channel](https://code.claude.com/docs/en/channels) capability.
 Instead of making the caller poll a job, the channel MCP **pushes** a completed
 turn into the Claude Code session as a one-way notification.
 
-The regular HTTP daemon and stdio MCP keep working unchanged — this is an
-additional, opt-in way to run oagent.
+HTTP `/mcp` and `oagent mcp stdio` provide polling-based MCP access; the channel
+MCP is an opt-in alternative for push notifications.
 
 ## How it differs from the other MCPs
 
-| | HTTP daemon / stdio | Channel MCP |
+| | HTTP daemon / `mcp stdio` | Channel MCP |
 | --- | --- | --- |
-| Runs jobs in-process | yes (stdio) / in the daemon | no — bridges to a running engine over HTTP |
+| Where jobs run | in the daemon; `mcp stdio` is a thin client | in the daemon; the channel MCP is a thin client |
 | Getting the result | call `read` with the session ID | pushed into the session when the turn finishes |
 | Claude Code launch flag | none | `--dangerously-load-development-channels` (research preview) |
 

@@ -9,6 +9,7 @@ import {
 	type AgentNotMappedForBackend,
 	Agents,
 	type AgentTypeNotFound,
+	resolveInlineAgent,
 } from './agents.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
@@ -21,7 +22,10 @@ import {
 	isRunnerAlive,
 	recoveryDecision,
 } from './job-recovery.ts';
+import { ModelResolutionError, parseModelInput } from './model-input.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
+
+export { ModelResolutionError } from './model-input.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
 	'JobNotFound',
@@ -44,19 +48,6 @@ export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
 			'VERSION_CHECK_FAILED',
 			'SESSION_NOT_READY',
 			'DELIVERY_FAILED',
-		]),
-		message: Schema.String,
-	},
-) {}
-
-export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
-	'ModelResolutionError',
-	{
-		code: Schema.Literals([
-			'MISSING',
-			'INVALID_FORMAT',
-			'UNKNOWN_BACKEND',
-			'UNKNOWN_ALIAS',
 		]),
 		message: Schema.String,
 	},
@@ -101,6 +92,8 @@ type ReserveJobInput = {
 	model?: string;
 	reasoningEffort?: string;
 	agentType?: string;
+	agentTarget?: string;
+	agent?: import('./agents.ts').AgentDefinition;
 	sideChatId?: number;
 };
 
@@ -171,7 +164,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			'grok',
 		]);
 		const resolveModelName = (
-			modelName: string,
+			parsed: Effect.Success<ReturnType<typeof parseModelInput>>,
 		): Effect.Effect<
 			{
 				backend: Backend;
@@ -182,18 +175,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const colonIdx = modelName.indexOf(':');
-				if (colonIdx !== -1) {
-					const backend = modelName.slice(0, colonIdx);
-					const modelId = modelName.slice(colonIdx + 1);
-					if (!isBackend(backend)) {
-						return yield* new ModelResolutionError({
-							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
-						});
-					}
-					return { backend, modelId, reasoningEffort: undefined };
-				}
+				const modelName = parsed.name;
+				if (parsed.explicit !== undefined)
+					return { ...parsed.explicit, reasoningEffort: undefined };
 
 				const alias = db
 					.select()
@@ -223,17 +207,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		const resolveModel = (model: string) =>
 			Effect.gen(function* () {
-				const hashIdx = model.lastIndexOf('#');
-				const suffixEffort =
-					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
-				if (suffixEffort === '') {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `Model "${model}" has an empty reasoning-effort suffix.`,
-					});
-				}
-				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
-				const resolved = yield* resolveModelName(modelName);
+				const parsed = yield* parseModelInput(model);
+				const suffixEffort = parsed.suffixEffort;
+				const resolved = yield* resolveModelName(parsed);
 				if (
 					suffixEffort !== undefined &&
 					unsupportedSuffixBackends.has(resolved.backend)
@@ -262,10 +238,28 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
 
+		const resolveAgentTarget = (
+			input: {
+				agentTarget?: string;
+				agent?: import('./agents.ts').AgentDefinition;
+				agentType?: string;
+			},
+			backend: Backend,
+		) => {
+			if (input.agentTarget !== undefined)
+				return Effect.succeed(input.agentTarget);
+			if (input.agent !== undefined)
+				return resolveInlineAgent(input.agent, backend);
+			return input.agentType === undefined
+				? Effect.succeed(undefined)
+				: agents.resolve(input.agentType, backend);
+		};
 		const validateStart = (input: {
 			model: string;
 			backend: Backend;
 			agentType?: string;
+			agentTarget?: string;
+			agent?: import('./agents.ts').AgentDefinition;
 		}) =>
 			Effect.gen(function* () {
 				const resolved = yield* resolveModel(input.model);
@@ -276,9 +270,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Session backend does not match model backend'),
 					});
 				}
-				if (input.agentType !== undefined) {
-					yield* agents.resolve(input.agentType, input.backend);
-				}
+				return yield* resolveAgentTarget(input, input.backend);
 			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
@@ -572,10 +564,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 				const reasoningEffort =
 					input.reasoningEffort ?? resolvedModel.reasoningEffort;
-				const agentTarget =
-					input.agentType === undefined
-						? undefined
-						: yield* agents.resolve(input.agentType, backend);
+				const agentTarget = yield* resolveAgentTarget(input, backend);
 				const uuid = randomUUIDv7();
 
 				const jobRow = yield* Effect.try({
@@ -590,7 +579,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 									prompt: input.prompt,
 									model: rest,
 									reasoning_effort: reasoningEffort,
-									agent_type: input.agentType,
+									agent_type: input.agent?.name ?? input.agentType,
+									agent_target:
+										input.agent !== undefined || input.agentTarget !== undefined
+											? agentTarget
+											: undefined,
 									session_id: input.session.id,
 									side_chat_id: input.sideChatId,
 								})
@@ -1469,9 +1462,11 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			};
 			yield* Effect.gen(function* () {
 				const agentTarget =
-					row.job.agent_type === null
-						? undefined
-						: yield* agents.resolve(row.job.agent_type, backend);
+					row.job.agent_target !== null
+						? row.job.agent_target
+						: row.job.agent_type === null
+							? undefined
+							: yield* agents.resolve(row.job.agent_type, backend);
 				const claimed = db
 					.update(schema.jobs)
 					.set({
@@ -1500,6 +1495,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			start,
 			shutdown,
 			reserve,
+			hasRunning: () =>
+				db
+					.select({ id: schema.jobs.id })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.status, 'running'))
+					.limit(1)
+					.get() !== undefined,
 			resolveBackend,
 			validateStart,
 			runReserved,

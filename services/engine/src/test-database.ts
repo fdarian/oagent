@@ -59,6 +59,7 @@ CREATE TABLE jobs (
 	model TEXT,
 	reasoning_effort TEXT,
 	agent_type TEXT,
+	agent_target TEXT,
 	created_at INTEGER NOT NULL,
 	terminated_at INTEGER,
 	runner_pid INTEGER,

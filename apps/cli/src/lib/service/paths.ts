@@ -1,5 +1,5 @@
 import os from 'node:os';
-import { getOagentHomeDir } from '@oagent/engine';
+import { getOagentHomeDir, getOagentLogsDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import type { ConfigError } from 'effect/Config';
 import { FileSystem } from 'effect/FileSystem';
@@ -10,6 +10,12 @@ import {
 	SERVICE_LABEL,
 	type ServicePaths,
 } from '#/lib/service/launchctl.ts';
+
+export const getServiceLogFile = Effect.gen(function* () {
+	const path = yield* Path;
+	const logs = yield* getOagentLogsDir;
+	return path.join(logs, 'oagent.jsonl');
+});
 
 export function getServicePaths(): Effect.Effect<
 	ServicePaths,

@@ -23,7 +23,7 @@
 		"drizzle-orm": "^0.45.2",
 		"effect": "catalog:",
 		"get-port": "^7.2.0",
-		"zod": "^4.4.3"
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@oagent/config": "workspace:*",
