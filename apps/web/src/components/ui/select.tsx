@@ -46,6 +46,7 @@ type SelectTriggerProps = React.ComponentProps<
 function SelectTrigger(props: SelectTriggerProps) {
 	const triggerProps = { ...props };
 	delete triggerProps.size;
+	delete triggerProps.className;
 
 	return (
 		<SelectPrimitive.Trigger
@@ -109,7 +110,7 @@ function SelectContent(props: SelectContentProps) {
 						className={cn(
 							'p-1',
 							position === 'popper' &&
-								'h-(--anchor-height) w-full min-w-(--anchor-width) scroll-my-1',
+								'w-full min-w-(--anchor-width) scroll-my-1',
 						)}
 					>
 						{props.children}
@@ -126,12 +127,12 @@ function SelectLabel(
 ) {
 	return (
 		<SelectPrimitive.GroupLabel
+			{...props}
 			data-slot="select-label"
 			className={cn(
 				'px-2 py-1.5 text-xs text-muted-foreground',
 				props.className,
 			)}
-			{...props}
 		/>
 	);
 }
@@ -139,12 +140,12 @@ function SelectLabel(
 function SelectItem(props: React.ComponentProps<typeof SelectPrimitive.Item>) {
 	return (
 		<SelectPrimitive.Item
+			{...props}
 			data-slot="select-item"
 			className={cn(
 				"relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 text-sm outline-hidden select-none data-highlighted:bg-accent data-highlighted:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground *:[span]:last:flex *:[span]:last:min-w-0 *:[span]:last:flex-1 *:[span]:last:overflow-hidden *:[span]:last:items-center *:[span]:last:gap-2",
 				props.className,
 			)}
-			{...props}
 		>
 			<span
 				data-slot="select-item-indicator"
@@ -164,12 +165,12 @@ function SelectSeparator(
 ) {
 	return (
 		<SelectPrimitive.Separator
+			{...props}
 			data-slot="select-separator"
 			className={cn(
 				'pointer-events-none -mx-1 my-1 h-px bg-border',
 				props.className,
 			)}
-			{...props}
 		/>
 	);
 }
@@ -179,12 +180,12 @@ function SelectScrollUpButton(
 ) {
 	return (
 		<SelectPrimitive.ScrollUpArrow
+			{...props}
 			data-slot="select-scroll-up-button"
 			className={cn(
 				'flex cursor-default items-center justify-center py-1',
 				props.className,
 			)}
-			{...props}
 		>
 			<ChevronUpIcon className="size-4" />
 		</SelectPrimitive.ScrollUpArrow>
@@ -196,12 +197,12 @@ function SelectScrollDownButton(
 ) {
 	return (
 		<SelectPrimitive.ScrollDownArrow
+			{...props}
 			data-slot="select-scroll-down-button"
 			className={cn(
 				'flex cursor-default items-center justify-center py-1',
 				props.className,
 			)}
-			{...props}
 		>
 			<ChevronDownIcon className="size-4" />
 		</SelectPrimitive.ScrollDownArrow>
