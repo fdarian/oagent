@@ -653,8 +653,10 @@ function applyTimelineEvent(
 		};
 	}
 
-	// Ignored variants: plan, available_commands_update, current_mode_update,
-	// config_option_update, session_info_update, usage_update
+	// Ignored variants: plan, plan_update, plan_removed, available_commands_update,
+	// current_mode_update, config_option_update, session_info_update, usage_update,
+	// compaction_update, compaction_summary_chunk, notice, subagent_update,
+	// session_message, session_message_chunk
 	// Open text/reasoning already flushed above.
 	return nextState;
 }

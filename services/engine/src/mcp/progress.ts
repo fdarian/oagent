@@ -24,7 +24,20 @@ export function progressMessage(event: unknown): string | undefined {
 			return undefined;
 		}
 		case 'plan':
+		case 'plan_update':
 			return 'Updated plan';
+		case 'plan_removed':
+			return 'Removed plan';
+		case 'compaction_update':
+			if (!('status' in event)) return undefined;
+			if (event.status === 'in_progress') return 'Compacting context';
+			if (event.status === 'completed') return 'Compacted context';
+			if (event.status === 'failed') return 'Context compaction failed';
+			return undefined;
+		case 'notice':
+			return 'title' in event && typeof event.title === 'string'
+				? event.title
+				: undefined;
 		case 'current_mode_update':
 			return 'currentModeId' in event && typeof event.currentModeId === 'string'
 				? `Switched to ${event.currentModeId}`

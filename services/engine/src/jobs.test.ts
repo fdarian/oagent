@@ -335,6 +335,186 @@ describe('job event persistence', () => {
 		expect(page.events[1]?.event).toMatchObject(metadataEvent);
 		database.sqlite.close();
 	});
+
+	test('round-trips every SessionUpdate variant added after ACP 0.22', async () => {
+		const database = createDatabase();
+		const text = { type: 'text' as const, text: 'hello' };
+		const events = [
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'tc1',
+				name: 'bash',
+				title: 'Run',
+			},
+			{ sessionUpdate: 'tool_call', toolCallId: 'tc2', title: 'No name' },
+			{
+				sessionUpdate: 'plan_update',
+				plan: {
+					type: 'items',
+					planId: 'p1',
+					entries: [{ content: 'a', priority: 'high', status: 'pending' }],
+				},
+			},
+			{
+				sessionUpdate: 'plan_update',
+				plan: { type: 'file', planId: 'p2', uri: 'file:///plan.md' },
+			},
+			{
+				sessionUpdate: 'plan_update',
+				plan: { type: 'markdown', planId: 'p3', content: '# plan' },
+			},
+			{ sessionUpdate: 'plan_removed', planId: 'p1' },
+			{
+				sessionUpdate: 'compaction_update',
+				compactionId: 'c1',
+				status: 'completed',
+				summary: [text],
+			},
+			{
+				sessionUpdate: 'compaction_update',
+				compactionId: 'c2',
+				status: 'failed',
+				error: 'boom',
+			},
+			{
+				sessionUpdate: 'compaction_summary_chunk',
+				compactionId: 'c1',
+				content: text,
+			},
+			{
+				sessionUpdate: 'notice',
+				severity: 'warning',
+				title: 'Heads up',
+				description: 'details',
+			},
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'child',
+				title: 'Child',
+				description: 'does things',
+				capabilities: { cancel: {} },
+				state: {
+					state: 'idle',
+					stopReason: 'end_turn',
+					usage: { totalTokens: 3, inputTokens: 1, outputTokens: 2 },
+				},
+			},
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'child',
+				state: { state: 'custom_state', detail: 'x' },
+			},
+			{
+				sessionUpdate: 'session_message',
+				messageId: 'm1',
+				senderSessionId: 's1',
+				recipientSessionId: 's2',
+				content: [text],
+			},
+			{
+				sessionUpdate: 'session_message_chunk',
+				messageId: 'm1',
+				senderSessionId: 's1',
+				content: text,
+			},
+			{
+				sessionUpdate: 'compaction_update',
+				compactionId: 'c3',
+				status: 'completed',
+				summary: null,
+				error: null,
+			},
+			{
+				sessionUpdate: 'notice',
+				severity: 'info',
+				title: 'Cleared',
+				description: null,
+			},
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'child',
+				title: null,
+				description: null,
+				capabilities: null,
+				state: null,
+			},
+			{
+				sessionUpdate: 'session_message',
+				messageId: 'm2',
+				senderSessionId: null,
+				recipientSessionId: null,
+				content: null,
+			},
+			{
+				sessionUpdate: 'session_message_chunk',
+				messageId: 'm2',
+				senderSessionId: null,
+				recipientSessionId: null,
+				content: text,
+			},
+		] as const;
+		const harness = {
+			backend: 'opencode' as const,
+			runTurn: (input: { onEvent?: (value: unknown) => void }) =>
+				Effect.sync(() => {
+					for (const event of events) input.onEvent?.(event);
+					return { sessionId: 'ses_test', text: '', stopReason: 'end_turn' };
+				}),
+		} as unknown as Harness;
+		const dbService = {
+			db: database.db,
+			sqlite: database.sqlite,
+		} as unknown as Db['Service'];
+		const jobs = await Effect.runPromise(
+			Jobs.make.pipe(
+				Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
+				Effect.provideService(Db, dbService),
+				Effect.provideService(HarnessRegistry, createHarnessRegistry(harness)),
+				Effect.provideService(Settings, {
+					getSetting: () => undefined,
+				} as unknown as Settings['Service']),
+				Effect.provideService(Agents, {} as Agents['Service']),
+				Effect.provideService(Worktrees, {} as Worktrees['Service']),
+			),
+		);
+		const session = insertSession(database, {
+			uuid: 'session-new-variants',
+			title: 'New variants',
+			cwd: '/tmp',
+		});
+		const started = await Effect.runPromise(
+			jobs.start({ session, prompt: 'run', model: 'opencode:test' }),
+		);
+		await Effect.runPromise(
+			jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+
+		const page = jobs.readEventsPage(started.jobId, 0, 100);
+		expect(page.events.map((entry) => entry.event)).toEqual(
+			events.map((event) => expect.objectContaining(event)),
+		);
+		expect(page.events[1]?.event).not.toHaveProperty('name', expect.anything());
+
+		const byIndex = (index: number) =>
+			page.events[index]?.event as unknown as Record<string, unknown>;
+		// omitted stays omitted (undefined), explicit null stays null
+		expect(byIndex(7).summary).toBeUndefined();
+		expect(byIndex(7).error).toBe('boom');
+		expect(byIndex(14).summary).toBeNull();
+		expect(byIndex(14).error).toBeNull();
+		expect(byIndex(9).description).toBe('details');
+		expect(byIndex(15).description).toBeNull();
+		expect(byIndex(11).title).toBeUndefined();
+		expect(byIndex(11).capabilities).toBeUndefined();
+		expect(byIndex(16).title).toBeNull();
+		expect(byIndex(16).state).toBeNull();
+		expect(byIndex(16).capabilities).toBeNull();
+		expect(byIndex(13).recipientSessionId).toBeUndefined();
+		expect(byIndex(17).content).toBeNull();
+		expect(byIndex(17).senderSessionId).toBeNull();
+		expect(byIndex(18).recipientSessionId).toBeNull();
+		database.sqlite.close();
+	});
 });
 
 test('starts in a worktree and resumes the session in the same path', async () => {

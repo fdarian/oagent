@@ -93,6 +93,7 @@ CREATE TABLE chunk_events (
 CREATE TABLE tool_call_events (
 	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
 	tool_call_id TEXT NOT NULL,
+	name TEXT,
 	title TEXT,
 	status TEXT,
 	kind TEXT,
@@ -128,6 +129,59 @@ CREATE TABLE usage_events (
 	used INTEGER NOT NULL,
 	cost_amount REAL,
 	cost_currency TEXT
+);
+
+CREATE TABLE plan_update_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	plan_id TEXT NOT NULL,
+	plan_type TEXT NOT NULL,
+	entries TEXT,
+	uri TEXT,
+	markdown TEXT
+);
+CREATE TABLE plan_removed_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	plan_id TEXT NOT NULL
+);
+CREATE TABLE compaction_update_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	compaction_id TEXT NOT NULL,
+	status TEXT NOT NULL,
+	summary TEXT,
+	error TEXT
+);
+CREATE TABLE compaction_summary_chunk_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	compaction_id TEXT NOT NULL,
+	content TEXT NOT NULL
+);
+CREATE TABLE notice_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	severity TEXT NOT NULL,
+	title TEXT NOT NULL,
+	description TEXT
+);
+CREATE TABLE subagent_update_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	child_session_id TEXT NOT NULL,
+	title TEXT,
+	description TEXT,
+	capabilities TEXT,
+	state TEXT
+);
+CREATE TABLE session_message_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	message_id TEXT NOT NULL,
+	sender_session_id TEXT,
+	recipient_session_id TEXT,
+	content TEXT
+);
+CREATE TABLE session_message_chunk_events (
+	event_id INTEGER PRIMARY KEY REFERENCES events(id) ON DELETE CASCADE,
+	message_id TEXT NOT NULL,
+	sender_session_id TEXT,
+	recipient_session_id TEXT,
+	content TEXT NOT NULL
 );
 
 CREATE TABLE model_aliases (
