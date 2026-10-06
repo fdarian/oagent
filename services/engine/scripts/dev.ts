@@ -9,7 +9,7 @@ import {
 } from 'devsess';
 import { Effect } from 'effect';
 import { FileSystem } from 'effect/FileSystem';
-import { Command } from 'effect/unstable/cli';
+import { Command } from 'effect/cli';
 import enginePackage from '../package.json' with { type: 'json' };
 import { Engine } from '../src/server.ts';
 

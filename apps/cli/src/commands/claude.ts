@@ -1,4 +1,4 @@
-import { Command, Flag } from 'effect/unstable/cli';
+import { Command, Flag } from 'effect/cli';
 import { runChannelServer } from '#/lib/channel.ts';
 import { defaultEngineUrl } from '#/lib/engine-client.ts';
 import type { Version } from '#/lib/misc.ts';

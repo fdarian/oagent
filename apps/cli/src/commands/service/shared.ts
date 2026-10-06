@@ -1,4 +1,4 @@
-import { Flag } from 'effect/unstable/cli';
+import { Flag } from 'effect/cli';
 
 export function writeLines(lines: ReadonlyArray<string>): void {
 	process.stdout.write(`${lines.join('\n')}\n`);

@@ -1,6 +1,6 @@
 import { acquireHttpListener, Engine, parseIdleDuration } from '@oagent/engine';
 import { type Duration, Effect, Option } from 'effect';
-import { Command, Flag } from 'effect/unstable/cli';
+import { Command, Flag } from 'effect/cli';
 import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
 

@@ -1,6 +1,6 @@
 import { parseIdleDuration } from '@oagent/engine';
 import { Effect, Layer, Logger, Option } from 'effect';
-import { Command, Flag } from 'effect/unstable/cli';
+import { Command, Flag } from 'effect/cli';
 import { defaultEngineUrl } from '../lib/engine-client.ts';
 import { parseAgents, parseAliases } from '../lib/ephemeral-config.ts';
 import { runMcpStdio } from '../lib/mcp-stdio.ts';
