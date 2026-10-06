@@ -8,8 +8,8 @@ import {
 	publishRunning,
 } from 'devsess';
 import { Effect } from 'effect';
-import { FileSystem } from 'effect/FileSystem';
 import { Command } from 'effect/cli';
+import { FileSystem } from 'effect/FileSystem';
 import enginePackage from '../package.json' with { type: 'json' };
 import { Engine } from '../src/server.ts';
 
