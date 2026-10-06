@@ -14,7 +14,7 @@
 		"gen-migrations": "bun scripts/gen-migrations.ts"
 	},
 	"dependencies": {
-		"@agentclientprotocol/sdk": "0.23.0",
+		"@agentclientprotocol/sdk": "0.22.1",
 		"@effect/platform-bun": "catalog:",
 		"@modelcontextprotocol/server": "catalog:",
 		"@orpc/experimental-effect": "catalog:",
