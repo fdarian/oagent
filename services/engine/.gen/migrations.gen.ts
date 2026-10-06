@@ -23,6 +23,7 @@ import m0018 from '../drizzle/0018_military_ozymandias.sql' with { type: 'text' 
 import m0019 from '../drizzle/0019_icy_amazoness.sql' with { type: 'text' };
 import m0020 from '../drizzle/0020_minor_frightful_four.sql' with { type: 'text' };
 import m0021 from '../drizzle/0021_naive_tempest.sql' with { type: 'text' };
+import m0022 from '../drizzle/0022_fair_joseph.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -48,6 +49,7 @@ export default {
   '0018_military_ozymandias': m0018,
   '0019_icy_amazoness': m0019,
   '0020_minor_frightful_four': m0020,
-  '0021_naive_tempest': m0021
+  '0021_naive_tempest': m0021,
+  '0022_fair_joseph': m0022
   } as Record<string, string>,
 };
