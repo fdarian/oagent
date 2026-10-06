@@ -2,7 +2,7 @@
 import * as BunRuntime from '@effect/platform-bun/BunRuntime';
 import * as BunServices from '@effect/platform-bun/BunServices';
 import { Effect } from 'effect';
-import { Command } from 'effect/unstable/cli';
+import { Command } from 'effect/cli';
 import cliPackage from '../package.json' with { type: 'json' };
 import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';

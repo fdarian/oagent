@@ -4,7 +4,7 @@ import {
 	HttpClient,
 	HttpClientRequest,
 	HttpClientResponse,
-} from 'effect/unstable/http';
+} from 'effect/http';
 
 const SERVICE_COMMAND_TIMEOUT_MS = 15_000;
 
