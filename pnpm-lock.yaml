@@ -427,8 +427,8 @@ importers:
   services/engine:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: ^1.7.0
-        version: 1.7.0(zod@4.6.5)
+        specifier: 0.23.0
+        version: 0.23.0(zod@4.6.5)
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.0.0(effect@4.0.1)
@@ -478,8 +478,8 @@ packages:
   '@adobe/css-tools@4.5.0':
     resolution: {integrity: sha512-6OzddxPio9UiWTCemp4N8cYLV2ZN1ncRnV1cVGtve7dhPOtRkleRyx32GQCYSwDYgaHU3USMm84tNsvKzRCa1Q==}
 
-  '@agentclientprotocol/sdk@1.7.0':
-    resolution: {integrity: sha512-ZORuxsuEnLjRly7t6Ad7zAsWitjWsyprswyPUHz/yycPb+tTm3DGa8XheaHhRXqX8LS9snuxaYavXSRA50TlHw==}
+  '@agentclientprotocol/sdk@0.23.0':
+    resolution: {integrity: sha512-wIGDQMSXwhoSPNCJflSQvf4WeSU2Jq1bbPRAwwb49euo9qMcND5Pb80hD7hVfuAwz9ZvvDuzVrNTOZrvKPR9Eg==}
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
@@ -4807,7 +4807,7 @@ snapshots:
 
   '@adobe/css-tools@4.5.0': {}
 
-  '@agentclientprotocol/sdk@1.7.0(zod@4.6.5)':
+  '@agentclientprotocol/sdk@0.23.0(zod@4.6.5)':
     dependencies:
       zod: 4.6.5
 
