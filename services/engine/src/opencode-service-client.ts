@@ -50,6 +50,32 @@ const MessagesResponse = Schema.Struct({
 	),
 });
 
+const LatestMessageResponse = Schema.Struct({
+	data: Schema.Array(
+		Schema.Struct({
+			id: Schema.String,
+			type: Schema.optional(Schema.String),
+			time: Schema.optional(
+				Schema.Struct({
+					completed: Schema.optional(Schema.NullOr(Schema.Number)),
+				}),
+			),
+			finish: Schema.optional(Schema.NullOr(Schema.String)),
+			error: Schema.optional(
+				Schema.NullOr(
+					Schema.Struct({
+						type: Schema.optional(Schema.String),
+						message: Schema.optional(Schema.String),
+					}),
+				),
+			),
+		}),
+	),
+});
+
+export type OpenCodeLatestMessage =
+	(typeof LatestMessageResponse.Type)['data'][number];
+
 type CommandResult = {
 	exitCode: number;
 	stdout: string;
@@ -524,6 +550,49 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 					return latest.id;
 				});
 
+			const getLatestMessage = (
+				binaryPath: string,
+				sessionId: string,
+			): Effect.Effect<
+				OpenCodeLatestMessage,
+				OpenCodeServiceDiscoveryError | OpenCodeSessionRestError
+			> =>
+				Effect.gen(function* () {
+					const service = yield* discover(binaryPath);
+					const url = new URL(
+						`/api/session/${encodeURIComponent(sessionId)}/message?order=desc&limit=1`,
+						service.url,
+					);
+					const operationError = (cause: unknown) =>
+						new OpenCodeSessionRestError({
+							operation: 'message lookup',
+							sessionId,
+							cause,
+						});
+					const request = HttpClientRequest.get(url).pipe(
+						HttpClientRequest.basicAuth(
+							'opencode',
+							Redacted.make(service.password),
+						),
+					);
+					const response = yield* httpClient
+						.execute(request)
+						.pipe(Effect.mapError(operationError));
+					if (response.status !== 200) {
+						return yield* operationError(
+							new Error(`OpenCode service returned HTTP ${response.status}`),
+						);
+					}
+					const body = yield* HttpClientResponse.schemaBodyJson(
+						LatestMessageResponse,
+					)(response).pipe(Effect.mapError(operationError));
+					const latest = body.data[0];
+					if (latest === undefined) {
+						return yield* operationError(new Error('Session has no messages'));
+					}
+					return latest;
+				});
+
 			const getFirstMessageAfter = (
 				binaryPath: string,
 				input: { sessionId: string; messageId: string },
@@ -588,6 +657,7 @@ export class OpenCodeServiceClient extends Context.Service<OpenCodeServiceClient
 				isSessionActive,
 				forkSession,
 				getLatestMessageId,
+				getLatestMessage,
 				getFirstMessageAfter,
 			};
 		}),

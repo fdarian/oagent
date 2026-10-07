@@ -1,10 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import type {
-	ClientSideConnection,
-	SessionUpdate,
+import {
+	type ClientSideConnection,
+	RequestError,
+	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect } from 'effect';
 import { AcpSessionError, runAcpTurn } from './acp-agent.ts';
+import type { TurnCompletion } from './acp-turn-recovery.ts';
 
 type TestConnection = {
 	env: {
@@ -127,6 +129,7 @@ describe('ACP turn recovery', () => {
 							busyChecks += 1;
 							return Effect.succeed(false);
 						},
+						isTurnComplete: () => Effect.succeed({ complete: true }),
 					},
 				},
 			),
@@ -187,6 +190,7 @@ describe('ACP turn recovery', () => {
 						pollIntervalMs: 1,
 						maxRetries: 2,
 						isSessionBusy: () => Effect.succeed(false),
+						isTurnComplete: () => Effect.succeed({ complete: true }),
 					},
 				},
 			),
@@ -243,6 +247,7 @@ describe('ACP turn recovery', () => {
 						pollIntervalMs: 1,
 						maxRetries: 2,
 						isSessionBusy: () => Effect.succeed(true),
+						isTurnComplete: () => Effect.succeed({ complete: true }),
 					},
 				},
 			),
@@ -296,6 +301,7 @@ describe('ACP turn recovery', () => {
 							busyChecks += 1;
 							return Effect.succeed(busyChecks === 1);
 						},
+						isTurnComplete: () => Effect.succeed({ complete: true }),
 					},
 				},
 			),
@@ -305,5 +311,149 @@ describe('ACP turn recovery', () => {
 
 		expect(result.sessionId).toBe('ses_existing');
 		expect(busyChecks).toBe(2);
+	});
+
+	describe('interrupted turns', () => {
+		const idleRecovery = (
+			isTurnComplete: () => Effect.Effect<TurnCompletion, never>,
+		) => ({
+			pollIntervalMs: 1,
+			maxRetries: 2,
+			isSessionBusy: () => Effect.succeed(false),
+			isTurnComplete,
+		});
+
+		test('fails with ACP_TURN_INTERRUPTED when a transport-closed prompt leaves an unfinished turn', async () => {
+			const first = createTestConnection({
+				prompt: async () => {
+					throw new Error('ACP connection closed');
+				},
+			});
+			const second = createTestConnection({
+				prompt: async () => ({ stopReason: 'end_turn' }),
+			});
+
+			const result = Effect.runPromise(
+				runAcpTurn(
+					{ ...first.env, createConnection: () => Effect.succeed(second.env) },
+					{
+						prompt: 'continue',
+						cwd: '/tmp',
+						sessionId: 'ses_existing',
+						skipModelSet: true,
+						recovery: idleRecovery(() =>
+							Effect.succeed({
+								complete: false,
+								reason: 'the last assistant step never finished',
+							}),
+						),
+					},
+				),
+			);
+
+			await expect(result).rejects.toMatchObject({
+				code: 'ACP_TURN_INTERRUPTED',
+				message: expect.stringContaining(
+					'was interrupted (prompt request failed: ACP connection closed) and did not finish: the last assistant step never finished',
+				),
+			});
+		});
+
+		test('still ends the turn when a transport-closed prompt left a finished turn', async () => {
+			const first = createTestConnection({
+				prompt: async () => {
+					throw new Error('ACP connection closed');
+				},
+			});
+			const second = createTestConnection({
+				prompt: async () => ({ stopReason: 'end_turn' }),
+			});
+
+			const result = await Effect.runPromise(
+				runAcpTurn(
+					{ ...first.env, createConnection: () => Effect.succeed(second.env) },
+					{
+						prompt: 'continue',
+						cwd: '/tmp',
+						sessionId: 'ses_existing',
+						skipModelSet: true,
+						recovery: idleRecovery(() => Effect.succeed({ complete: true })),
+					},
+				),
+			);
+
+			expect(result.stopReason).toBe('end_turn');
+		});
+
+		test('fails when the process exits mid-turn and the recovered session is incomplete', async () => {
+			const first = createTestConnection({
+				prompt: () => new Promise(() => {}),
+			});
+			const second = createTestConnection({
+				prompt: async () => ({ stopReason: 'end_turn' }),
+			});
+
+			const result = Effect.runPromise(
+				runAcpTurn(
+					{ ...first.env, createConnection: () => Effect.succeed(second.env) },
+					{
+						prompt: 'continue',
+						cwd: '/tmp',
+						sessionId: 'ses_existing',
+						skipModelSet: true,
+						recovery: idleRecovery(() =>
+							Effect.succeed({
+								complete: false,
+								reason: 'the assistant failed: boom',
+							}),
+						),
+					},
+				),
+			);
+
+			await Bun.sleep(0);
+			first.resolveExit(137);
+
+			await expect(result).rejects.toMatchObject({
+				code: 'ACP_TURN_INTERRUPTED',
+				message: expect.stringContaining('ACP process or transport closed'),
+			});
+		});
+
+		test('fails immediately on a JSON-RPC rejection without reconnecting', async () => {
+			const first = createTestConnection({
+				prompt: async () => {
+					throw new RequestError(-32000, 'authentication token has expired');
+				},
+			});
+			let reconnects = 0;
+
+			const result = Effect.runPromise(
+				runAcpTurn(
+					{
+						...first.env,
+						createConnection: () => {
+							reconnects += 1;
+							return Effect.fail(
+								new AcpSessionError({ cause: new Error('unexpected') }),
+							);
+						},
+					},
+					{
+						prompt: 'continue',
+						cwd: '/tmp',
+						sessionId: 'ses_existing',
+						skipModelSet: true,
+						recovery: idleRecovery(() => Effect.succeed({ complete: true })),
+					},
+				),
+			);
+
+			await expect(result).rejects.toMatchObject({
+				code: 'PROMPT_REJECTED',
+				message: 'Prompt rejected: authentication token has expired',
+			});
+			expect(reconnects).toBe(0);
+		});
 	});
 });

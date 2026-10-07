@@ -1,6 +1,7 @@
-import type {
-	ClientSideConnection,
-	SessionUpdate,
+import {
+	type ClientSideConnection,
+	RequestError,
+	type SessionUpdate,
 } from '@agentclientprotocol/sdk';
 import { Effect, Schema, Semaphore } from 'effect';
 import type { Scope } from 'effect/Scope';
@@ -15,10 +16,21 @@ export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	},
 ) {}
 
+export type TurnCompletion =
+	| { complete: true }
+	| { complete: false; reason: string };
+
 export type AcpTurnRecovery = {
 	isSessionBusy: (
 		sessionId: string,
 	) => Effect.Effect<boolean, AcpTurnFailed, never>;
+	/**
+	 * Idle after a reconnect does not mean the turn finished: the agent may have
+	 * died mid-turn. Implementations inspect the session's persisted state.
+	 */
+	isTurnComplete: (
+		sessionId: string,
+	) => Effect.Effect<TurnCompletion, AcpTurnFailed, never>;
 	stallTimeoutMs?: number;
 	pollIntervalMs?: number;
 	maxRetries?: number;
@@ -259,11 +271,29 @@ export function createAcpTurnRecovery(
 			);
 		};
 
-		const waitForRecoveredCompletion = (): Effect.Effect<
-			PromptResponse,
-			AcpTurnFailed,
-			never
-		> => {
+		const completeIfIdleTurnFinished = (
+			recovery: AcpTurnRecovery,
+			sessionId: string,
+			interruption: string,
+		): Effect.Effect<PromptResponse, AcpTurnFailed, never> =>
+			recovery.isTurnComplete(sessionId).pipe(
+				Effect.flatMap((completion) => {
+					if (completion.complete) {
+						return Effect.succeed({ stopReason: 'end_turn' as const });
+					}
+					return Effect.fail(
+						new AcpTurnFailed({
+							code: 'ACP_TURN_INTERRUPTED',
+							message: `OpenCode turn for session ${sessionId} was interrupted (${interruption}) and did not finish: ${completion.reason}`,
+							cause: new Error(completion.reason),
+						}),
+					);
+				}),
+			);
+
+		const waitForRecoveredCompletion = (
+			interruption: string,
+		): Effect.Effect<PromptResponse, AcpTurnFailed, never> => {
 			if (recovery === undefined) {
 				return Effect.fail(
 					recoveryFailure(
@@ -283,7 +313,13 @@ export function createAcpTurnRecovery(
 				const deadline = Date.now() + recoverySettleTimeout;
 				while (true) {
 					const busy = yield* recovery.isSessionBusy(sessionId);
-					if (!busy) return { stopReason: 'end_turn' as const };
+					if (!busy) {
+						return yield* completeIfIdleTurnFinished(
+							recovery,
+							sessionId,
+							interruption,
+						);
+					}
 					if (Date.now() >= deadline) {
 						return yield* recoveryFailure(
 							`OpenCode session ${sessionId} stayed busy after reconnecting; the job is stopping instead of remaining running.`,
@@ -317,12 +353,17 @@ export function createAcpTurnRecovery(
 					if (onPromptDispatch !== undefined) onPromptDispatch();
 					return await promptRequest;
 				},
-				catch: (cause) =>
-					new AcpTurnFailed({
+				catch: (cause) => {
+					const reason = getRpcMessage(cause);
+					return new AcpTurnFailed({
 						code: 'PROMPT_REJECTED',
-						message: 'prompt rejected',
+						message:
+							reason === undefined
+								? 'Prompt rejected.'
+								: `Prompt rejected: ${reason}`,
 						cause,
-					}),
+					});
+				},
 			});
 
 		const cancelAndAwait = Effect.gen(function* () {
@@ -350,17 +391,24 @@ export function createAcpTurnRecovery(
 			const promptEffect = invokePrompt(prompt, onPromptDispatch).pipe(
 				Effect.catch((error) => {
 					if (
+						// The agent answered, so the connection is alive: retrying would hide the rejection.
+						error.cause instanceof RequestError ||
 						!state.promptDispatched ||
 						recovery === undefined ||
 						createConnection === undefined
 					) {
 						return Effect.fail(error);
 					}
+					const failure = getRpcMessage(error.cause);
+					const interruption =
+						failure === undefined
+							? 'prompt request failed'
+							: `prompt request failed: ${failure}`;
 					return Effect.gen(function* () {
 						if (!state.reconnected) {
-							yield* reconnect('prompt request failed');
+							yield* reconnect(interruption);
 						}
-						return yield* waitForRecoveredCompletion();
+						return yield* waitForRecoveredCompletion(interruption);
 					});
 				}),
 			);
@@ -409,14 +457,18 @@ export function createAcpTurnRecovery(
 						}
 					}
 
-					yield* reconnect(
-						closed
-							? 'ACP process or transport closed'
-							: 'session stalled while busy',
-						observed,
-					);
+					const interruption = closed
+						? 'ACP process or transport closed'
+						: 'session stalled while busy';
+					yield* reconnect(interruption, observed);
 					const busy = yield* recovery.isSessionBusy(sessionId);
-					if (!busy) return { stopReason: 'end_turn' as const };
+					if (!busy) {
+						return yield* completeIfIdleTurnFinished(
+							recovery,
+							sessionId,
+							interruption,
+						);
+					}
 				}
 			});
 

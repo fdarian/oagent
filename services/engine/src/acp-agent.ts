@@ -47,7 +47,7 @@ export type AcpAgentConfig = {
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
 };
 
-export type { AcpTurnRecovery } from './acp-turn-recovery.ts';
+export type { AcpTurnRecovery, TurnCompletion } from './acp-turn-recovery.ts';
 export { AcpTurnFailed } from './acp-turn-recovery.ts';
 
 export class AcpSessionError extends Schema.TaggedError<AcpSessionError>()(

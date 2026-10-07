@@ -8,6 +8,7 @@ import {
 	AcpTurnFailed,
 	type AcpTurnRecovery,
 	checkAcpConnection,
+	type TurnCompletion,
 } from './acp-agent.ts';
 import {
 	type Harness,
@@ -15,7 +16,10 @@ import {
 	type ModelEffort,
 } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
-import { OpenCodeServiceClient } from './opencode-service-client.ts';
+import {
+	type OpenCodeLatestMessage,
+	OpenCodeServiceClient,
+} from './opencode-service-client.ts';
 import { Settings } from './settings.ts';
 
 const OPENCODE_BINARY = 'opencode';
@@ -38,6 +42,41 @@ const OpenCodeAgentListResponse = Schema.fromJsonString(
 		),
 	}),
 );
+
+export function evaluateOpenCodeTurnCompletion(
+	latest: OpenCodeLatestMessage,
+): TurnCompletion {
+	if (latest.type !== 'assistant') {
+		return {
+			complete: false,
+			reason: 'the prompt was never answered by the assistant',
+		};
+	}
+	if (latest.error !== undefined && latest.error !== null) {
+		const detail =
+			latest.error.message ?? latest.error.type ?? 'unknown assistant error';
+		return { complete: false, reason: `the assistant failed: ${detail}` };
+	}
+	if (latest.time?.completed === undefined || latest.time.completed === null) {
+		return {
+			complete: false,
+			reason: 'the last assistant step never finished',
+		};
+	}
+	if (latest.finish === undefined || latest.finish === null) {
+		return {
+			complete: false,
+			reason: 'the last assistant step has no finish reason',
+		};
+	}
+	if (latest.finish === 'tool-calls' || latest.finish === 'error') {
+		return {
+			complete: false,
+			reason: `the last assistant step ended with "${latest.finish}"`,
+		};
+	}
+	return { complete: true };
+}
 
 type OpenCodeCommandResult = {
 	exitCode: number;
@@ -404,6 +443,18 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 				recovery: {
 					isSessionBusy: (sessionId) =>
 						serviceClient.isSessionActive(binary, sessionId).pipe(
+							Effect.mapError(
+								(cause) =>
+									new AcpTurnFailed({
+										code: 'ACP_RECOVERY_STATUS_FAILED',
+										message: cause.message,
+										cause,
+									}),
+							),
+						),
+					isTurnComplete: (sessionId) =>
+						serviceClient.getLatestMessage(binary, sessionId).pipe(
+							Effect.map(evaluateOpenCodeTurnCompletion),
 							Effect.mapError(
 								(cause) =>
 									new AcpTurnFailed({
