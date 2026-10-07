@@ -14,7 +14,7 @@ import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
-import { type Backend, isBackend, parseBackend } from './harness.ts';
+import { BACKENDS, type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
 
@@ -182,7 +182,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					if (!isBackend(backend)) {
 						return yield* new ModelResolutionError({
 							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude, pi.`,
+							message: `Unknown backend "${backend}". Valid backends: ${BACKENDS.join(', ')}.`,
 						});
 					}
 					return { backend, modelId, reasoningEffort: undefined };

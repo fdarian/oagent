@@ -5,7 +5,7 @@ import { os } from '@orpc/server';
 import { Effect, Schema } from 'effect';
 import { Agents } from '../agents.ts';
 import { AliasPresets } from '../alias-presets.ts';
-import { HarnessModelError } from '../harness.ts';
+import { BACKENDS, HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { Jobs } from '../jobs.ts';
@@ -35,14 +35,7 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 	return value;
 }
 
-const backendSchema = Schema.Literals([
-	'opencode',
-	'cursor',
-	'grok',
-	'codex',
-	'claude',
-	'pi',
-]);
+const backendSchema = Schema.Literals(BACKENDS);
 const reasoningEffortSchema = Schema.optional(
 	Schema.String.check(Schema.isMinLength(1)),
 );
