@@ -21,6 +21,7 @@ export {
 	formatTurnResult,
 } from './format/turn-result.ts';
 export { Grok } from './grok.ts';
+export { BACKENDS } from './harness.ts';
 export { HarnessRegistry } from './harness-registry.ts';
 export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';
@@ -53,6 +54,7 @@ export {
 	getOagentHomeDir,
 	getOagentLogsDir,
 } from './paths.ts';
+export { Pi } from './pi.ts';
 export { createEngineHandler } from './rpc/handler.ts';
 export type { EngineRouter } from './rpc/router.ts';
 export { acquireHttpListener, Engine } from './server.ts';

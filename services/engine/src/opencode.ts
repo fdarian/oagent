@@ -1,4 +1,3 @@
-import type { SessionConfigOption } from '@agentclientprotocol/sdk';
 import { Context, Effect, Layer, Ref, Schema, Semaphore } from 'effect';
 import {
 	AcpAgent,
@@ -9,10 +8,13 @@ import {
 	AcpTurnFailed,
 	type AcpTurnRecovery,
 	checkAcpConnection,
-	createAcpConnection,
 	type TurnCompletion,
 } from './acp-agent.ts';
-import { type Harness, HarnessSteerError } from './harness.ts';
+import {
+	type Harness,
+	HarnessSteerError,
+	type ModelEffort,
+} from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import {
 	type OpenCodeLatestMessage,
@@ -23,15 +25,9 @@ import { Settings } from './settings.ts';
 const OPENCODE_BINARY = 'opencode';
 const OPENCODE_EFFORT_CONFIG_ID = 'effort';
 const OPENCODE_API_TIMEOUT_MS = 15_000;
-const OPENCODE_EFFORTS_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_TIMEOUT_MS = 15_000;
 const OPENCODE_VERSION_PATTERN =
 	/\bv?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?)\b/;
-
-export type OpenCodeEffortOption = {
-	value: string;
-	label: string;
-};
 
 const OpenCodeAgentListResponse = Schema.fromJsonString(
 	Schema.Struct({
@@ -110,11 +106,7 @@ type OpenCodeService = Harness & {
 	>;
 	listModelEfforts: (
 		model: string,
-	) => Effect.Effect<
-		ReadonlyArray<OpenCodeEffortOption>,
-		AcpSessionError,
-		never
-	>;
+	) => Effect.Effect<ReadonlyArray<ModelEffort>, AcpSessionError, never>;
 	requireSteerSupport: () => Effect.Effect<
 		string,
 		AcpSessionError | OpenCodeSteerNotSupportedError,
@@ -135,31 +127,6 @@ function getOpenCodeConfigOptions(
 		});
 	}
 	return options.length === 0 ? undefined : options;
-}
-
-function getOpenCodeEffortOptions(
-	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
-): ReadonlyArray<OpenCodeEffortOption> {
-	if (configOptions === undefined || configOptions === null) return [];
-	const effortOption = configOptions.find(
-		(option) => option.id === OPENCODE_EFFORT_CONFIG_ID,
-	);
-	if (effortOption === undefined || effortOption.type !== 'select') return [];
-
-	const efforts: Array<OpenCodeEffortOption> = [];
-	for (const option of effortOption.options) {
-		if ('group' in option) {
-			for (const groupedOption of option.options) {
-				efforts.push({
-					value: groupedOption.value,
-					label: groupedOption.name,
-				});
-			}
-			continue;
-		}
-		efforts.push({ value: option.value, label: option.name });
-	}
-	return efforts;
 }
 
 export function getOpenCodeBinary(): string {
@@ -678,38 +645,10 @@ export class OpenCode extends Context.Service<OpenCode>()('oagent/OpenCode', {
 			});
 
 		const fetchModelEfforts = (model: string) =>
-			Effect.scoped(
-				Effect.gen(function* () {
-					const connection = yield* createAcpConnection(
-						createOpenCodeAcpConfig(() => settings.getHarnessEnv('opencode')),
-					);
-					const session = yield* Effect.tryPromise({
-						try: () =>
-							connection.conn.newSession({
-								cwd: process.cwd(),
-								mcpServers: [],
-							}),
-						catch: (cause) => new AcpSessionError({ cause }),
-					});
-					const response = yield* Effect.tryPromise({
-						try: () =>
-							connection.conn.setSessionConfigOption({
-								sessionId: session.sessionId,
-								configId: 'model',
-								value: model,
-							}),
-						catch: (cause) => new AcpSessionError({ cause }),
-					});
-					return getOpenCodeEffortOptions(response.configOptions);
-				}),
-			).pipe(
-				Effect.timeout(OPENCODE_EFFORTS_TIMEOUT_MS),
-				Effect.mapError((cause) =>
-					cause instanceof AcpSessionError
-						? cause
-						: new AcpSessionError({ cause }),
-				),
-			);
+			acpAgent.listModelConfigChoices({
+				model,
+				configId: OPENCODE_EFFORT_CONFIG_ID,
+			});
 		const modelCache = yield* ModelsCache.make(() => fetchModels());
 		const agentTargetCache = yield* ModelsCache.make(() => fetchAgentTargets());
 		const effortCache = yield* ModelsCache.makeKeyed((model) =>

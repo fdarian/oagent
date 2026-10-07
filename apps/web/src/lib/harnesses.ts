@@ -9,16 +9,13 @@ export const HARNESS_NAMES: Record<Backend, string> = {
 	grok: 'Grok',
 	codex: 'Codex',
 	claude: 'Claude',
+	pi: 'Pi',
 };
 
+export const BACKENDS = Object.keys(HARNESS_NAMES) as Array<Backend>;
+
 export function isBackend(value: string): value is Backend {
-	return (
-		value === 'opencode' ||
-		value === 'cursor' ||
-		value === 'grok' ||
-		value === 'codex' ||
-		value === 'claude'
-	);
+	return (BACKENDS as ReadonlyArray<string>).includes(value);
 }
 
 export function harnessesQueryOptions() {

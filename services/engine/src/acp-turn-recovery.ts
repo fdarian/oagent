@@ -348,6 +348,7 @@ export function createAcpTurnRecovery(
 					});
 					state.pendingPrompt = promptRequest;
 					state.promptDispatched = true;
+					replay.markPromptDispatched();
 					state.lastEventAt = Date.now();
 					if (onPromptDispatch !== undefined) onPromptDispatch();
 					return await promptRequest;

@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { fileURLToPath } from 'node:url';
 import type {
 	ClientSideConnection,
 	SessionConfigOption,
@@ -8,6 +9,7 @@ import { Effect } from 'effect';
 import {
 	AcpForkNotSupportedError,
 	forkAcpSession,
+	makeAcpAgent,
 	runAcpTurn,
 } from './acp-agent.ts';
 
@@ -638,5 +640,35 @@ describe('ACP session fork', () => {
 				),
 			),
 		).rejects.toBeInstanceOf(AcpForkNotSupportedError);
+	});
+});
+
+describe('shared ACP connection', () => {
+	test('respawns the harness when the cached process dies between turns', async () => {
+		const runTurn = (agent: Effect.Success<ReturnType<typeof makeAcpAgent>>) =>
+			agent
+				.runTurn({ prompt: 'pid?', cwd: process.cwd() })
+				.pipe(Effect.map((result) => Number(result.text)));
+
+		const pids = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAcpAgent({
+						binary: process.execPath,
+						args: [
+							fileURLToPath(new URL('./test-acp-agent.ts', import.meta.url)),
+						],
+						clientInfoName: 'oagent-test',
+					});
+					const first = yield* runTurn(agent);
+					process.kill(first, 'SIGKILL');
+					yield* Effect.sleep('200 millis');
+					const second = yield* runTurn(agent);
+					return { first, second };
+				}),
+			),
+		);
+
+		expect(pids.second).not.toBe(pids.first);
 	});
 });
