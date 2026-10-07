@@ -314,6 +314,7 @@ export function createAcpTurnRecovery(
 							prompt: [{ type: 'text', text: prompt }],
 						});
 						state.promptDispatched = true;
+						replay.markPromptDispatched();
 						state.lastEventAt = Date.now();
 						if (onPromptDispatch !== undefined) onPromptDispatch();
 						return await promptRequest;
