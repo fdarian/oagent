@@ -15,7 +15,8 @@ export function makeAcpAdapterHarness(options: {
 	defaultBinary: string;
 	binaryEnvVar: string;
 	effortConfigId: string;
-	efforts: ReadonlyArray<ModelEffort>;
+	/** 'discover' asks the adapter which efforts each model accepts. */
+	efforts: ReadonlyArray<ModelEffort> | 'discover';
 	omitDefaultEffort?: boolean;
 }) {
 	const getBinary = () =>
@@ -82,6 +83,27 @@ export function makeAcpAdapterHarness(options: {
 					Effect.map((entries) => entries.map((entry) => ({ id: entry.id }))),
 				),
 		);
+		const discoveredEfforts =
+			options.efforts === 'discover'
+				? yield* ModelsCache.makeKeyed((model) =>
+						acpAgent
+							.listModelConfigChoices({
+								model,
+								configId: options.effortConfigId,
+							})
+							.pipe(
+								Effect.map((choices) =>
+									options.omitDefaultEffort === true
+										? [{ value: 'default', label: 'Default' }, ...choices]
+										: choices,
+								),
+							),
+					)
+				: undefined;
+		const listModelEfforts = (model: string) => {
+			if (discoveredEfforts !== undefined) return discoveredEfforts.get(model);
+			return Effect.succeed(options.efforts as ReadonlyArray<ModelEffort>);
+		};
 		return {
 			backend: options.backend,
 			supportsModelSwitch: false,
@@ -93,11 +115,17 @@ export function makeAcpAdapterHarness(options: {
 					configOptions: getConfigOptions(input.model, input.reasoningEffort),
 				}),
 			listModels: () => models.get(),
-			listModelEfforts: () => Effect.succeed(options.efforts),
+			listModelEfforts,
 			listAgentTargets: () => Effect.succeed([]),
 			resolveBinary,
 			version,
-			invalidate: () => models.invalidate(),
+			invalidate: () =>
+				Effect.gen(function* () {
+					yield* models.invalidate();
+					if (discoveredEfforts !== undefined) {
+						yield* discoveredEfforts.invalidate();
+					}
+				}),
 			check: () => checkAcpConnection(options.backend, config()),
 		} satisfies Harness;
 	});

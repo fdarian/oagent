@@ -40,6 +40,7 @@ describe('Pi ACP backend', () => {
 	});
 	test('keeps thinking separate from agent modes and disables unsupported capabilities', async () => {
 		const calls: Array<Parameters<AcpAgent['Service']['runTurn']>[0]> = [];
+		const effortLookups: string[] = [];
 		const harness = await Effect.runPromise(
 			Pi.make.pipe(
 				Effect.provideService(AcpAgent, {
@@ -55,6 +56,17 @@ describe('Pi ACP backend', () => {
 						Effect.succeed([{ id: 'provider/model', label: 'Model label' }]),
 					forkSession: () => Effect.die('Unexpected fork'),
 					listSessionCatalog: () => Effect.die('Unexpected mode catalog'),
+					listModelConfigChoices: (input) => {
+						effortLookups.push(`${input.model}:${input.configId}`);
+						return Effect.succeed(
+							input.model === 'provider/reasoner'
+								? [
+										{ value: 'off', label: 'Off' },
+										{ value: 'high', label: 'High' },
+									]
+								: [{ value: 'off', label: 'Off' }],
+						);
+					},
 				}),
 				Effect.provideService(Settings, {
 					getHarnessEnv: () => ({}),
@@ -64,19 +76,24 @@ describe('Pi ACP backend', () => {
 		expect(await Effect.runPromise(harness.listModels())).toEqual([
 			{ id: 'provider/model' },
 		]);
-		expect(
-			(await Effect.runPromise(harness.listModelEfforts())).map(
-				(entry) => entry.value,
-			),
-		).toEqual([
+		const reasonerEfforts = await Effect.runPromise(
+			harness.listModelEfforts('provider/reasoner'),
+		);
+		expect(reasonerEfforts.map((entry) => entry.value)).toEqual([
 			'default',
 			'off',
-			'minimal',
-			'low',
-			'medium',
 			'high',
-			'xhigh',
-			'max',
+		]);
+		expect(reasonerEfforts[0]).toEqual({ value: 'default', label: 'Default' });
+		expect(
+			(await Effect.runPromise(harness.listModelEfforts('provider/plain'))).map(
+				(entry) => entry.value,
+			),
+		).toEqual(['default', 'off']);
+		await Effect.runPromise(harness.listModelEfforts('provider/reasoner'));
+		expect(effortLookups).toEqual([
+			'provider/reasoner:thought_level',
+			'provider/plain:thought_level',
 		]);
 		expect(await Effect.runPromise(harness.listAgentTargets())).toEqual([]);
 		expect(harness.supportsModelSwitch).toBe(false);

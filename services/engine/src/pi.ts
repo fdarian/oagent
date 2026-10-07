@@ -9,16 +9,7 @@ const adapter = makeAcpAdapterHarness({
 	effortConfigId: 'thought_level',
 	// Pi has no literal default level; omitting the option preserves its choice.
 	omitDefaultEffort: true,
-	efforts: [
-		{ value: 'default', label: 'Default' },
-		{ value: 'off', label: 'Off' },
-		{ value: 'minimal', label: 'Minimal' },
-		{ value: 'low', label: 'Low' },
-		{ value: 'medium', label: 'Medium' },
-		{ value: 'high', label: 'High' },
-		{ value: 'xhigh', label: 'Extra high' },
-		{ value: 'max', label: 'Max' },
-	],
+	efforts: 'discover',
 });
 
 export const getPiBinary = adapter.getBinary;
