@@ -108,7 +108,7 @@ function getTargetLabel(
 	return `${target.label} (${target.id})`;
 }
 
-function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
+export function OpenCodeTargetSelect(props: OpenCodeTargetSelectProps) {
 	const expandedTargetIdState = useState<string>();
 	const expandedTargetId = expandedTargetIdState[0];
 	const setExpandedTargetId = expandedTargetIdState[1];

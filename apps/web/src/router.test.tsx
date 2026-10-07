@@ -38,12 +38,17 @@ Object.defineProperty(globalThis, 'EventSource', {
 
 const requests: string[] = [];
 const client = {
+	models: {
+		list: async () => [],
+	},
 	sideChats: {
 		create: async () => ({ id: 'chat' }),
 		list: async () => [],
 		send: async () => ({ jobId: 'turn' }),
 	},
 	sessions: {
+		cost: async () => ({ status: 'unsupported' }),
+		setModel: async () => ({ ok: true }),
 		get: async () => {
 			throw new Error('Destination query unavailable in redirect test');
 		},

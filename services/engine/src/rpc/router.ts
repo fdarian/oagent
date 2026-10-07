@@ -293,6 +293,13 @@ const router = procedure.router({
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
 						title: Schema.String,
+						agent: Schema.optional(
+							Schema.Struct({
+								name: agentNameSchema,
+								description: Schema.optional(Schema.String),
+								targets: Schema.Array(agentTargetSchema),
+							}),
+						),
 						prompt: Schema.String,
 						cwd: Schema.optional(Schema.String),
 						model: Schema.optional(Schema.String),
@@ -309,6 +316,7 @@ const router = procedure.router({
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
 					model: options.input.model,
+					agent: options.input.agent,
 					agentType: options.input.agent_type,
 					forkId: options.input.forkId,
 					worktree: options.input.worktree,

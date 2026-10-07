@@ -1,6 +1,6 @@
-import { Engine } from '@oagent/engine';
-import { Effect, Option } from 'effect';
-import { Command, Flag } from 'effect/unstable/cli';
+import { acquireHttpListener, Engine, parseIdleDuration } from '@oagent/engine';
+import { type Duration, Effect, Option } from 'effect';
+import { Command, Flag } from 'effect/cli';
 import { getLoggerLayer } from '#/lib/logging.ts';
 import type { Version } from '#/lib/misc.ts';
 
@@ -27,17 +27,25 @@ function runServe(params: {
 	portless: boolean;
 	logFile: string | undefined;
 	version: Version;
+	idleExit?: Duration.Duration;
 }) {
 	const baseProgram = Effect.gen(function* () {
-		const engine = yield* Engine;
-
-		yield* engine.startServer({
-			port: params.port,
-			serverInfo: { name: 'oagent', version: params.version },
-			filemap: yield* webFilemap,
-			portless: params.portless,
-		});
-	}).pipe(Effect.provide(Engine.layer));
+		const listener =
+			params.idleExit === undefined
+				? undefined
+				: yield* acquireHttpListener(params.port);
+		yield* Effect.gen(function* () {
+			const engine = yield* Engine;
+			yield* engine.startServer({
+				port: params.port,
+				serverInfo: { name: 'oagent', version: params.version },
+				filemap: yield* webFilemap,
+				portless: params.portless,
+				idleExit: params.idleExit,
+				listener,
+			});
+		}).pipe(Effect.provide(Engine.layer));
+	}).pipe(Effect.scoped);
 
 	const loggerLayer = getLoggerLayer(params.logFile);
 
@@ -48,6 +56,7 @@ export const serveCmd = (version: Version) =>
 	Command.make(
 		'serve',
 		{
+			idleExit: Flag.optional(Flag.String('idle-exit')),
 			port: Flag.Int('port').pipe(
 				Flag.withAlias('p'),
 				Flag.withDefault(17_777),
@@ -66,10 +75,16 @@ export const serveCmd = (version: Version) =>
 			),
 		},
 		(params) =>
-			runServe({
-				port: params.port,
-				portless: params.portless,
-				logFile: Option.getOrUndefined(params.logFile),
-				version,
+			Effect.gen(function* () {
+				const idleExit = Option.isSome(params.idleExit)
+					? yield* parseIdleDuration(params.idleExit.value)
+					: undefined;
+				return yield* runServe({
+					port: params.port,
+					portless: params.portless,
+					logFile: Option.getOrUndefined(params.logFile),
+					version,
+					idleExit,
+				});
 			}),
 	);

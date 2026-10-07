@@ -43,6 +43,13 @@ export class AgentNotMappedForBackend extends Schema.TaggedError<AgentNotMappedF
 	}
 }
 
+export function resolveInlineAgent(agent: AgentDefinition, backend: Backend) {
+	const mapping = agent.targets.find((target) => target.backend === backend);
+	return mapping === undefined
+		? new AgentNotMappedForBackend({ agentType: agent.name, backend })
+		: Effect.succeed(mapping.target);
+}
+
 export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 	make: Effect.gen(function* () {
 		const dbService = yield* Db;

@@ -97,15 +97,15 @@ Use `./apps/cli/dist/oagent` in place of `oagent` in the commands below.
 3. **Ask your agent to "use oagent."** It'll pick up the tools from there — try asking it to delegate a task with a `prompt` and a `cwd`.
 
 <details>
-<summary>stdio fallback (per-session process)</summary>
+<summary>stdio MCP (thin client)</summary>
 
-If you'd rather have Claude Code spawn one MCP server process per session instead of talking to a shared daemon:
+To have Claude Code spawn a stdio MCP client that connects to the shared engine:
 
 ```sh
-claude mcp add oagent -- /absolute/path/to/oagent stdio
+claude mcp add oagent -- /absolute/path/to/oagent mcp stdio
 ```
 
-No Web UI and no `list` tool in this mode (see [MCP](#mcp)).
+The client starts a local engine on demand if needed. It supports the `list` tool and the engine's Web UI. Use `--engine-url <url>` to choose the engine, or `--bare` with repeatable `--alias` and JSON/`@file` `--agents` flags to expose only ephemeral model aliases and agent definitions.
 </details>
 
 <details>
@@ -138,7 +138,7 @@ The background service writes JSONL logs to `$OAGENT_HOME_DIR/logs/oagent.jsonl`
 
 In `serve`/`service` (HTTP) mode, open `http://localhost:17777/` in a browser to see the live job list. Click a job to see its event timeline — text deltas, tool calls, status updates, and errors — streamed live via SSE while the job is running. The UI is a React 19 + Vite + Tailwind v4 SPA, embedded into the standalone binary at build time.
 
-This is only available in HTTP mode. The stdio fallback has no web UI.
+The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in the engine's Web UI.
 
 ## References
 
@@ -152,8 +152,8 @@ This is only available in HTTP mode. The stdio fallback has no web UI.
 - **claude**
   - `oagent claude mcp serve` — run the Claude Code channel MCP that bridges to a running engine. Flags: `--engine-url`, `--mcp-name`.
 
-**standalone**
-- `oagent stdio` — run as a per-session stdio MCP server.
+**MCP client**
+- `oagent mcp stdio` — run a thin-client stdio MCP server, starting a local engine on demand. Flags: `--engine-url`, `--idle-exit` (default `10m`), `--bare`, repeatable `--alias`, `--agents`.
 
 **services** (macOS launchd, auto-starts on login)
 - `oagent service start` — start `oagent serve` in the background with JSONL logging. Flags: `--port` (default 17777), `--portless`.
@@ -227,7 +227,7 @@ Output: markdown text with the session and cancellation status.
 
 #### `list`
 
-Lists sessions started by the current MCP transport session, including each session's latest job ID, status, prompt, and creation time. Only available in `/mcp` HTTP mode, where the transport session ID is tracked; it is not available under `stdio`.
+Lists recent sessions, including each session's latest job ID, status, prompt, and creation time. Available through HTTP `/mcp` and `oagent mcp stdio`. Pass `cwd` to filter by working directory.
 
 ## Limits
 

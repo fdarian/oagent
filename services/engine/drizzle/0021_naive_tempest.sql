@@ -1,0 +1,1 @@
+ALTER TABLE `jobs` ADD `agent_target` text;

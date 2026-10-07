@@ -1,6 +1,6 @@
 /// <reference types="bun" />
 import { createMcpHandler, McpServer } from '@modelcontextprotocol/server';
-import { Context, Effect, Layer, Schema } from 'effect';
+import { Context, Deferred, Duration, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
@@ -10,6 +10,7 @@ import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
+import { createIdleTracker } from './idle.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
@@ -32,11 +33,63 @@ class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationE
 	}
 }
 
+type RequestHandler = (request: Request) => Response | Promise<Response>;
+
+export function acquireHttpListener(port: number) {
+	return Effect.gen(function* () {
+		const ready = yield* Deferred.make<RequestHandler, Error>();
+		const state: {
+			handler?: RequestHandler;
+			pending?: Promise<RequestHandler>;
+		} = {};
+		const resolvedPort =
+			process.env.OPENCODE_MCP_PORT === undefined
+				? port
+				: Number.parseInt(process.env.OPENCODE_MCP_PORT, 10);
+		const server = yield* Effect.acquireRelease(
+			Effect.try(() =>
+				Bun.serve({
+					hostname: '127.0.0.1',
+					port: resolvedPort,
+					idleTimeout: 0,
+					fetch: (request) => {
+						if (state.handler !== undefined) return state.handler(request);
+						state.pending ??= Effect.runPromise(Deferred.await(ready));
+						return state.pending.then((handler) => handler(request));
+					},
+				}),
+			),
+			(server) =>
+				Deferred.fail(
+					ready,
+					new Error('Engine stopped before becoming ready'),
+				).pipe(
+					Effect.andThen(
+						Effect.sync(() => {
+							server.stop(true);
+						}),
+					),
+				),
+		);
+		return {
+			server,
+			activate: (handler: RequestHandler) =>
+				Effect.sync(() => {
+					state.handler = handler;
+				}).pipe(Effect.andThen(Deferred.succeed(ready, handler))),
+		};
+	});
+}
+
+type HttpListener = Effect.Success<ReturnType<typeof acquireHttpListener>>;
+
 type ServerOptions = {
 	port: number;
 	serverInfo: { name: string; version: string };
 	filemap?: Record<string, string>;
 	portless?: boolean;
+	idleExit?: Duration.Duration;
+	listener?: HttpListener;
 };
 
 export class Engine extends Context.Service<Engine>()('engine', {
@@ -50,7 +103,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const services = yield* Effect.context<EngineServices>();
 		const getMcpInstructions = () =>
 			formatMcpInstructions(jobs.listAliases(), agents.list());
-		yield* Effect.forkDetach(
+		yield* Effect.forkScoped(
 			harnesses
 				.refresh()
 				.pipe(
@@ -66,25 +119,36 @@ export class Engine extends Context.Service<Engine>()('engine', {
 				registerTools: (server: McpServer, services: Context.Context<never>) =>
 					registerTools(server, jobs, sessionService, settings, services),
 			},
-			startServer: ({ port, serverInfo, filemap, portless }: ServerOptions) =>
+			startServer: (options: ServerOptions) =>
 				Effect.gen(function* () {
 					const jobs = yield* Jobs;
 
 					const resolvedPort =
 						process.env.OPENCODE_MCP_PORT !== undefined
 							? Number.parseInt(process.env.OPENCODE_MCP_PORT, 10)
-							: port;
+							: options.port;
 
 					const mcpHandler = createMcpHandler(() => {
 						const server = new McpServer(
-							{ name: serverInfo.name, version: serverInfo.version },
+							{
+								name: options.serverInfo.name,
+								version: options.serverInfo.version,
+							},
 							{ instructions: getMcpInstructions() },
 						);
 						registerTools(server, jobs, sessionService, settings, services);
 						return server;
 					});
+					const lifecycle = { accepting: true };
 
-					const fetchHandler = async (request: Request) => {
+					const tracker =
+						options.idleExit === undefined ? undefined : createIdleTracker();
+					const dispatch = async (request: Request) => {
+						if (!lifecycle.accepting)
+							return new Response('oagent is restarting', {
+								status: 503,
+								headers: { 'retry-after': '30' },
+							});
 						const url = new URL(request.url);
 
 						// 1. MCP endpoint
@@ -128,12 +192,50 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 
 						// 6. SPA fallback
-						if (filemap !== undefined) {
-							const spaResponse = serveSPA(filemap, url.pathname);
+						if (options.filemap !== undefined) {
+							const spaResponse = serveSPA(options.filemap, url.pathname);
 							if (spaResponse !== undefined) return spaResponse;
 						}
 
 						return new Response('Not Found', { status: 404 });
+					};
+
+					const fetchHandler = async (request: Request) => {
+						if (tracker === undefined) return dispatch(request);
+						const finish = tracker.enter(new URL(request.url).pathname);
+						request.signal.addEventListener('abort', finish, { once: true });
+						try {
+							const response = await dispatch(request);
+							if (response.body === null) {
+								finish();
+								return response;
+							}
+							const reader = response.body.getReader();
+							return new Response(
+								new ReadableStream({
+									async pull(controller) {
+										try {
+											const chunk = await reader.read();
+											if (chunk.done) {
+												finish();
+												controller.close();
+											} else controller.enqueue(chunk.value);
+										} catch (cause) {
+											finish();
+											controller.error(cause);
+										}
+									},
+									async cancel(reason) {
+										finish();
+										await reader.cancel(reason);
+									},
+								}),
+								response,
+							);
+						} catch (cause) {
+							finish();
+							throw cause;
+						}
 					};
 
 					function tryBind(targetPort: number) {
@@ -155,9 +257,10 @@ export class Engine extends Context.Service<Engine>()('engine', {
 									? (cause as { code?: string }).code
 									: undefined;
 							if (
-								code === 'EADDRINUSE' ||
-								msg.includes('EADDRINUSE') ||
-								msg.includes('address already in use')
+								options.idleExit === undefined &&
+								(code === 'EADDRINUSE' ||
+									msg.includes('EADDRINUSE') ||
+									msg.includes('address already in use'))
 							) {
 								return {
 									server: Bun.serve({
@@ -173,14 +276,44 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 					}
 
-					const bindResult = yield* Effect.try({
-						try: () => tryBind(resolvedPort),
-						catch: (cause) =>
-							new Error(
-								`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
-							),
-					});
-
+					const bindResult =
+						options.listener === undefined
+							? yield* Effect.try({
+									try: () => tryBind(resolvedPort),
+									catch: (cause) =>
+										new Error(
+											`Failed to start HTTP server on port ${resolvedPort}: ${cause instanceof Error ? cause.message : String(cause)}`,
+										),
+								})
+							: { server: options.listener.server, didFallback: false };
+					if (options.listener !== undefined)
+						yield* options.listener.activate(fetchHandler);
+					yield* Effect.addFinalizer(() =>
+						Effect.gen(function* () {
+							lifecycle.accepting = false;
+							yield* jobs.shutdown;
+							yield* Effect.tryPromise({
+								try: () => bindResult.server.stop(false),
+								catch: (cause) => cause,
+							}).pipe(
+								Effect.timeout(1_000),
+								Effect.catch((cause) =>
+									Effect.logDebug(
+										'Forcing HTTP shutdown after drain budget',
+										cause,
+									),
+								),
+							);
+							yield* Effect.tryPromise({
+								try: () => bindResult.server.stop(true),
+								catch: (cause) => cause,
+							}).pipe(
+								Effect.catch((cause) =>
+									Effect.logWarning('HTTP forced shutdown failed', cause),
+								),
+							);
+						}),
+					);
 					if (bindResult.didFallback) {
 						yield* Effect.logWarning(
 							`port ${resolvedPort} in use, falling back to a free port`,
@@ -193,7 +326,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 
 					const fileConfig = yield* loadConfig();
 					const portlessEnabled =
-						portless === true || fileConfig.portless === true;
+						options.portless === true || fileConfig.portless === true;
 
 					if (portlessEnabled) {
 						const portlessBin = Bun.which('portless');
@@ -235,8 +368,14 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						}
 					}
 
-					yield* Effect.never;
-				}).pipe(Effect.provideService(Jobs, jobs)),
+					if (options.idleExit === undefined || tracker === undefined)
+						yield* Effect.never;
+					else {
+						const ms = Duration.toMillis(options.idleExit);
+						while (!tracker.shouldExit(ms, jobs.hasRunning()))
+							yield* Effect.sleep(Math.min(30_000, ms));
+					}
+				}).pipe(Effect.scoped, Effect.provideService(Jobs, jobs)),
 		};
 	}),
 }) {

@@ -29,7 +29,7 @@ export class SessionNotReady extends Schema.TaggedError<SessionNotReady>()(
 export class SessionStartError extends Schema.TaggedError<SessionStartError>()(
 	'SessionStartError',
 	{
-		code: Schema.Literals(['MISSING_CWD']),
+		code: Schema.Literals(['MISSING_CWD', 'CONFLICTING_AGENT']),
 		message: Schema.String,
 	},
 ) {}
@@ -79,6 +79,7 @@ type StartInput = {
 	cwd?: string;
 	model?: string;
 	agentType?: string;
+	agent?: import('./agents.ts').AgentDefinition;
 	forkId?: string;
 	worktree?: boolean;
 };
@@ -190,7 +191,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			return { session, job, latestJob: latestJob(session) };
 		};
 
-		const forkHarnessSession = (forkId: string) =>
+		const forkHarnessSession = (forkId: string, modelOverride?: string) =>
 			Effect.gen(function* () {
 				const source = findForkSource(forkId);
 				if (source === undefined) {
@@ -216,7 +217,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				const sourceHarnessSessionId = source.session.harness_session_id;
 				const selectedJob = source.job;
-				if (selectedJob.model === null) {
+				if (selectedJob.model === null && modelOverride === undefined) {
 					return yield* new SessionForkError({
 						forkId,
 						code: 'SOURCE_NOT_READY',
@@ -322,21 +323,37 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const start = (input: StartInput) =>
 			Effect.gen(function* () {
-				const source =
-					input.forkId === undefined ? undefined : findForkSource(input.forkId);
-				if (source?.job !== undefined && source.job.model !== null) {
-					yield* jobs.validateStart({
-						model:
-							input.model ??
-							`${parseBackend(source.session.backend)}:${source.job.model}`,
-						backend: parseBackend(source.session.backend),
-						agentType: input.agentType ?? source.job.agent_type ?? undefined,
+				if (input.agent !== undefined && input.agentType !== undefined) {
+					return yield* new SessionStartError({
+						code: 'CONFLICTING_AGENT',
+						message: 'agent and agent_type are mutually exclusive',
 					});
 				}
+				const source =
+					input.forkId === undefined ? undefined : findForkSource(input.forkId);
+				const forkAgentTarget =
+					source?.job !== undefined &&
+					(input.model !== undefined || source.job.model !== null)
+						? yield* jobs.validateStart({
+								model:
+									input.model ??
+									`${parseBackend(source.session.backend)}:${source.job.model}`,
+								backend: parseBackend(source.session.backend),
+								agentType:
+									input.agent === undefined
+										? (input.agentType ?? source.job.agent_type ?? undefined)
+										: undefined,
+								agent: input.agent,
+								agentTarget:
+									input.agent === undefined && input.agentType === undefined
+										? (source.job.agent_target ?? undefined)
+										: undefined,
+							})
+						: undefined;
 				const fork =
 					input.forkId === undefined
 						? undefined
-						: yield* forkHarnessSession(input.forkId);
+						: yield* forkHarnessSession(input.forkId, input.model);
 				const backend =
 					fork === undefined
 						? yield* jobs.resolveBackend(input.model)
@@ -350,11 +367,22 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				const model =
 					input.model ??
-					(fork === undefined ? undefined : `${fork.backend}:${fork.model}`);
-				const agentType = input.agentType ?? fork?.agentType;
-				if (fork === undefined && model !== undefined) {
-					yield* jobs.validateStart({ model, backend, agentType });
-				}
+					(fork === undefined || fork.model === null
+						? undefined
+						: `${fork.backend}:${fork.model}`);
+				const agentType =
+					input.agent === undefined
+						? (input.agentType ?? fork?.agentType)
+						: undefined;
+				const agentTarget =
+					fork === undefined && model !== undefined
+						? yield* jobs.validateStart({
+								model,
+								backend,
+								agentType,
+								agent: input.agent,
+							})
+						: forkAgentTarget;
 				const session = yield* insertSession({
 					title: input.title,
 					backend,
@@ -369,6 +397,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					prompt: input.prompt,
 					model,
 					reasoningEffort: fork?.reasoningEffort,
+					agent: input.agent,
+					agentTarget:
+						input.agent !== undefined ||
+						(input.agentType === undefined && source?.job?.agent_target != null)
+							? agentTarget
+							: undefined,
 					agentType,
 					worktree: input.worktree,
 				});
@@ -482,6 +516,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 								? session.reasoning_effort
 								: latest?.reasoning_effort) ?? undefined,
 						agentType: latest?.agent_type ?? undefined,
+						agentTarget: latest?.agent_target ?? undefined,
 					})
 					.pipe(
 						Effect.mapError((error) =>

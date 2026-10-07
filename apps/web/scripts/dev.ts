@@ -9,7 +9,7 @@ import {
 	runManagedSubprocess,
 } from 'devsess';
 import { Effect, Schedule } from 'effect';
-import { Command, Flag } from 'effect/unstable/cli';
+import { Command, Flag } from 'effect/cli';
 import webPackage from '../package.json' with { type: 'json' };
 
 const web = Command.make(

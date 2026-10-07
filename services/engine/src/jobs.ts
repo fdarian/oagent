@@ -4,19 +4,29 @@ import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
-import { Context, Effect, Exit, Fiber, Layer, Schema } from 'effect';
+import { Context, Effect, Exit, Fiber, Layer, Option, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
 	Agents,
 	type AgentTypeNotFound,
+	resolveInlineAgent,
 } from './agents.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
+import { toPatchColumn } from './db/patch-column.ts';
 import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
-import { BACKENDS, type Backend, isBackend, parseBackend } from './harness.ts';
+import { type Backend, isBackend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import {
+	continuationPrompt,
+	isRunnerAlive,
+	recoveryDecision,
+} from './job-recovery.ts';
+import { ModelResolutionError, parseModelInput } from './model-input.ts';
 import { type WorktreeError, Worktrees } from './worktree.ts';
+
+export { ModelResolutionError } from './model-input.ts';
 
 export class JobNotFound extends Schema.TaggedError<JobNotFound>()(
 	'JobNotFound',
@@ -44,19 +54,6 @@ export class JobSteerError extends Schema.TaggedError<JobSteerError>()(
 	},
 ) {}
 
-export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
-	'ModelResolutionError',
-	{
-		code: Schema.Literals([
-			'MISSING',
-			'INVALID_FORMAT',
-			'UNKNOWN_BACKEND',
-			'UNKNOWN_ALIAS',
-		]),
-		message: Schema.String,
-	},
-) {}
-
 export class JobStartError extends Schema.TaggedError<JobStartError>()(
 	'JobStartError',
 	{
@@ -65,6 +62,7 @@ export class JobStartError extends Schema.TaggedError<JobStartError>()(
 			'SESSION_TURN_IN_PROGRESS',
 			'SESSION_BACKEND_MISMATCH',
 			'PERSISTENCE_FAILED',
+			'SHUTTING_DOWN',
 		]),
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -95,6 +93,8 @@ type ReserveJobInput = {
 	model?: string;
 	reasoningEffort?: string;
 	agentType?: string;
+	agentTarget?: string;
+	agent?: import('./agents.ts').AgentDefinition;
 	sideChatId?: number;
 };
 
@@ -126,6 +126,23 @@ type JobsChange = {
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
+/**
+ * Compile-time guard: a new SDK `SessionUpdate` variant leaves `event` non-`never`
+ * here and fails the build until it is persisted. `cursor_extension` is not an SDK
+ * variant (cursor.ts casts it in) and is stored as a base `events` row only.
+ */
+function assertAllVariantsPersisted(event: never): void {
+	if (
+		(event as { sessionUpdate: string }).sessionUpdate === 'cursor_extension'
+	) {
+		return;
+	}
+	throw new Error(
+		`Unpersisted session update: ${(event as { sessionUpdate: string }).sessionUpdate}`,
+	);
+}
+
+export const SHUTDOWN_EVENT = '__shutdown__';
 
 function isRunningSideChatTurnConflict(cause: unknown): boolean {
 	if (cause === null || typeof cause !== 'object' || !('message' in cause)) {
@@ -164,7 +181,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			'grok',
 		]);
 		const resolveModelName = (
-			modelName: string,
+			parsed: Effect.Success<ReturnType<typeof parseModelInput>>,
 		): Effect.Effect<
 			{
 				backend: Backend;
@@ -175,18 +192,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			never
 		> =>
 			Effect.gen(function* () {
-				const colonIdx = modelName.indexOf(':');
-				if (colonIdx !== -1) {
-					const backend = modelName.slice(0, colonIdx);
-					const modelId = modelName.slice(colonIdx + 1);
-					if (!isBackend(backend)) {
-						return yield* new ModelResolutionError({
-							code: 'UNKNOWN_BACKEND',
-							message: `Unknown backend "${backend}". Valid backends: ${BACKENDS.join(', ')}.`,
-						});
-					}
-					return { backend, modelId, reasoningEffort: undefined };
-				}
+				const modelName = parsed.name;
+				if (parsed.explicit !== undefined)
+					return { ...parsed.explicit, reasoningEffort: undefined };
 
 				const alias = db
 					.select()
@@ -216,17 +224,9 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 
 		const resolveModel = (model: string) =>
 			Effect.gen(function* () {
-				const hashIdx = model.lastIndexOf('#');
-				const suffixEffort =
-					hashIdx === -1 ? undefined : model.slice(hashIdx + 1);
-				if (suffixEffort === '') {
-					return yield* new ModelResolutionError({
-						code: 'INVALID_FORMAT',
-						message: `Model "${model}" has an empty reasoning-effort suffix.`,
-					});
-				}
-				const modelName = hashIdx === -1 ? model : model.slice(0, hashIdx);
-				const resolved = yield* resolveModelName(modelName);
+				const parsed = yield* parseModelInput(model);
+				const suffixEffort = parsed.suffixEffort;
+				const resolved = yield* resolveModelName(parsed);
 				if (
 					suffixEffort !== undefined &&
 					unsupportedSuffixBackends.has(resolved.backend)
@@ -255,10 +255,28 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
 
+		const resolveAgentTarget = (
+			input: {
+				agentTarget?: string;
+				agent?: import('./agents.ts').AgentDefinition;
+				agentType?: string;
+			},
+			backend: Backend,
+		) => {
+			if (input.agentTarget !== undefined)
+				return Effect.succeed(input.agentTarget);
+			if (input.agent !== undefined)
+				return resolveInlineAgent(input.agent, backend);
+			return input.agentType === undefined
+				? Effect.succeed(undefined)
+				: agents.resolve(input.agentType, backend);
+		};
 		const validateStart = (input: {
 			model: string;
 			backend: Backend;
 			agentType?: string;
+			agentTarget?: string;
+			agent?: import('./agents.ts').AgentDefinition;
 		}) =>
 			Effect.gen(function* () {
 				const resolved = yield* resolveModel(input.model);
@@ -269,14 +287,14 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Session backend does not match model backend'),
 					});
 				}
-				if (input.agentType !== undefined) {
-					yield* agents.resolve(input.agentType, input.backend);
-				}
+				return yield* resolveAgentTarget(input, input.backend);
 			});
 
 		const liveEmitters = new Map<string, EventEmitter>();
 		const liveFibers = new Map<string, Fiber.Fiber<JobOk, unknown>>();
 		const closingJobs = new Set<string>();
+		const shutdownJobs = new Set<string>();
+		const lifecycle = { shuttingDown: false };
 		const jobsEmitter = new EventEmitter();
 		jobsEmitter.setMaxListeners(0);
 
@@ -337,6 +355,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							.values({
 								event_id: eventId,
 								tool_call_id: event.toolCallId,
+								name: event.name ?? null,
 								title: event.title ?? null,
 								status: event.status ?? null,
 								kind: event.kind ?? null,
@@ -406,6 +425,98 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							.run();
 						break;
 					}
+					case 'plan_update': {
+						const plan = event.plan;
+						tx.insert(schema.planUpdateEvents)
+							.values({
+								event_id: eventId,
+								plan_id: plan.planId,
+								plan_type: plan.type,
+								entries: plan.type === 'items' ? plan.entries : null,
+								uri: plan.type === 'file' ? plan.uri : null,
+								markdown: plan.type === 'markdown' ? plan.content : null,
+							})
+							.run();
+						break;
+					}
+					case 'plan_removed': {
+						tx.insert(schema.planRemovedEvents)
+							.values({ event_id: eventId, plan_id: event.planId })
+							.run();
+						break;
+					}
+					case 'compaction_update': {
+						tx.insert(schema.compactionUpdateEvents)
+							.values({
+								event_id: eventId,
+								compaction_id: event.compactionId,
+								status: event.status,
+								summary: toPatchColumn(event.summary),
+								error: toPatchColumn(event.error),
+							})
+							.run();
+						break;
+					}
+					case 'compaction_summary_chunk': {
+						tx.insert(schema.compactionSummaryChunkEvents)
+							.values({
+								event_id: eventId,
+								compaction_id: event.compactionId,
+								content: event.content,
+							})
+							.run();
+						break;
+					}
+					case 'notice': {
+						tx.insert(schema.noticeEvents)
+							.values({
+								event_id: eventId,
+								severity: event.severity,
+								title: event.title,
+								description: toPatchColumn(event.description),
+							})
+							.run();
+						break;
+					}
+					case 'subagent_update': {
+						tx.insert(schema.subagentUpdateEvents)
+							.values({
+								event_id: eventId,
+								child_session_id: event.sessionId,
+								title: toPatchColumn(event.title),
+								description: toPatchColumn(event.description),
+								capabilities: toPatchColumn(event.capabilities),
+								state: toPatchColumn(event.state),
+							})
+							.run();
+						break;
+					}
+					case 'session_message': {
+						tx.insert(schema.sessionMessageEvents)
+							.values({
+								event_id: eventId,
+								message_id: event.messageId,
+								sender_session_id: toPatchColumn(event.senderSessionId),
+								recipient_session_id: toPatchColumn(event.recipientSessionId),
+								content: toPatchColumn(event.content),
+							})
+							.run();
+						break;
+					}
+					case 'session_message_chunk': {
+						tx.insert(schema.sessionMessageChunkEvents)
+							.values({
+								event_id: eventId,
+								message_id: event.messageId,
+								sender_session_id: toPatchColumn(event.senderSessionId),
+								recipient_session_id: toPatchColumn(event.recipientSessionId),
+								content: event.content,
+							})
+							.run();
+						break;
+					}
+					default:
+						assertAllVariantsPersisted(event);
 				}
 
 				return { id: eventId, inserted: true };
@@ -465,6 +576,38 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					schema.usageEvents,
 					eq(schema.events.id, schema.usageEvents.event_id),
 				)
+				.leftJoin(
+					schema.planUpdateEvents,
+					eq(schema.events.id, schema.planUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.planRemovedEvents,
+					eq(schema.events.id, schema.planRemovedEvents.event_id),
+				)
+				.leftJoin(
+					schema.compactionUpdateEvents,
+					eq(schema.events.id, schema.compactionUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.compactionSummaryChunkEvents,
+					eq(schema.events.id, schema.compactionSummaryChunkEvents.event_id),
+				)
+				.leftJoin(
+					schema.noticeEvents,
+					eq(schema.events.id, schema.noticeEvents.event_id),
+				)
+				.leftJoin(
+					schema.subagentUpdateEvents,
+					eq(schema.events.id, schema.subagentUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.sessionMessageEvents,
+					eq(schema.events.id, schema.sessionMessageEvents.event_id),
+				)
+				.leftJoin(
+					schema.sessionMessageChunkEvents,
+					eq(schema.events.id, schema.sessionMessageChunkEvents.event_id),
+				)
 				.where(
 					and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)),
 				)
@@ -505,6 +648,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						used: row.usage_events?.used ?? null,
 						cost_amount: row.usage_events?.cost_amount ?? null,
 						cost_currency: row.usage_events?.cost_currency ?? null,
+						name: row.tool_call_events?.name ?? null,
+						plan_update_events: row.plan_update_events,
+						plan_removed_events: row.plan_removed_events,
+						compaction_update_events: row.compaction_update_events,
+						compaction_summary_chunk_events:
+							row.compaction_summary_chunk_events,
+						notice_events: row.notice_events,
+						subagent_update_events: row.subagent_update_events,
+						session_message_events: row.session_message_events,
+						session_message_chunk_events: row.session_message_chunk_events,
 					},
 				);
 				return {
@@ -536,6 +689,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		> =>
 			Effect.gen(function* () {
 				const model = input.model;
+				if (lifecycle.shuttingDown) {
+					return yield* new JobStartError({
+						code: 'SHUTTING_DOWN',
+						message: 'Engine is shutting down; no new jobs are accepted.',
+						cause: new Error('Engine shutting down'),
+					});
+				}
 				if (model === undefined) {
 					return yield* new ModelResolutionError({
 						code: 'MISSING',
@@ -556,10 +716,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 				const reasoningEffort =
 					input.reasoningEffort ?? resolvedModel.reasoningEffort;
-				const agentTarget =
-					input.agentType === undefined
-						? undefined
-						: yield* agents.resolve(input.agentType, backend);
+				const agentTarget = yield* resolveAgentTarget(input, backend);
 				const uuid = randomUUIDv7();
 
 				const jobRow = yield* Effect.try({
@@ -570,10 +727,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 								.values({
 									uuid,
 									status: 'running',
+									runner_pid: process.pid,
 									prompt: input.prompt,
 									model: rest,
 									reasoning_effort: reasoningEffort,
-									agent_type: input.agentType,
+									agent_type: input.agent?.name ?? input.agentType,
+									agent_target:
+										input.agent !== undefined || input.agentTarget !== undefined
+											? agentTarget
+											: undefined,
 									session_id: input.session.id,
 									side_chat_id: input.sideChatId,
 								})
@@ -681,6 +843,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					: input.agentPrompt;
 
 			return Effect.gen(function* () {
+				if (lifecycle.shuttingDown) {
+					return yield* new JobStartError({
+						code: 'SHUTTING_DOWN',
+						message: 'Engine is shutting down; no new turns are accepted.',
+						cause: new Error('Engine shutting down'),
+					});
+				}
 				if (
 					harnessSessionId !== undefined &&
 					harnessSessionId !== input.reservation.session.harness_session_id
@@ -737,7 +906,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					closingJobs.delete(input.reservation.jobId);
 					liveEmitters.delete(input.reservation.jobId);
 					liveFibers.delete(input.reservation.jobId);
-					emitter.emit(TERMINAL_EVENT);
+					if (!shutdownJobs.has(input.reservation.jobId))
+						emitter.emit(TERMINAL_EVENT);
 				});
 
 				const captureLastMessageId = Effect.gen(function* () {
@@ -796,6 +966,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					runTurnEffect.pipe(
 						Effect.tap((result) =>
 							Effect.gen(function* () {
+								if (shutdownJobs.has(input.reservation.jobId)) return;
 								closingJobs.add(input.reservation.jobId);
 								const messageId = yield* captureLastMessageId;
 								yield* Effect.try({
@@ -842,10 +1013,20 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 								});
 							}),
 						),
-						Effect.tapError((error) => failReserved(input.reservation, error)),
+						Effect.tapError((error) =>
+							shutdownJobs.has(input.reservation.jobId)
+								? Effect.void
+								: failReserved(input.reservation, error),
+						),
 						Effect.onExit((exit) =>
 							Exit.isFailure(exit)
-								? captureLastMessageId.pipe(
+								? (shutdownJobs.has(input.reservation.jobId)
+										? captureLastMessageId.pipe(
+												Effect.timeoutOption(1_000),
+												Effect.map(Option.getOrUndefined),
+											)
+										: captureLastMessageId
+									).pipe(
 										Effect.flatMap((messageId) =>
 											messageId === undefined
 												? Effect.void
@@ -863,6 +1044,21 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 										),
 									)
 								: Effect.void,
+						),
+						Effect.ensuring(
+							Effect.sync(() => {
+								if (shutdownJobs.has(input.reservation.jobId)) {
+									db.update(schema.jobs)
+										.set({ interrupted_at: new Date() })
+										.where(
+											and(
+												eq(schema.jobs.id, input.reservation.internalId),
+												eq(schema.jobs.status, 'running'),
+											),
+										)
+										.run();
+								}
+							}),
 						),
 						Effect.ensuring(closeResources),
 					),
@@ -1252,11 +1448,13 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listener: (
 				payload:
 					| { type: 'event'; event: SessionUpdate; sequence: number }
-					| { type: 'terminal' },
+					| { type: 'terminal' }
+					| { type: 'shutdown' },
 			) => void,
 		): (() => void) => {
 			const emitter = liveEmitters.get(jobId);
 			if (emitter === undefined) {
+				if (lifecycle.shuttingDown) listener({ type: 'shutdown' });
 				return () => {};
 			}
 
@@ -1267,13 +1465,17 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					sequence: payload.sequence,
 				});
 			const onTerminal = () => listener({ type: 'terminal' });
+			const onShutdown = () => listener({ type: 'shutdown' });
 
 			emitter.on('event', onEvent);
 			emitter.once(TERMINAL_EVENT, onTerminal);
+			emitter.once(SHUTDOWN_EVENT, onShutdown);
+			if (lifecycle.shuttingDown) onShutdown();
 
 			return () => {
 				emitter.off('event', onEvent);
 				emitter.off(TERMINAL_EVENT, onTerminal);
+				emitter.off(SHUTDOWN_EVENT, onShutdown);
 			};
 		};
 
@@ -1348,9 +1550,110 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return true;
 		};
 
+		const shutdown = yield* Effect.cached(
+			Effect.gen(function* () {
+				lifecycle.shuttingDown = true;
+				const running = Array.from(liveFibers.entries());
+				for (const entry of running) shutdownJobs.add(entry[0]);
+				for (const entry of running)
+					liveEmitters.get(entry[0])?.emit(SHUTDOWN_EVENT);
+				yield* Effect.forEach(running, (entry) => Fiber.interrupt(entry[1]), {
+					concurrency: 'unbounded',
+					discard: true,
+				});
+			}),
+		);
+		yield* Effect.addFinalizer(() => shutdown);
+
+		const stranded = db
+			.select({ job: schema.jobs, session: schema.sessions })
+			.from(schema.jobs)
+			.innerJoin(
+				schema.sessions,
+				eq(schema.jobs.session_id, schema.sessions.id),
+			)
+			.where(eq(schema.jobs.status, 'running'))
+			.all();
+		for (const row of stranded) {
+			const alive =
+				row.job.runner_pid === null || row.job.runner_pid === process.pid
+					? false
+					: yield* isRunnerAlive(row.job.runner_pid).pipe(Effect.orDie);
+			const decision = recoveryDecision({
+				runnerAlive: alive,
+				resumeCount: row.job.resume_count,
+				backend: row.session.backend,
+				interruptedAt: row.job.interrupted_at,
+				harnessSessionId: row.session.harness_session_id,
+				model: row.job.model,
+			});
+			if (decision === 'skip') continue;
+			if (decision !== 'resume') {
+				db.update(schema.jobs)
+					.set({
+						status: 'error',
+						error_message: decision.error,
+						terminated_at: new Date(),
+					})
+					.where(eq(schema.jobs.id, row.job.id))
+					.run();
+				continue;
+			}
+			if (row.job.model === null) continue;
+			const backend = parseBackend(row.session.backend);
+			const reservation: JobReservation = {
+				internalId: row.job.id,
+				jobId: row.job.uuid,
+				prompt: continuationPrompt,
+				cwd: row.session.cwd,
+				backend,
+				model: row.job.model,
+				reasoningEffort: row.job.reasoning_effort ?? undefined,
+				agentTarget: undefined,
+				session: row.session,
+			};
+			yield* Effect.gen(function* () {
+				const agentTarget =
+					row.job.agent_target !== null
+						? row.job.agent_target
+						: row.job.agent_type === null
+							? undefined
+							: yield* agents.resolve(row.job.agent_type, backend);
+				const claimed = db
+					.update(schema.jobs)
+					.set({
+						runner_pid: process.pid,
+						interrupted_at: null,
+						resume_count: row.job.resume_count + 1,
+					})
+					.where(
+						and(
+							eq(schema.jobs.id, row.job.id),
+							eq(schema.jobs.resume_count, row.job.resume_count),
+							eq(schema.jobs.status, 'running'),
+						),
+					)
+					.returning({ id: schema.jobs.id })
+					.get();
+				if (claimed !== undefined)
+					yield* runReserved({ reservation: { ...reservation, agentTarget } });
+			}).pipe(
+				Effect.catch((error) => failReserved(reservation, error)),
+				Effect.orDie,
+			);
+		}
+
 		return {
 			start,
+			shutdown,
 			reserve,
+			hasRunning: () =>
+				db
+					.select({ id: schema.jobs.id })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.status, 'running'))
+					.limit(1)
+					.get() !== undefined,
 			resolveBackend,
 			validateStart,
 			runReserved,

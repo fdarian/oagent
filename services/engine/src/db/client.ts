@@ -1,6 +1,5 @@
 /// <reference types="bun" />
 import { Database } from 'bun:sqlite';
-import { sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/bun-sqlite';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { runMigrations } from './migrate.ts';
@@ -11,23 +10,6 @@ class DbOpenError extends Schema.TaggedError<DbOpenError>()('DbOpenError', {
 	cause: Schema.Defect(),
 	path: Schema.String,
 }) {}
-
-class OrphanRecoveryError extends Schema.TaggedError<OrphanRecoveryError>()(
-	'OrphanRecoveryError',
-	{
-		cause: Schema.Defect(),
-	},
-) {}
-
-const recoverOrphanedRunningJobs = (db: ReturnType<typeof drizzle>) =>
-	Effect.try({
-		try: () => {
-			db.run(
-				sql`UPDATE jobs SET status = 'error', error_message = 'engine restarted while running', terminated_at = ${Date.now()} WHERE status = 'running'`,
-			);
-		},
-		catch: (cause) => new OrphanRecoveryError({ cause }),
-	});
 
 export class Db extends Context.Service<Db>()('oagent/Db', {
 	make: Effect.gen(function* () {
@@ -48,7 +30,6 @@ export class Db extends Context.Service<Db>()('oagent/Db', {
 		);
 		const db = drizzle(sqlite, { schema });
 		yield* runMigrations(db);
-		yield* recoverOrphanedRunningJobs(db);
 		return { db, sqlite } as const;
 	}),
 }) {

@@ -24,7 +24,20 @@ export function progressMessage(event: unknown): string | undefined {
 			return undefined;
 		}
 		case 'plan':
+		case 'plan_update':
 			return 'Updated plan';
+		case 'plan_removed':
+			return 'Removed plan';
+		case 'compaction_update':
+			if (!('status' in event)) return undefined;
+			if (event.status === 'in_progress') return 'Compacting context';
+			if (event.status === 'completed') return 'Compacted context';
+			if (event.status === 'failed') return 'Context compaction failed';
+			return undefined;
+		case 'notice':
+			return 'title' in event && typeof event.title === 'string'
+				? event.title
+				: undefined;
 		case 'current_mode_update':
 			return 'currentModeId' in event && typeof event.currentModeId === 'string'
 				? `Switched to ${event.currentModeId}`
@@ -59,7 +72,7 @@ export function waitWithProgress(
 		try: async () => {
 			const report = progressReporter(ctx);
 			await report('Agent is working');
-			await new Promise<void>((resolve, reject) => {
+			return await new Promise<'terminal' | 'restarting'>((resolve, reject) => {
 				let finished = false;
 				let lastSequence = 0;
 				let notifications = Promise.resolve();
@@ -76,11 +89,11 @@ export function waitWithProgress(
 				};
 				const onAbort = () =>
 					fail(new DOMException('Request aborted', 'AbortError'));
-				const finish = () => {
+				const finish = (outcome: 'terminal' | 'restarting' = 'terminal') => {
 					if (finished) return;
 					finished = true;
 					cleanup();
-					notifications.then(resolve, reject);
+					notifications.then(() => resolve(outcome), reject);
 				};
 				const onEvent = (event: SessionUpdate, sequence: number) => {
 					if (finished || sequence <= lastSequence) return;
@@ -99,10 +112,14 @@ export function waitWithProgress(
 				const buffered: Array<{ event: SessionUpdate; sequence: number }> = [];
 				let replaying = true;
 				let terminalDuringReplay = false;
+				let shutdownDuringReplay = false;
 				unsubscribe = jobs.subscribe(jobId, (payload) => {
 					if (payload.type === 'terminal') {
 						if (replaying) terminalDuringReplay = true;
 						else finish();
+					} else if (payload.type === 'shutdown') {
+						if (replaying) shutdownDuringReplay = true;
+						else finish('restarting');
 					} else if (replaying) buffered.push(payload);
 					else onEvent(payload.event, payload.sequence);
 				});
@@ -120,9 +137,17 @@ export function waitWithProgress(
 				const job = jobs.getJobMetadata(jobId);
 				if (job === undefined) fail(new Error(`Job not found: ${jobId}`));
 				else if (terminalDuringReplay || job.status !== 'running') finish();
+				else if (shutdownDuringReplay) finish('restarting');
 			});
 		},
 		catch: (cause) =>
 			cause instanceof Error ? cause : new Error(String(cause)),
-	}).pipe(Effect.flatMap(() => jobs.wait({ jobId })));
+	}).pipe(
+		Effect.flatMap((outcome) =>
+			Effect.gen(function* () {
+				if (outcome === 'restarting') return { status: 'restarting' as const };
+				return yield* jobs.wait({ jobId });
+			}),
+		),
+	);
 }

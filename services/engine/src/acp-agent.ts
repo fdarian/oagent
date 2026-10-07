@@ -23,6 +23,22 @@ type AcpEnv =
 	| Record<string, string | undefined>
 	| (() => Record<string, string | undefined>);
 
+const killProcessGroup = (pid: number) =>
+	Effect.try({
+		try: () => process.kill(-pid, 'SIGKILL'),
+		catch: (cause) => cause,
+	}).pipe(
+		Effect.catch((cause) =>
+			typeof cause === 'object' &&
+			cause !== null &&
+			'code' in cause &&
+			cause.code === 'ESRCH'
+				? Effect.void
+				: Effect.logWarning('Could not kill ACP process group', cause),
+		),
+		Effect.asVoid,
+	);
+
 export type AcpAgentConfig = {
 	binary: string;
 	args: readonly string[];
@@ -64,6 +80,7 @@ type AcpConnection = {
 	>['agentCapabilities'];
 	processExited: Promise<number>;
 	close: () => void;
+	cancelPermissions: (sessionId: string) => void;
 };
 
 export class AcpForkNotSupportedError extends Schema.TaggedError<AcpForkNotSupportedError>()(
@@ -129,20 +146,13 @@ export function extractSelectOptions(
 }
 
 function extractSessionModelIds(
-	availableModels: ReadonlyArray<{ modelId: string }> | null | undefined,
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
 ): ReadonlyArray<string> | undefined {
-	if (
-		availableModels !== undefined &&
-		availableModels !== null &&
-		availableModels.length > 0
-	) {
-		return availableModels.map((model) => model.modelId);
-	}
-
-	const modelOption = configOptions?.find((option) => option.id === 'model');
+	const modelOption =
+		configOptions?.find((option) => option.category === 'model') ??
+		configOptions?.find((option) => option.id === 'model');
 	if (modelOption === undefined || modelOption.type !== 'select') {
-		return availableModels === undefined ? undefined : [];
+		return undefined;
 	}
 	return extractModelIds(modelOption.options).map((model) => model.id);
 }
@@ -227,7 +237,16 @@ export function createAcpConnection(config: {
 	return Effect.gen(function* () {
 		const subprocess = yield* Effect.acquireRelease(
 			Effect.sync(() => {
-				const transform = new TransformStream<Uint8Array, Uint8Array>();
+				const transport = {
+					controller: undefined as
+						| TransformStreamDefaultController<Uint8Array>
+						| undefined,
+				};
+				const transform = new TransformStream<Uint8Array, Uint8Array>({
+					start: (controller) => {
+						transport.controller = controller;
+					},
+				});
 				const configuredEnv =
 					config.env === undefined
 						? undefined
@@ -244,12 +263,23 @@ export function createAcpConnection(config: {
 					stderr: 'inherit',
 					cwd: process.cwd(),
 					env,
+					detached: true,
 				});
-				return { transform, proc };
+				return { transform, proc, transport };
 			}),
 			(resources) =>
-				Effect.sync(() => {
-					resources.proc.kill();
+				Effect.gen(function* () {
+					yield* Effect.sync(() => resources.transport.controller?.terminate());
+					yield* Effect.tryPromise({
+						try: () => resources.proc.exited,
+						catch: (cause) => cause,
+					}).pipe(
+						Effect.timeoutOption(3_000),
+						Effect.catch((cause) =>
+							Effect.logWarning('ACP exit wait failed', cause),
+						),
+					);
+					yield* killProcessGroup(resources.proc.pid);
 				}),
 		);
 
@@ -259,6 +289,7 @@ export function createAcpConnection(config: {
 		);
 
 		const listeners = new Map<string, (e: SessionUpdate) => void>();
+		const cancelledSessions = new Set<string>();
 		const extNotificationHandlers = new Map<
 			string,
 			(method: string, params: unknown) => void
@@ -269,6 +300,7 @@ export function createAcpConnection(config: {
 			fn: (e: SessionUpdate) => void,
 		) => {
 			listeners.set(sessionId, fn);
+			cancelledSessions.delete(sessionId);
 			return () => {
 				listeners.delete(sessionId);
 			};
@@ -283,6 +315,8 @@ export function createAcpConnection(config: {
 					}
 				},
 				requestPermission: async (params) => {
+					if (cancelledSessions.has(params.sessionId))
+						return { outcome: { outcome: 'cancelled' } };
 					const allowAlways = params.options.find(
 						(opt) => opt.kind === 'allow_always',
 					);
@@ -362,7 +396,10 @@ export function createAcpConnection(config: {
 			agentCapabilities: initializeResponse.agentCapabilities,
 			processExited: subprocess.proc.exited,
 			close: () => {
-				if (subprocess.proc.exitCode === null) subprocess.proc.kill();
+				Effect.runSync(killProcessGroup(subprocess.proc.pid));
+			},
+			cancelPermissions: (sessionId: string) => {
+				cancelledSessions.add(sessionId);
 			},
 		};
 	});
@@ -476,12 +513,7 @@ export function runAcpTurn(
 						return recoveryController.loadSession(sid).pipe(
 							Effect.map((res) => ({
 								sessionId: sid,
-								availableModels: extractSessionModelIds(
-									res.models === undefined || res.models === null
-										? undefined
-										: res.models.availableModels,
-									res.configOptions,
-								),
+								availableModels: extractSessionModelIds(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						);
@@ -493,12 +525,7 @@ export function runAcpTurn(
 						.pipe(
 							Effect.map((res) => ({
 								sessionId: res.sessionId,
-								availableModels: extractSessionModelIds(
-									res.models === undefined || res.models === null
-										? undefined
-										: res.models.availableModels,
-									res.configOptions,
-								),
+								availableModels: extractSessionModelIds(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						)
@@ -719,14 +746,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						catch: (cause) => new AcpSessionError({ cause }),
 					});
 
-					const availableModels =
-						res.models === undefined || res.models === null
-							? undefined
-							: res.models.availableModels;
-					const modelIds = extractSessionModelIds(
-						availableModels,
-						res.configOptions,
-					);
+					const modelIds = extractSessionModelIds(res.configOptions);
 					const models =
 						modelIds === undefined ? [] : modelIds.map((id) => ({ id }));
 

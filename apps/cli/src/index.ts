@@ -2,14 +2,14 @@
 import * as BunRuntime from '@effect/platform-bun/BunRuntime';
 import * as BunServices from '@effect/platform-bun/BunServices';
 import { Effect } from 'effect';
-import { Command } from 'effect/unstable/cli';
+import { Command } from 'effect/cli';
 import cliPackage from '../package.json' with { type: 'json' };
 import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';
 import { jobsCmd } from './commands/jobs';
+import { mcpCmd } from './commands/mcp';
 import { serveCmd } from './commands/serve';
 import { serviceCmd } from './commands/service';
-import { stdioCmd } from './commands/stdio';
 import type { Version } from './lib/misc';
 
 declare const OAGENT_BUILD_VERSION: string;
@@ -25,7 +25,7 @@ const cli = Command.make('oagent').pipe(
 	),
 	Command.withSubcommands([
 		serveCmd(version),
-		stdioCmd(version),
+		mcpCmd(version),
 		claudeCmd(version),
 		jobsCmd(version),
 		doctorCmd(version),

@@ -69,10 +69,15 @@ export const jobs = sqliteTable(
 		model: text(),
 		reasoning_effort: text(),
 		agent_type: text(),
+		/** Inline definitions are snapshots; configured agents resolve their name each turn. */
+		agent_target: text(),
 		created_at: integer({ mode: 'timestamp_ms' })
 			.notNull()
 			.$defaultFn(() => new Date()),
 		terminated_at: integer({ mode: 'timestamp_ms' }),
+		runner_pid: integer(),
+		interrupted_at: integer({ mode: 'timestamp_ms' }),
+		resume_count: integer().notNull().default(0),
 		session_id: integer({ mode: 'number' })
 			.notNull()
 			.references(() => sessions.id),
@@ -147,6 +152,14 @@ export const events = sqliteTable(
 				'config_option_update',
 				'session_info_update',
 				'usage_update',
+				'plan_update',
+				'plan_removed',
+				'compaction_update',
+				'compaction_summary_chunk',
+				'notice',
+				'subagent_update',
+				'session_message',
+				'session_message_chunk',
 				'cursor_extension',
 			],
 		}).notNull(),
@@ -174,6 +187,7 @@ export const toolCallEvents = sqliteTable('tool_call_events', {
 		.primaryKey()
 		.references(() => events.id, { onDelete: 'cascade' }),
 	tool_call_id: text().notNull(),
+	name: text(),
 	title: text(),
 	status: text({ enum: ['pending', 'in_progress', 'completed', 'failed'] }),
 	kind: text({
@@ -248,6 +262,90 @@ export const usageEvents = sqliteTable('usage_events', {
 	cost_amount: real(),
 	cost_currency: text(),
 });
+
+export const planUpdateEvents = sqliteTable('plan_update_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	plan_id: text().notNull(),
+	plan_type: text({ enum: ['items', 'file', 'markdown'] }).notNull(),
+	entries: text({ mode: 'json' }).$type<PlanEntry[]>(),
+	uri: text(),
+	markdown: text(),
+});
+
+export const planRemovedEvents = sqliteTable('plan_removed_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	plan_id: text().notNull(),
+});
+
+// Optional-and-nullable ACP fields are plain text columns holding three states,
+// see db/patch-column.ts: SQL NULL = omitted, JSON `null` = explicitly cleared, other JSON = value.
+export const compactionUpdateEvents = sqliteTable('compaction_update_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	compaction_id: text().notNull(),
+	status: text().notNull(),
+	summary: text(),
+	error: text(),
+});
+
+export const compactionSummaryChunkEvents = sqliteTable(
+	'compaction_summary_chunk_events',
+	{
+		event_id: integer({ mode: 'number' })
+			.primaryKey()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		compaction_id: text().notNull(),
+		content: text({ mode: 'json' }).$type<ContentBlock>().notNull(),
+	},
+);
+
+export const noticeEvents = sqliteTable('notice_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	severity: text().notNull(),
+	title: text().notNull(),
+	description: text(),
+});
+
+export const subagentUpdateEvents = sqliteTable('subagent_update_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	child_session_id: text().notNull(),
+	title: text(),
+	description: text(),
+	capabilities: text(),
+	state: text(),
+});
+
+export const sessionMessageEvents = sqliteTable('session_message_events', {
+	event_id: integer({ mode: 'number' })
+		.primaryKey()
+		.references(() => events.id, { onDelete: 'cascade' }),
+	message_id: text().notNull(),
+	sender_session_id: text(),
+	recipient_session_id: text(),
+	content: text(),
+});
+
+export const sessionMessageChunkEvents = sqliteTable(
+	'session_message_chunk_events',
+	{
+		event_id: integer({ mode: 'number' })
+			.primaryKey()
+			.references(() => events.id, { onDelete: 'cascade' }),
+		message_id: text().notNull(),
+		sender_session_id: text(),
+		recipient_session_id: text(),
+		content: text({ mode: 'json' }).$type<ContentBlock>().notNull(),
+	},
+);
 
 export const modelAliases = sqliteTable(
 	'model_aliases',

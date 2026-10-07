@@ -53,7 +53,7 @@ The command is read-only. It runs `ps` and `footprint` and never touches the run
 - **phys** (`phys_footprint`) — resident *plus* compressed pages. This is the number Activity Monitor and iStat Menus report, and under memory pressure macOS compresses idle pages, so phys can be several times larger than RSS.
 - **Server process tree** — the live `oagent serve` process and every descendant, grouped by command. Duplicate language servers (one set per worktree OpenCode has touched) accumulate here and are the usual source of a large total.
 - **Process hierarchy** — the same processes drawn as a tree, so you can see which process spawned which (e.g. `opencode acp` → `typescript-language-server` → `tsserver`). Siblings are ordered by phys, heaviest first.
-- **Other oagent processes** — `oagent jobs wait`, `oagent stdio`, and similar processes not under the live server.
+- **Other oagent processes** — `oagent jobs wait`, `oagent mcp stdio`, and similar processes not under the live server.
 - **Possibly-orphaned opencode** — `opencode` processes reparented to launchd (`ppid` 1), i.e. leaked from an oagent session that has since exited. A non-empty section here is worth a closer look.
 
 If no `oagent serve` process is running, the command says so and still reports any other-oagent or orphaned-opencode processes it finds.
