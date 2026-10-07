@@ -9,6 +9,7 @@ type AcpTurnReplayInput = {
 export type AcpTurnReplay = {
 	observe: (event: SessionUpdate) => void;
 	finishInitialLoad: () => void;
+	markPromptDispatched: () => void;
 	beginReplay: () => void;
 	completeReplay: () => void;
 	failReplay: () => void;
@@ -19,7 +20,9 @@ export function createAcpTurnReplay(input: AcpTurnReplayInput): AcpTurnReplay {
 		initialLoad: input.initialLoad,
 		replaying: false,
 		replayEvents: [] as Array<SessionUpdate>,
-		baselineEventKeys: new Set<string>(),
+		promptDispatched: false,
+		baselineCounts: new Map<string, number>(),
+		lateHistoryCounts: new Map<string, number>(),
 		messageText: new Map<string, string>(),
 	};
 
@@ -41,8 +44,22 @@ export function createAcpTurnReplay(input: AcpTurnReplayInput): AcpTurnReplay {
 		input.onEvent(event);
 	};
 
-	const appendReplayEvent = (event: SessionUpdate): void => {
-		if (state.baselineEventKeys.has(eventDedupeKey(event))) return;
+	const consumeCount = (
+		counts: Map<string, number>,
+		event: SessionUpdate,
+	): boolean => {
+		const key = eventDedupeKey(event);
+		const remaining = counts.get(key);
+		if (remaining === undefined || remaining === 0) return false;
+		counts.set(key, remaining - 1);
+		return true;
+	};
+
+	const appendReplayEvent = (
+		event: SessionUpdate,
+		replayCounts: Map<string, number>,
+	): void => {
+		if (consumeCount(replayCounts, event)) return;
 		if (
 			(event.sessionUpdate === 'user_message_chunk' ||
 				event.sessionUpdate === 'agent_message_chunk' ||
@@ -68,16 +85,21 @@ export function createAcpTurnReplay(input: AcpTurnReplayInput): AcpTurnReplay {
 	};
 
 	const observe = (event: SessionUpdate): void => {
-		const key = eventDedupeKey(event);
 		if (state.initialLoad) {
-			state.baselineEventKeys.add(key);
+			const key = eventDedupeKey(event);
+			state.baselineCounts.set(key, (state.baselineCounts.get(key) ?? 0) + 1);
 			return;
 		}
 		if (state.replaying) {
 			state.replayEvents.push(event);
 			return;
 		}
-		if (state.baselineEventKeys.has(key)) return;
+		// Adapters may keep streaming history after answering session/load, so
+		// until the prompt is sent, events matching history are dropped. Once it
+		// is sent, identical text (e.g. a second "OK") is a genuine new reply and
+		// can't be told apart from history without message IDs.
+		if (!state.promptDispatched && consumeCount(state.lateHistoryCounts, event))
+			return;
 		appendEvent(event);
 	};
 
@@ -85,14 +107,20 @@ export function createAcpTurnReplay(input: AcpTurnReplayInput): AcpTurnReplay {
 		observe,
 		finishInitialLoad: () => {
 			state.initialLoad = false;
+			state.lateHistoryCounts = new Map(state.baselineCounts);
+		},
+		markPromptDispatched: () => {
+			state.promptDispatched = true;
 		},
 		beginReplay: () => {
 			state.replaying = true;
 		},
 		completeReplay: () => {
 			state.replaying = false;
+			// Each reload replays the whole history again, so it gets a fresh copy.
+			const replayCounts = new Map(state.baselineCounts);
 			for (const event of state.replayEvents) {
-				appendReplayEvent(event);
+				appendReplayEvent(event, replayCounts);
 			}
 			state.replayEvents.length = 0;
 		},

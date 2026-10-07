@@ -5,6 +5,7 @@ import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
 import type { Backend, Harness } from './harness.ts';
 import { OpenCode } from './opencode.ts';
+import { Pi } from './pi.ts';
 
 export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 	'oagent/HarnessRegistry',
@@ -15,12 +16,14 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 			const grok = yield* Grok;
 			const codex = yield* Codex;
 			const claude = yield* Claude;
+			const pi = yield* Pi;
 			const byBackend: Record<Backend, Harness> = {
 				opencode,
 				cursor,
 				grok,
 				codex,
 				claude,
+				pi,
 			};
 			const all: ReadonlyArray<Harness> = [
 				byBackend.opencode,
@@ -28,6 +31,7 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 				byBackend.grok,
 				byBackend.codex,
 				byBackend.claude,
+				byBackend.pi,
 			];
 
 			const get = (backend: Backend): Harness => byBackend[backend];
@@ -47,5 +51,6 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 		Layer.provide(Grok.layer),
 		Layer.provide(Codex.layer),
 		Layer.provide(Claude.layer),
+		Layer.provide(Pi.layer),
 	);
 }

@@ -1,19 +1,14 @@
 import {
 	type AgentDefinition,
 	type AliasPreset,
+	BACKENDS,
 	parseModelInput,
 } from '@oagent/engine';
 import { Effect, Schema } from 'effect';
 import { FileSystem } from 'effect/FileSystem';
 
 const text = Schema.String.check(Schema.isMinLength(1));
-const backend = Schema.Literals([
-	'opencode',
-	'cursor',
-	'grok',
-	'codex',
-	'claude',
-]);
+const backend = Schema.Literals(BACKENDS);
 const aliasSchema = Schema.Struct({
 	name: text,
 	backend,

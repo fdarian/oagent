@@ -121,7 +121,7 @@ describe('SessionCosts', () => {
 		});
 	}
 
-	for (const backend of ['grok', 'cursor']) {
+	for (const backend of ['grok', 'cursor', 'pi']) {
 		test(`${backend}: unsupported without invoking ccusage`, async () => {
 			const command = mockCommand();
 			await Effect.runPromise(

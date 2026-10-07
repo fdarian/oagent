@@ -1,5 +1,5 @@
 import { Effect, Schema } from 'effect';
-import { isBackend } from './harness.ts';
+import { BACKENDS, isBackend } from './harness.ts';
 
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
@@ -30,7 +30,7 @@ export function parseModelInput(model: string) {
 		if (!isBackend(backend))
 			return yield* new ModelResolutionError({
 				code: 'UNKNOWN_BACKEND',
-				message: `Unknown backend "${backend}". Valid backends: opencode, cursor, grok, codex, claude.`,
+				message: `Unknown backend "${backend}". Valid backends: ${BACKENDS.join(', ')}.`,
 			});
 		return {
 			name,

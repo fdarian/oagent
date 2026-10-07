@@ -27,6 +27,9 @@ describe('Claude ACP backend', () => {
 	});
 
 	test('translates reasoning effort into Claude config options', () => {
+		expect(getClaudeConfigOptions(undefined, 'default')).toEqual([
+			{ configId: 'effort', value: 'default' },
+		]);
 		expect(getClaudeConfigOptions('claude-sonnet', 'high')).toEqual([
 			{ configId: 'model', value: 'claude-sonnet' },
 			{ configId: 'effort', value: 'high' },

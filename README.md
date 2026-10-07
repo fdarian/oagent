@@ -1,6 +1,6 @@
 # oagent
 
-MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex, Claude. Semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
+MCP server that exposes ACP-compatible coding agents — [OpenCode](https://opencode.ai), [Cursor](https://cursor.com), [Grok](https://x.ai/cli), Codex, Claude, [Pi](https://pi.dev). Semantically equivalent to Claude Code's built-in `Agent` tool but running the work in a separate agent over the [Agent Client Protocol](https://agentclientprotocol.com).
 
 https://github.com/user-attachments/assets/59e762b9-cfe7-49c6-80ff-03722baf4a68
 
@@ -15,6 +15,7 @@ Install the CLI for whichever backend(s) you plan to use — each backend manage
 | `grok` | `grok` | `OAGENT_GROK_BIN` |
 | `codex` | `codex-acp` (uses `codex` from `$PATH` when available) | `OAGENT_CODEX_BIN` |
 | `claude` | `claude-agent-acp` | `OAGENT_CLAUDE_BIN` |
+| `pi` | `pi-acp` (spawns `pi --mode rpc`) | `OAGENT_PI_BIN` |
 
 The Codex backend always speaks ACP through `codex-acp`. When a `codex` executable
 is available on `$PATH`, oagent passes its path through `CODEX_PATH` so the adapter
@@ -28,6 +29,18 @@ binary: `npm install -g @agentclientprotocol/claude-agent-acp`. It requires Node
 example `claude auth login --claudeai` or `claude auth login --console`. Check the
 current status with `claude auth status --json`; oagent does not manage Claude
 credentials.
+
+The [Pi](https://pi.dev) backend uses [pi-acp](https://github.com/svkozak/pi-acp),
+not a native ACP mode. Install Pi and `npm install -g pi-acp@0.0.34`, with both
+`pi` and `pi-acp` on PATH. oagent launches the adapter directly with no arguments;
+`OAGENT_PI_BIN` overrides the adapter executable (no automatic npx launcher).
+Authenticate externally with `pi` or `pi-acp --terminal-login`; oagent does not
+manage Pi credentials. Models use `pi:<provider>/<model>` from the ACP catalog.
+Thinking efforts are `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, and `max`
+(model-dependent), sent through the `thought_level` config option, not agent
+modes. Pi supports ACP session resume, but not steering, forks, or earlier-job
+checkpoints. Pi costs are unsupported by the pinned `ccusage-lib@0.1.0`, even
+though the ccusage CLI supports Pi.
 
 <details>
 <summary>Permissions: `--dangerously-skip-permissions` by default</summary>
@@ -162,7 +175,7 @@ Starts a new agent session or forks the state of an existing session/job. By def
 Input:
 - `prompt: string` — the task to send
 - `cwd?: string` — absolute path to the directory the agent should operate in; required unless `forkId` is set
-- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`, `claude`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`, `claude:<modelId>`. If the user hasn't specified a model, ask them which model and backend to use.
+- `model?: string` — model id in `<backend>:<modelId>` format or a preset alias. Valid backends: `opencode`, `cursor`, `grok`, `codex`, `claude`, `pi`. Examples: `opencode:opencode-go/kimi-k2.6`, `cursor:auto`, `cursor:composer-2.5`, `codex:gpt-5.5`, `claude:<modelId>`, `pi:<provider>/<model>`. If the user hasn't specified a model, ask them which model and backend to use.
 - `agent_type?: string` — configured agent type to use for the selected backend. The tool description lists the currently configured names. Unknown names and names without a mapping for the selected backend return distinct errors.
 - `forkId?: string` — session ID or job ID whose state should be forked. A session ID or latest job forks the full current state. An earlier job forks from its checkpoint and is supported only for OpenCode jobs with a recorded checkpoint.
 - `background?: boolean` — default `false`. If `true`, return a running handle immediately.

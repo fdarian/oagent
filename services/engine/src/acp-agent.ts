@@ -124,6 +124,27 @@ function extractModelIds(
 	return ids;
 }
 
+export function extractSelectOptions(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+	configId: string,
+): ReadonlyArray<{ value: string; label: string }> {
+	if (configOptions === undefined || configOptions === null) return [];
+	const option = configOptions.find((entry) => entry.id === configId);
+	if (option === undefined || option.type !== 'select') return [];
+
+	const choices: Array<{ value: string; label: string }> = [];
+	for (const item of option.options) {
+		if (isSelectGroup(item)) {
+			for (const grouped of item.options) {
+				choices.push({ value: grouped.value, label: grouped.name });
+			}
+			continue;
+		}
+		choices.push({ value: item.value, label: item.name });
+	}
+	return choices;
+}
+
 function extractSessionModelIds(
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
 ): ReadonlyArray<string> | undefined {
@@ -653,6 +674,7 @@ export function forkAcpSession(
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
 const SESSION_CATALOG_TIMEOUT_MS = 15_000;
+const MODEL_CONFIG_CHOICES_TIMEOUT_MS = 15_000;
 
 export function makeAcpAgent(config: AcpAgentConfig) {
 	return Effect.gen(function* () {
@@ -745,7 +767,51 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 		const listModels = () =>
 			listSessionCatalog().pipe(Effect.map((catalog) => catalog.models));
 
-		return { runTurn, forkSession, listModels, listSessionCatalog };
+		// Config options such as reasoning effort can depend on the selected model,
+		// so the choices are read from the session's response to selecting it.
+		const listModelConfigChoices = (input: {
+			model: string;
+			configId: string;
+		}): Effect.Effect<
+			ReadonlyArray<{ value: string; label: string }>,
+			AcpSessionError,
+			never
+		> =>
+			Effect.scoped(
+				Effect.gen(function* () {
+					const env = yield* createAcpConnection(config);
+					const session = yield* Effect.tryPromise({
+						try: () =>
+							env.conn.newSession({ cwd: process.cwd(), mcpServers: [] }),
+						catch: (cause) => new AcpSessionError({ cause }),
+					});
+					const response = yield* Effect.tryPromise({
+						try: () =>
+							env.conn.setSessionConfigOption({
+								sessionId: session.sessionId,
+								configId: 'model',
+								value: input.model,
+							}),
+						catch: (cause) => new AcpSessionError({ cause }),
+					});
+					return extractSelectOptions(response.configOptions, input.configId);
+				}),
+			).pipe(
+				Effect.timeout(MODEL_CONFIG_CHOICES_TIMEOUT_MS),
+				Effect.mapError((cause) =>
+					cause instanceof AcpSessionError
+						? cause
+						: new AcpSessionError({ cause }),
+				),
+			);
+
+		return {
+			runTurn,
+			forkSession,
+			listModels,
+			listSessionCatalog,
+			listModelConfigChoices,
+		};
 	});
 }
 
