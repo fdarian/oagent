@@ -13,6 +13,7 @@ import {
 } from './agents.ts';
 import { assembleEvent } from './db/assembleEvent.ts';
 import { Db } from './db/client.ts';
+import { toPatchColumn } from './db/patch-column.ts';
 import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
 import { type Backend, isBackend, parseBackend } from './harness.ts';
@@ -125,6 +126,22 @@ type JobsChange = {
 
 /** Sentinel event type emitted to SSE subscribers when a job reaches terminal status. */
 const TERMINAL_EVENT = '__terminal__';
+/**
+ * Compile-time guard: a new SDK `SessionUpdate` variant leaves `event` non-`never`
+ * here and fails the build until it is persisted. `cursor_extension` is not an SDK
+ * variant (cursor.ts casts it in) and is stored as a base `events` row only.
+ */
+function assertAllVariantsPersisted(event: never): void {
+	if (
+		(event as { sessionUpdate: string }).sessionUpdate === 'cursor_extension'
+	) {
+		return;
+	}
+	throw new Error(
+		`Unpersisted session update: ${(event as { sessionUpdate: string }).sessionUpdate}`,
+	);
+}
+
 export const SHUTDOWN_EVENT = '__shutdown__';
 
 function isRunningSideChatTurnConflict(cause: unknown): boolean {
@@ -338,6 +355,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							.values({
 								event_id: eventId,
 								tool_call_id: event.toolCallId,
+								name: event.name ?? null,
 								title: event.title ?? null,
 								status: event.status ?? null,
 								kind: event.kind ?? null,
@@ -407,6 +425,98 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 							.run();
 						break;
 					}
+					case 'plan_update': {
+						const plan = event.plan;
+						tx.insert(schema.planUpdateEvents)
+							.values({
+								event_id: eventId,
+								plan_id: plan.planId,
+								plan_type: plan.type,
+								entries: plan.type === 'items' ? plan.entries : null,
+								uri: plan.type === 'file' ? plan.uri : null,
+								markdown: plan.type === 'markdown' ? plan.content : null,
+							})
+							.run();
+						break;
+					}
+					case 'plan_removed': {
+						tx.insert(schema.planRemovedEvents)
+							.values({ event_id: eventId, plan_id: event.planId })
+							.run();
+						break;
+					}
+					case 'compaction_update': {
+						tx.insert(schema.compactionUpdateEvents)
+							.values({
+								event_id: eventId,
+								compaction_id: event.compactionId,
+								status: event.status,
+								summary: toPatchColumn(event.summary),
+								error: toPatchColumn(event.error),
+							})
+							.run();
+						break;
+					}
+					case 'compaction_summary_chunk': {
+						tx.insert(schema.compactionSummaryChunkEvents)
+							.values({
+								event_id: eventId,
+								compaction_id: event.compactionId,
+								content: event.content,
+							})
+							.run();
+						break;
+					}
+					case 'notice': {
+						tx.insert(schema.noticeEvents)
+							.values({
+								event_id: eventId,
+								severity: event.severity,
+								title: event.title,
+								description: toPatchColumn(event.description),
+							})
+							.run();
+						break;
+					}
+					case 'subagent_update': {
+						tx.insert(schema.subagentUpdateEvents)
+							.values({
+								event_id: eventId,
+								child_session_id: event.sessionId,
+								title: toPatchColumn(event.title),
+								description: toPatchColumn(event.description),
+								capabilities: toPatchColumn(event.capabilities),
+								state: toPatchColumn(event.state),
+							})
+							.run();
+						break;
+					}
+					case 'session_message': {
+						tx.insert(schema.sessionMessageEvents)
+							.values({
+								event_id: eventId,
+								message_id: event.messageId,
+								sender_session_id: toPatchColumn(event.senderSessionId),
+								recipient_session_id: toPatchColumn(event.recipientSessionId),
+								content: toPatchColumn(event.content),
+							})
+							.run();
+						break;
+					}
+					case 'session_message_chunk': {
+						tx.insert(schema.sessionMessageChunkEvents)
+							.values({
+								event_id: eventId,
+								message_id: event.messageId,
+								sender_session_id: toPatchColumn(event.senderSessionId),
+								recipient_session_id: toPatchColumn(event.recipientSessionId),
+								content: event.content,
+							})
+							.run();
+						break;
+					}
+					default:
+						assertAllVariantsPersisted(event);
 				}
 
 				return { id: eventId, inserted: true };
@@ -466,6 +576,38 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					schema.usageEvents,
 					eq(schema.events.id, schema.usageEvents.event_id),
 				)
+				.leftJoin(
+					schema.planUpdateEvents,
+					eq(schema.events.id, schema.planUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.planRemovedEvents,
+					eq(schema.events.id, schema.planRemovedEvents.event_id),
+				)
+				.leftJoin(
+					schema.compactionUpdateEvents,
+					eq(schema.events.id, schema.compactionUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.compactionSummaryChunkEvents,
+					eq(schema.events.id, schema.compactionSummaryChunkEvents.event_id),
+				)
+				.leftJoin(
+					schema.noticeEvents,
+					eq(schema.events.id, schema.noticeEvents.event_id),
+				)
+				.leftJoin(
+					schema.subagentUpdateEvents,
+					eq(schema.events.id, schema.subagentUpdateEvents.event_id),
+				)
+				.leftJoin(
+					schema.sessionMessageEvents,
+					eq(schema.events.id, schema.sessionMessageEvents.event_id),
+				)
+				.leftJoin(
+					schema.sessionMessageChunkEvents,
+					eq(schema.events.id, schema.sessionMessageChunkEvents.event_id),
+				)
 				.where(
 					and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)),
 				)
@@ -506,6 +648,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						used: row.usage_events?.used ?? null,
 						cost_amount: row.usage_events?.cost_amount ?? null,
 						cost_currency: row.usage_events?.cost_currency ?? null,
+						name: row.tool_call_events?.name ?? null,
+						plan_update_events: row.plan_update_events,
+						plan_removed_events: row.plan_removed_events,
+						compaction_update_events: row.compaction_update_events,
+						compaction_summary_chunk_events:
+							row.compaction_summary_chunk_events,
+						notice_events: row.notice_events,
+						subagent_update_events: row.subagent_update_events,
+						session_message_events: row.session_message_events,
+						session_message_chunk_events: row.session_message_chunk_events,
 					},
 				);
 				return {
