@@ -358,8 +358,8 @@ export function createAcpTurnRecovery(
 						code: 'PROMPT_REJECTED',
 						message:
 							reason === undefined
-								? 'OpenCode rejected the prompt.'
-								: `OpenCode rejected the prompt: ${reason}`,
+								? 'Prompt rejected.'
+								: `Prompt rejected: ${reason}`,
 						cause,
 					});
 				},
@@ -398,11 +398,16 @@ export function createAcpTurnRecovery(
 					) {
 						return Effect.fail(error);
 					}
+					const failure = getRpcMessage(error.cause);
+					const interruption =
+						failure === undefined
+							? 'prompt request failed'
+							: `prompt request failed: ${failure}`;
 					return Effect.gen(function* () {
 						if (!state.reconnected) {
-							yield* reconnect('prompt request failed');
+							yield* reconnect(interruption);
 						}
-						return yield* waitForRecoveredCompletion('prompt request failed');
+						return yield* waitForRecoveredCompletion(interruption);
 					});
 				}),
 			);

@@ -354,7 +354,7 @@ describe('ACP turn recovery', () => {
 			await expect(result).rejects.toMatchObject({
 				code: 'ACP_TURN_INTERRUPTED',
 				message: expect.stringContaining(
-					'the last assistant step never finished',
+					'was interrupted (prompt request failed: ACP connection closed) and did not finish: the last assistant step never finished',
 				),
 			});
 		});
@@ -451,8 +451,7 @@ describe('ACP turn recovery', () => {
 
 			await expect(result).rejects.toMatchObject({
 				code: 'PROMPT_REJECTED',
-				message:
-					'OpenCode rejected the prompt: authentication token has expired',
+				message: 'Prompt rejected: authentication token has expired',
 			});
 			expect(reconnects).toBe(0);
 		});
