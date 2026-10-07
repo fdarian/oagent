@@ -1,11 +1,11 @@
 import { Context, Effect, Layer } from 'effect';
 import { Claude } from './claude.ts';
-import { Pi } from './pi.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import { Grok } from './grok.ts';
 import type { Backend, Harness } from './harness.ts';
 import { OpenCode } from './opencode.ts';
+import { Pi } from './pi.ts';
 
 export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 	'oagent/HarnessRegistry',
