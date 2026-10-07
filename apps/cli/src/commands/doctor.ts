@@ -224,7 +224,7 @@ function normalizeCommand(command: string): string {
 	if (command.includes('claude-agent-acp')) {
 		return 'claude-agent-acp';
 	}
-	if (command.includes('pi-acp')) {
+	if (/(^|\s|\/)pi-acp(\s|$)/.test(command)) {
 		return 'pi-acp';
 	}
 	if (isOpencodeCommand(command)) {
