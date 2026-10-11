@@ -6,6 +6,14 @@ import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
 import { JobNotFound, JobSteerError } from '../jobs.ts';
 import { SessionCostError } from '../session-costs.ts';
+import {
+	SessionBusy,
+	SessionForkError,
+	SessionModelError,
+	SessionNotFound,
+	SessionNotReady,
+	SessionStartError,
+} from '../sessions.ts';
 import { SideChatError, SideChatNotFound } from '../side-chats.ts';
 import { WorktreeError } from '../worktree.ts';
 import { type EngineServices, router } from './router.ts';
@@ -27,6 +35,25 @@ function toProcedureError(error: unknown) {
 		return new ORPCError('BAD_REQUEST', {
 			message: error.message,
 			cause: error,
+		});
+	}
+	if (error instanceof SessionNotFound) {
+		return new ORPCError('NOT_FOUND', {
+			message: error.message,
+			cause: error,
+		});
+	}
+	if (
+		error instanceof SessionNotReady ||
+		error instanceof SessionStartError ||
+		error instanceof SessionBusy ||
+		error instanceof SessionModelError ||
+		error instanceof SessionForkError
+	) {
+		return new ORPCError('BAD_REQUEST', {
+			message: error.message,
+			cause: error,
+			...('code' in error ? { data: { code: error.code } } : {}),
 		});
 	}
 	if (error instanceof SideChatNotFound) {
