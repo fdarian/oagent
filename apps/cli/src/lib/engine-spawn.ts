@@ -12,9 +12,9 @@ export function isConnectionRefused(cause: unknown): boolean {
 	);
 }
 
-export function retryEngineRpc<A, E>(
+export function retryEngineRpc<A, E, R = never>(
 	call: () => Promise<A>,
-	ensure: Effect.Effect<void, E>,
+	ensure: Effect.Effect<void, E, R>,
 ) {
 	const request = Effect.tryPromise({
 		try: call,
