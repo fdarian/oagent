@@ -4,7 +4,7 @@ import { Effect } from 'effect';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
-import { JobNotFound, JobSteerError } from '../jobs.ts';
+import { JobNotFound, JobSteerError, ModelResolutionError } from '../jobs.ts';
 import { SessionCostError } from '../session-costs.ts';
 import {
 	SessionBusy,
@@ -44,6 +44,7 @@ function toProcedureError(error: unknown) {
 		});
 	}
 	if (
+		error instanceof ModelResolutionError ||
 		error instanceof SessionNotReady ||
 		error instanceof SessionStartError ||
 		error instanceof SessionBusy ||
