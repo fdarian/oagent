@@ -29,7 +29,7 @@ const cli = Command.make('oagent').pipe(
 		mcpCmd(version),
 		claudeCmd(version),
 		jobsCmd(version),
-		sessionCmd(version),
+		sessionCmd,
 		doctorCmd(version),
 		serviceCmd(version),
 	]),

@@ -5,7 +5,7 @@ import {
 	progressMessage,
 } from '@oagent/engine';
 import { encode } from '@toon-format/toon';
-import { Effect, type Option } from 'effect';
+import { Effect, Option } from 'effect';
 import { Flag } from 'effect/cli';
 import { listenForTerminal } from '#/lib/channel-stream.ts';
 import {
@@ -79,7 +79,7 @@ export function readPrompt(positional: Option.Option<string>) {
 	return Effect.tryPromise({
 		try: () =>
 			resolvePrompt({
-				positional: positional._tag === 'Some' ? positional.value : undefined,
+				positional: Option.getOrUndefined(positional),
 				stdinIsTTY: process.stdin.isTTY === true,
 				readStdin: () => Bun.stdin.text(),
 			}),
