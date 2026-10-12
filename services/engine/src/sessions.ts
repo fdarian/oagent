@@ -1,7 +1,16 @@
 /// <reference types="bun" />
 
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, getTableColumns, isNull, sql } from 'drizzle-orm';
+import {
+	and,
+	desc,
+	eq,
+	getTableColumns,
+	isNull,
+	or,
+	sql,
+} from 'drizzle-orm';
+import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -73,6 +82,20 @@ export class SessionModelError extends Schema.TaggedError<SessionModelError>()(
 	},
 ) {}
 
+const withinDirectory = (column: AnySQLiteColumn, directory: string) =>
+	sql`(${column} = ${directory} OR substr(${column}, 1, length(${directory}) + 1) = ${`${directory}/`})`;
+
+// Matches sessions whose working or origin directory is `cwd` or inside it.
+const cwdFilter = (cwd: string | undefined) => {
+	if (cwd === undefined) return undefined;
+	const directory = cwd.replace(/\/+$/, '');
+	if (directory === '') return undefined;
+	return or(
+		withinDirectory(schema.sessions.cwd, directory),
+		withinDirectory(schema.sessions.origin_cwd, directory),
+	);
+};
+
 type StartInput = {
 	title: string;
 	prompt: string;
@@ -96,6 +119,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			backend: Backend;
 			harnessSessionId?: string;
 			cwd: string;
+			originCwd: string;
 			worktreePath?: string;
 			worktreeBranch?: string;
 			forkedFromJobId?: number;
@@ -110,6 +134,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							backend: input.backend,
 							harness_session_id: input.harnessSessionId,
 							cwd: input.cwd,
+							origin_cwd: input.originCwd,
 							worktree_path: input.worktreePath,
 							worktree_branch: input.worktreeBranch,
 							forked_from_job_id: input.forkedFromJobId,
@@ -388,6 +413,10 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					backend,
 					harnessSessionId: fork?.harnessSessionId,
 					cwd,
+					originCwd:
+						fork === undefined || input.cwd !== undefined
+							? cwd
+							: fork.sourceSession.origin_cwd,
 					worktreePath: fork?.sourceSession.worktree_path ?? undefined,
 					worktreeBranch: fork?.sourceSession.worktree_branch ?? undefined,
 					forkedFromJobId: fork?.sourceJob.id,
@@ -602,11 +631,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					})
 					.from(schema.sessions)
 					.innerJoin(activity, eq(activity.sessionId, schema.sessions.id))
-					.where(
-						input.cwd === undefined
-							? undefined
-							: eq(schema.sessions.cwd, input.cwd),
-					)
+					.where(cwdFilter(input.cwd))
 					.orderBy(desc(activity.lastActivityAt), desc(schema.sessions.id))
 					.limit(100)
 					.all();
@@ -617,6 +642,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					status: JobRow['status'];
 					prompt: string;
 					cwd: string;
+					originCwd: string;
+					worktreePath?: string;
+					worktreeBranch?: string;
 					backend: Backend;
 					model?: string;
 					agentType?: string;
@@ -633,6 +661,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						status: job.status,
 						prompt: job.prompt,
 						cwd: session.cwd,
+						originCwd: session.origin_cwd,
+						worktreePath: session.worktree_path ?? undefined,
+						worktreeBranch: session.worktree_branch ?? undefined,
 						backend: parseBackend(session.backend),
 						model: job.model ?? undefined,
 						agentType: job.agent_type ?? undefined,
@@ -695,6 +726,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					title: sourceSession.title,
 					backend: parseBackend(sourceSession.backend),
 					cwd: sourceSession.cwd,
+					originCwd: sourceSession.origin_cwd,
 					worktreePath: sourceSession.worktree_path ?? undefined,
 					worktreeBranch: sourceSession.worktree_branch ?? undefined,
 					forkedFromJobId: sourceJob.id,

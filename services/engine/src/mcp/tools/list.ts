@@ -4,13 +4,14 @@ import type { Sessions } from '../../sessions.ts';
 
 const description = `\
 List recent sessions, including their title, latest job status, prompt, and \
-creation time. Pass cwd to limit results to that working directory.`;
+creation time. Pass cwd to limit results to sessions started or working in \
+that directory or any directory under it.`;
 
 const inputSchema = z.object({
 	cwd: z
 		.string()
 		.optional()
-		.describe('Absolute working directory to filter sessions.'),
+		.describe('Absolute directory; matches sessions in it or beneath it.'),
 });
 
 type Args = z.infer<typeof inputSchema>;
@@ -20,6 +21,10 @@ type SessionSummary = {
 	jobId: string;
 	status: 'running' | 'done' | 'error' | 'cancelled';
 	prompt: string;
+	cwd: string;
+	originCwd: string;
+	worktreePath?: string;
+	worktreeBranch?: string;
 	createdAt: number;
 };
 type SessionList = Pick<Sessions['Service'], 'list'>;
@@ -38,7 +43,19 @@ export function formatSessions(
 			const promptSummary =
 				oneLine.length > 120 ? `${oneLine.slice(0, 120)}…` : oneLine;
 			const created = new Date(session.createdAt).toISOString();
-			return `- **${session.title}** (\`${session.id}\`) [${session.status}] ${created} · latest job \`${session.jobId}\`\n  ${promptSummary}`;
+			const details = [
+				`  ${promptSummary}`,
+				...(session.originCwd === session.cwd
+					? []
+					: [`  origin: \`${session.originCwd}\``]),
+				...(session.worktreePath === undefined
+					? []
+					: [`  worktree: \`${session.worktreePath}\``]),
+				...(session.worktreeBranch === undefined
+					? []
+					: [`  branch: \`${session.worktreeBranch}\``]),
+			];
+			return `- **${session.title}** (\`${session.id}\`) [${session.status}] ${created} · latest job \`${session.jobId}\`\n${details.join('\n')}`;
 		}),
 	];
 	return lines.join('\n');

@@ -38,6 +38,7 @@ function insertSession(
 			backend: input.backend ?? 'opencode',
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
+			origin_cwd: input.cwd,
 			worktree_path: input.worktreePath,
 			worktree_branch: input.worktreeBranch,
 		})

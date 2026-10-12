@@ -53,7 +53,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 	['send', ['--detach', '--json', '--engine-url']],
 	['read', ['--wait', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
-	['list', ['--cwd', '--json', '--engine-url']],
+	['list', ['--cwd', '--all', '--json', '--engine-url']],
 	['models', ['--backend', '--format', '--engine-url']],
 	['agents', ['--format', '--engine-url']],
 	['aliases', ['--format', '--engine-url']],

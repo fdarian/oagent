@@ -89,6 +89,9 @@ function insertSession(
 		backend: Backend;
 		harnessSessionId: string;
 		cwd: string;
+		originCwd?: string;
+		worktreePath?: string;
+		worktreeBranch?: string;
 	},
 ) {
 	const session = database.db
@@ -99,6 +102,9 @@ function insertSession(
 			backend: input.backend,
 			harness_session_id: input.harnessSessionId,
 			cwd: input.cwd,
+			origin_cwd: input.originCwd ?? input.cwd,
+			worktree_path: input.worktreePath,
+			worktree_branch: input.worktreeBranch,
 		})
 		.returning()
 		.get();
@@ -760,6 +766,72 @@ describe('session turns', () => {
 				(session) => session.id,
 			),
 		).toContain('other-directory');
+		const nested = insertSession(database, {
+			uuid: 'nested-directory',
+			title: 'Nested task',
+			backend: 'opencode',
+			harnessSessionId: 'ses_nested',
+			cwd: '/repo/packages/api',
+		});
+		const sibling = insertSession(database, {
+			uuid: 'sibling-directory',
+			title: 'Sibling task',
+			backend: 'opencode',
+			harnessSessionId: 'ses_sibling',
+			cwd: '/repo2',
+		});
+		const worktree = insertSession(database, {
+			uuid: 'worktree-directory',
+			title: 'Worktree task',
+			backend: 'opencode',
+			harnessSessionId: 'ses_worktree',
+			cwd: '/worktrees/feature',
+			originCwd: '/repo/apps/web',
+			worktreePath: '/worktrees/feature',
+			worktreeBranch: 'feature',
+		});
+		const wildcard = insertSession(database, {
+			uuid: 'wildcard-directory',
+			title: 'Wildcard task',
+			backend: 'opencode',
+			harnessSessionId: 'ses_wildcard',
+			cwd: '/repo_x',
+		});
+		for (const session of [nested, sibling, worktree, wildcard]) {
+			insertJob(database, session, {
+				uuid: `${session.uuid}-job`,
+				status: 'done',
+				prompt: session.title,
+				model: 'model-id',
+			});
+		}
+		const listIds = async (cwd: string) =>
+			(await Effect.runPromise(services.sessions.list({ cwd })))
+				.map((session) => session.id)
+				.sort();
+		expect(await listIds('/repo')).toEqual(
+			[started.sessionId, 'nested-directory', 'worktree-directory'].sort(),
+		);
+		expect(await listIds('/repo/')).toEqual(await listIds('/repo'));
+		expect(await listIds('/repo/apps/web')).toEqual(['worktree-directory']);
+		expect(await listIds('/worktrees')).toEqual(['worktree-directory']);
+		expect(await listIds('/repo2')).toEqual(['sibling-directory']);
+		expect(await listIds('/repo_')).toEqual([]);
+		expect(await listIds('/repo%')).toEqual([]);
+		expect(await listIds('/')).toHaveLength(
+			(await Effect.runPromise(services.sessions.list({}))).length,
+		);
+		const listed = await Effect.runPromise(
+			services.sessions.list({ cwd: '/repo/apps/web' }),
+		);
+		expect(listed).toMatchObject([
+			{
+				cwd: '/worktrees/feature',
+				originCwd: '/repo/apps/web',
+				worktreePath: '/worktrees/feature',
+				worktreeBranch: 'feature',
+			},
+		]);
 		expect(
 			await Effect.runPromise(
 				services.sessions.cancel({ sessionId: started.sessionId }),
@@ -1114,7 +1186,8 @@ describe('session turns', () => {
 			title: 'Source session',
 			backend: 'opencode',
 			harnessSessionId: 'ses_source',
-			cwd: '/repo',
+			cwd: '/worktrees/source',
+			originCwd: '/repo',
 		});
 		const earlierJob = insertJob(database, sourceSession, {
 			uuid: 'job-earlier',
@@ -1170,11 +1243,35 @@ describe('session turns', () => {
 				.get()?.id,
 		);
 		expect(forkedSession?.title).toBe('Continue full state');
+		expect(forkedSession?.cwd).toBe('/worktrees/source');
+		expect(forkedSession?.origin_cwd).toBe('/repo');
+		const forkedElsewhere = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Continue elsewhere',
+				prompt: 'continue elsewhere',
+				forkId: sourceSession.uuid,
+				cwd: '/elsewhere',
+			}),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: forkedElsewhere.jobId, timeoutMs: 1_000 }),
+		);
+		expect(
+			database.db
+				.select({
+					cwd: schema.sessions.cwd,
+					origin_cwd: schema.sessions.origin_cwd,
+				})
+				.from(schema.sessions)
+				.where(eq(schema.sessions.uuid, forkedElsewhere.sessionId))
+				.get(),
+		).toEqual({ cwd: '/elsewhere', origin_cwd: '/elsewhere' });
 		expect(earlierForkSession?.forked_from_job_id).toBe(earlierJob.id);
 		expect(earlierForkSession?.title).toBe('Continue earlier state');
 		expect(firstMessageLookups).toEqual(['msg-last-first-turn']);
 		expect(beforeForks).toEqual(['msg-after-first-turn']);
 		expect(calls).toEqual([
+			{ sessionId: 'ses_acp_fork', model: 'second-model' },
 			{ sessionId: 'ses_acp_fork', model: 'second-model' },
 			{ sessionId: 'ses_rest_fork', model: 'first-model' },
 		]);

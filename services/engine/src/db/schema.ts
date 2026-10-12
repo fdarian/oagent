@@ -28,6 +28,7 @@ export const sessions = sqliteTable(
 		reasoning_effort: text(),
 		harness_session_id: text(),
 		cwd: text().notNull(),
+		origin_cwd: text().notNull(),
 		worktree_path: text(),
 		worktree_branch: text(),
 		forked_from_job_id: integer({ mode: 'number' }).references(

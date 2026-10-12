@@ -26,6 +26,7 @@ function insertSession(
 			title: input.title,
 			backend: input.backend ?? 'opencode',
 			cwd: input.cwd,
+			origin_cwd: input.cwd,
 		})
 		.returning()
 		.get();
