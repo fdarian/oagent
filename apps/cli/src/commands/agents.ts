@@ -8,7 +8,7 @@ import {
 	renderStructured,
 	reportFailure,
 	writeStdout,
-} from './shared.ts';
+} from '#/lib/engine-cli.ts';
 
 export const agents = Command.make(
 	'agents',

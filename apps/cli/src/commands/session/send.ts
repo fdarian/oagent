@@ -3,12 +3,14 @@ import { Argument, Command } from 'effect/cli';
 import {
 	callEngine,
 	connectEngine,
-	detachFlag,
 	engineUrlFlag,
+	reportFailure,
+} from '#/lib/engine-cli.ts';
+import {
+	detachFlag,
 	finishStartedTurn,
 	jsonFlag,
 	readPrompt,
-	reportFailure,
 } from './shared.ts';
 
 export const send = Command.make(

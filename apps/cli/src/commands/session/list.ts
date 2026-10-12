@@ -5,10 +5,10 @@ import {
 	callEngine,
 	connectEngine,
 	engineUrlFlag,
-	jsonFlag,
 	reportFailure,
 	writeStdout,
-} from './shared.ts';
+} from '#/lib/engine-cli.ts';
+import { jsonFlag } from './shared.ts';
 
 export const list = Command.make(
 	'list',

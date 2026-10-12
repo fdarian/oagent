@@ -3,13 +3,15 @@ import { Argument, Command, Flag } from 'effect/cli';
 import {
 	callEngine,
 	connectEngine,
+	engineUrlFlag,
+	reportFailure,
+} from '#/lib/engine-cli.ts';
+import {
 	deriveTitle,
 	detachFlag,
-	engineUrlFlag,
 	finishStartedTurn,
 	jsonFlag,
 	readPrompt,
-	reportFailure,
 } from './shared.ts';
 
 /**
@@ -77,14 +79,12 @@ export const start = Command.make(
 		model: Flag.String('model').pipe(
 			Flag.optional,
 			Flag.withDescription(
-				'Model as <alias>[#effort] or <backend>:<modelId>[#effort]. See `oagent session aliases` and `oagent session models`.',
+				'Model as <alias>[#effort] or <backend>:<modelId>[#effort]. See `oagent aliases` and `oagent models`.',
 			),
 		),
 		agent: Flag.String('agent').pipe(
 			Flag.optional,
-			Flag.withDescription(
-				'Configured agent type. See `oagent session agents`.',
-			),
+			Flag.withDescription('Configured agent type. See `oagent agents`.'),
 		),
 		fork: Flag.String('fork').pipe(
 			Flag.optional,

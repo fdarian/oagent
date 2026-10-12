@@ -1,15 +1,14 @@
 import { Effect } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
-import { pollWait } from '#/lib/job-wait.ts';
 import {
 	callEngine,
 	connectEngine,
 	engineUrlFlag,
-	jsonFlag,
-	renderTurn,
 	reportFailure,
 	writeStdout,
-} from './shared.ts';
+} from '#/lib/engine-cli.ts';
+import { pollWait } from '#/lib/job-wait.ts';
+import { jsonFlag, renderTurn } from './shared.ts';
 
 export const read = Command.make(
 	'read',

@@ -155,7 +155,8 @@ The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in
   - `oagent session read <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
   - `oagent session cancel <sessionId>` — cancel the running turn. Flag: `--json`.
   - `oagent session list` — list recent sessions. Flags: `--cwd`, `--json`.
-  - `oagent session models --backend <backend>`, `oagent session agents`, `oagent session aliases` — list valid `--model` / `--agent` values. Flag: `--format` (`toon`|`json`).
+- **models / agents / aliases** — list valid `--model` / `--agent` values for `session start`.
+  - `oagent models --backend <backend>`, `oagent agents`, `oagent aliases`. Flags: `--engine-url`, `--format` (`toon`|`json`).
 - **claude**
   - `oagent claude mcp serve` — run the Claude Code channel MCP that bridges to a running engine. Flags: `--engine-url`, `--mcp-name`.
 

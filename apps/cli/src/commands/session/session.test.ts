@@ -22,16 +22,7 @@ async function runCli(args: ReadonlyArray<string>) {
 test('session --help lists every subcommand', async () => {
 	const result = await runCli(['session', '--help']);
 	expect(result.exitCode).toBe(0);
-	for (const name of [
-		'start',
-		'send',
-		'read',
-		'cancel',
-		'list',
-		'models',
-		'agents',
-		'aliases',
-	]) {
+	for (const name of ['start', 'send', 'read', 'cancel', 'list']) {
 		expect(result.stdout).toContain(name);
 	}
 });
@@ -56,9 +47,6 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 	['read', ['--wait', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
 	['list', ['--cwd', '--json', '--engine-url']],
-	['models', ['--backend', '--format', '--engine-url']],
-	['agents', ['--format', '--engine-url']],
-	['aliases', ['--format', '--engine-url']],
 ];
 
 describe('session subcommand help', () => {
