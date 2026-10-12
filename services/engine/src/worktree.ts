@@ -134,15 +134,22 @@ export class Worktrees extends Context.Service<Worktrees>()(
 	{
 		make: Effect.gen(function* () {
 			const settings = yield* Settings;
+			const requireConfig = () =>
+				Effect.gen(function* () {
+					const config = settings.getWorktree();
+					if (!config.enabled || config.createCommand.trim() === '') {
+						return yield* new WorktreeError({
+							message:
+								'Worktrees are disabled. Enable them and set a create command in the oagent web UI under Settings → Worktrees.',
+						});
+					}
+					return config;
+				});
 			return {
+				ensureEnabled: () => Effect.asVoid(requireConfig()),
 				create: (cwd: string, branch: string, requestedBase?: string) =>
 					Effect.gen(function* () {
-						const config = settings.getWorktree();
-						if (!config.enabled || config.createCommand.trim() === '') {
-							return yield* new WorktreeError({
-								message: 'Worktrees are not enabled or configured.',
-							});
-						}
+						const config = yield* requireConfig();
 						const repo = yield* runCommand(
 							['git', 'rev-parse', '--show-toplevel'],
 							cwd,

@@ -555,6 +555,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			} as unknown as Settings['Service']),
 			Effect.provideService(Agents, {} as Agents['Service']),
 			Effect.provideService(Worktrees, {
+				ensureEnabled: () => Effect.void,
 				create: (_cwd: string, branch: string, base?: string) => {
 					branches.push(branch);
 					bases.push(base);
