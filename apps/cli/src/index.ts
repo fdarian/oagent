@@ -11,6 +11,7 @@ import { mcpCmd } from './commands/mcp';
 import { serveCmd } from './commands/serve';
 import { serviceCmd } from './commands/service';
 import { sessionCmd } from './commands/session';
+import { rewriteBareWorktreeFlag } from './commands/session/start';
 import type { Version } from './lib/misc';
 
 declare const OAGENT_BUILD_VERSION: string;
@@ -35,9 +36,9 @@ const cli = Command.make('oagent').pipe(
 	]),
 );
 
-const program = Command.run({
-	version: version,
-})(cli);
+const program = Command.runWith(cli, { version })(
+	rewriteBareWorktreeFlag(process.argv.slice(2)),
+);
 
 // Each subcommand provides Engine.layer itself where needed. The `claude mcp serve`
 // channel bridge deliberately omits it: it talks to a running engine over HTTP, so

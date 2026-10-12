@@ -181,7 +181,8 @@ function registerChannelTools(
 					model: args.model,
 					agent_type: args.agent_type,
 					forkId: args.forkId,
-					worktree: 'worktree' in args && args.worktree === true,
+					worktree:
+						'worktree' in args && args.worktree === true ? {} : undefined,
 				});
 				if (args.background === true) {
 					void waitAndNotify(

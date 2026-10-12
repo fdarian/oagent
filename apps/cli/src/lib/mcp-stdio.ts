@@ -119,7 +119,8 @@ export function runMcpStdio(params: {
 										description: agent.agent.description ?? undefined,
 										targets: [...agent.agent.targets],
 									},
-						worktree: 'worktree' in args && args.worktree === true,
+						worktree:
+							'worktree' in args && args.worktree === true ? {} : undefined,
 					}),
 				);
 				return text(

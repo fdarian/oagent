@@ -528,6 +528,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 	const database = createDatabase();
 	const cwdValues: string[] = [];
 	const branches: string[] = [];
+	const bases: Array<string | undefined> = [];
 	const harness = {
 		backend: 'opencode' as const,
 		runTurn: (input: { cwd: string }) =>
@@ -553,8 +554,9 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			} as unknown as Settings['Service']),
 			Effect.provideService(Agents, {} as Agents['Service']),
 			Effect.provideService(Worktrees, {
-				create: (_cwd: string, branch: string) => {
+				create: (_cwd: string, branch: string, base?: string) => {
 					branches.push(branch);
+					bases.push(base);
 					return Effect.succeed('/repo-worktree/apps/web');
 				},
 			} as Worktrees['Service']),
@@ -570,7 +572,7 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			session,
 			prompt: 'first',
 			model: 'opencode:test',
-			worktree: true,
+			worktree: { branch: 'feature/x', base: 'develop' },
 		}),
 	);
 	await Effect.runPromise(jobs.wait({ jobId: first.jobId, timeoutMs: 1_000 }));
@@ -585,21 +587,22 @@ test('starts in a worktree and resumes the session in the same path', async () =
 			session: resumedSession,
 			prompt: 'continue',
 			model: 'opencode:test',
-			worktree: true,
+			worktree: {},
 		}),
 	);
 	await Effect.runPromise(jobs.wait({ jobId: second.jobId, timeoutMs: 1_000 }));
-	expect(branches).toEqual([`oagent/${first.jobId.slice(-8)}`]);
+	expect(branches).toEqual(['feature/x']);
+	expect(bases).toEqual(['develop']);
 	expect(cwdValues).toEqual([
 		'/repo-worktree/apps/web',
 		'/repo-worktree/apps/web',
 	]);
 	expect(second.worktreePath).toBe(first.worktreePath);
-	expect(second.worktreeBranch).toBe(`oagent/${first.jobId.slice(-8)}`);
+	expect(second.worktreeBranch).toBe('feature/x');
 	expect(jobs.getJobMetadata(second.jobId)).toMatchObject({
 		cwd: '/repo-worktree/apps/web',
 		worktreePath: '/repo-worktree/apps/web',
-		worktreeBranch: `oagent/${first.jobId.slice(-8)}`,
+		worktreeBranch: 'feature/x',
 	});
 	database.sqlite.close();
 });
@@ -652,7 +655,7 @@ test('cancel during worktree creation never starts the reserved turn', async () 
 			session,
 			prompt: 'first',
 			model: 'opencode:test',
-			worktree: true,
+			worktree: {},
 		}),
 	);
 	await entered.promise;
@@ -702,7 +705,7 @@ test('interrupted worktree creation releases the running reservation', async () 
 			session,
 			prompt: 'first',
 			model: 'opencode:test',
-			worktree: true,
+			worktree: {},
 		}),
 	);
 	await entered.promise;

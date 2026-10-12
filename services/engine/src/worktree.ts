@@ -8,6 +8,8 @@ import { Settings } from './settings.ts';
 export const WORKTREE_VARIABLES = ['branch', 'base', 'repo'] as const;
 const COMMAND_TIMEOUT_MS = 60_000;
 
+export type WorktreeRequest = { branch?: string; base?: string };
+
 export function validateWorktreeTemplate(command: string): boolean {
 	const references = Array.from(
 		command.matchAll(/\{\{.*?\}\}/g),
@@ -133,7 +135,7 @@ export class Worktrees extends Context.Service<Worktrees>()(
 		make: Effect.gen(function* () {
 			const settings = yield* Settings;
 			return {
-				create: (cwd: string, branch: string) =>
+				create: (cwd: string, branch: string, requestedBase?: string) =>
 					Effect.gen(function* () {
 						const config = settings.getWorktree();
 						if (!config.enabled || config.createCommand.trim() === '') {
@@ -146,11 +148,13 @@ export class Worktrees extends Context.Service<Worktrees>()(
 							cwd,
 							'Find git repository',
 						);
-						const base = yield* runCommand(
-							['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-							cwd,
-							'Find current branch',
-						);
+						const base =
+							requestedBase ??
+							(yield* runCommand(
+								['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+								cwd,
+								'Find current branch',
+							));
 						const command = yield* Effect.try({
 							try: () =>
 								renderWorktreeTemplate(config.createCommand, {
