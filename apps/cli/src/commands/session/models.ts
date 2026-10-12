@@ -1,0 +1,47 @@
+import { Effect } from 'effect';
+import { Command, Flag } from 'effect/cli';
+import {
+	callEngine,
+	connectEngine,
+	engineUrlFlag,
+	formatFlag,
+	renderStructured,
+	reportFailure,
+	writeStdout,
+} from './shared.ts';
+
+export const models = Command.make(
+	'models',
+	{
+		backend: Flag.Literals('backend', [
+			'opencode',
+			'cursor',
+			'grok',
+			'codex',
+			'claude',
+		]).pipe(
+			Flag.withDescription(
+				'Backend whose models to list: opencode, cursor, grok, codex or claude.',
+			),
+		),
+		format: formatFlag,
+		engineUrl: engineUrlFlag,
+	},
+	(options) =>
+		Effect.gen(function* () {
+			const engine = connectEngine(options.engineUrl);
+			const rows = yield* callEngine(engine, (client) =>
+				client.models.list({ backend: options.backend }),
+			);
+			writeStdout(
+				renderStructured(
+					{ backend: options.backend, models: rows },
+					options.format,
+				),
+			);
+		}).pipe(reportFailure({ json: options.format === 'json' })),
+).pipe(
+	Command.withDescription(
+		'List the models a backend offers. Pass `<backend>:<id>` as --model to `session start`.',
+	),
+);

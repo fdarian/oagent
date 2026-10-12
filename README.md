@@ -149,6 +149,13 @@ The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in
 - **jobs**
   - `oagent jobs list` — list recent jobs. Flags: `--engine-url`, `--limit` (default 10), `--format` (`toon`|`json`).
   - `oagent jobs wait <jobId>` — block until a job reaches a terminal state and print its markdown result. Flags: `--engine-url`, `--json` (print the JSON result).
+- **session** — drive sessions from the shell with the same operations as the MCP tools; starts a local engine on demand. Every subcommand takes `--engine-url`. The prompt is the argument, or stdin when piped (`cat brief.md | oagent session start --model <model>`).
+  - `oagent session start [prompt]` — start (or fork) a session, stream progress to stderr, and print the result. Flags: `--title`, `--cwd`, `--model`, `--agent`, `--fork <sessionId|jobId>`, `--worktree`, `--detach` (print IDs and exit), `--json`.
+  - `oagent session send <sessionId> [prompt]` — send a message to a session. Flags: `--detach`, `--json`.
+  - `oagent session read <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
+  - `oagent session cancel <sessionId>` — cancel the running turn. Flag: `--json`.
+  - `oagent session list` — list recent sessions. Flags: `--cwd`, `--json`.
+  - `oagent session models --backend <backend>`, `oagent session agents`, `oagent session aliases` — list valid `--model` / `--agent` values. Flag: `--format` (`toon`|`json`).
 - **claude**
   - `oagent claude mcp serve` — run the Claude Code channel MCP that bridges to a running engine. Flags: `--engine-url`, `--mcp-name`.
 
