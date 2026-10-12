@@ -9,6 +9,7 @@ import * as schema from './db/schema.ts';
 import { type Backend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
+import type { WorktreeRequest } from './worktree.ts';
 
 type SessionRow = typeof schema.sessions.$inferSelect;
 type JobRow = typeof schema.jobs.$inferSelect;
@@ -96,7 +97,7 @@ type StartInput = {
 	agentType?: string;
 	agent?: import('./agents.ts').AgentDefinition;
 	forkId?: string;
-	worktree?: boolean;
+	worktree?: WorktreeRequest;
 };
 
 export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {

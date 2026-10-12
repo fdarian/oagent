@@ -1,5 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
+import { DEFAULT_WORKTREE_SENTINEL, rewriteBareWorktreeFlag } from './start.ts';
 
 async function runCli(args: ReadonlyArray<string>) {
 	const child = Bun.spawn(
@@ -21,16 +22,7 @@ async function runCli(args: ReadonlyArray<string>) {
 test('session --help lists every subcommand', async () => {
 	const result = await runCli(['session', '--help']);
 	expect(result.exitCode).toBe(0);
-	for (const name of [
-		'start',
-		'send',
-		'read',
-		'cancel',
-		'list',
-		'models',
-		'agents',
-		'aliases',
-	]) {
+	for (const name of ['start', 'send', 'read', 'cancel', 'list']) {
 		expect(result.stdout).toContain(name);
 	}
 });
@@ -45,6 +37,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 			'--agent',
 			'--fork',
 			'--worktree',
+			'--worktree-base-branch',
 			'--detach',
 			'--json',
 			'--engine-url',
@@ -54,9 +47,6 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 	['read', ['--wait', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
 	['list', ['--cwd', '--all', '--json', '--engine-url']],
-	['models', ['--backend', '--format', '--engine-url']],
-	['agents', ['--format', '--engine-url']],
-	['aliases', ['--format', '--engine-url']],
 ];
 
 describe('session subcommand help', () => {
@@ -80,4 +70,80 @@ test('session start with empty piped stdin fails before contacting the engine', 
 	]);
 	expect(result.exitCode).toBe(1);
 	expect(result.stderr).toContain('The prompt is empty');
+});
+
+test('session start rejects --worktree-base-branch without --worktree', async () => {
+	const result = await runCli([
+		'session',
+		'start',
+		'--worktree-base-branch',
+		'develop',
+		'--engine-url',
+		'http://127.0.0.1:9',
+		'prompt',
+	]);
+	expect(result.exitCode).toBe(1);
+	expect(result.stderr).toContain('--worktree-base-branch requires --worktree');
+});
+
+test('session start parses bare --worktree and --worktree with a branch', async () => {
+	for (const worktreeArgs of [['--worktree'], ['--worktree', 'my-branch']]) {
+		const result = await runCli([
+			'session',
+			'start',
+			...worktreeArgs,
+			'--worktree-base-branch',
+			'develop',
+			'--engine-url',
+			'http://127.0.0.1:9',
+		]);
+		// Parsing and validation pass; the empty stdin prompt is the first failure.
+		expect(result.stderr).toContain('The prompt is empty');
+	}
+});
+
+describe('rewriteBareWorktreeFlag', () => {
+	const sentinel = `--worktree=${DEFAULT_WORKTREE_SENTINEL}`;
+
+	test('rewrites a bare flag at the end', () => {
+		expect(rewriteBareWorktreeFlag(['session', 'start', '--worktree'])).toEqual(
+			['session', 'start', sentinel],
+		);
+	});
+
+	test('rewrites a bare flag followed by another flag', () => {
+		expect(
+			rewriteBareWorktreeFlag([
+				'session',
+				'start',
+				'--worktree',
+				'--json',
+				'hi',
+			]),
+		).toEqual(['session', 'start', sentinel, '--json', 'hi']);
+	});
+
+	test('leaves a flag with a value untouched', () => {
+		const spaced = ['session', 'start', '--worktree', 'my-branch', 'hi'];
+		const inline = ['session', 'start', '--worktree=my-branch', 'hi'];
+		expect(rewriteBareWorktreeFlag(spaced)).toEqual(spaced);
+		expect(rewriteBareWorktreeFlag(inline)).toEqual(inline);
+	});
+
+	test('stops scanning at --', () => {
+		const args = ['session', 'start', '--', '--worktree'];
+		expect(rewriteBareWorktreeFlag(args)).toEqual(args);
+	});
+
+	test('never touches --worktree-base-branch', () => {
+		const args = ['session', 'start', '--worktree-base-branch'];
+		expect(rewriteBareWorktreeFlag(args)).toEqual(args);
+	});
+
+	test('leaves other commands untouched', () => {
+		const send = ['session', 'send', '--worktree'];
+		const jobs = ['jobs', 'list', '--worktree'];
+		expect(rewriteBareWorktreeFlag(send)).toEqual(send);
+		expect(rewriteBareWorktreeFlag(jobs)).toEqual(jobs);
+	});
 });

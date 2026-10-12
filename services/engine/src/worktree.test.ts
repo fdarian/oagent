@@ -112,3 +112,49 @@ test('creates a worktree and returns the corresponding subdirectory', async () =
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test('uses the requested base instead of the current branch', async () => {
+	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'oagent-worktree-base-'));
+	const repo = path.join(root, 'repo');
+	fs.mkdirSync(repo, { recursive: true });
+	const git = (args: string[]) => {
+		const result = Bun.spawnSync(
+			[
+				'git',
+				'-c',
+				'user.name=Test',
+				'-c',
+				'user.email=test@example.invalid',
+				...args,
+			],
+			{ cwd: repo },
+		);
+		if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+		return result.stdout.toString().trim();
+	};
+	try {
+		git(['init', '-b', 'main']);
+		git(['commit', '--allow-empty', '-m', 'initial']);
+		git(['switch', '-c', 'feature']);
+		git(['commit', '--allow-empty', '-m', 'feature work']);
+		const featureHead = git(['rev-parse', 'HEAD']);
+		git(['switch', 'main']);
+		const worktrees = await Effect.runPromise(
+			Worktrees.make.pipe(
+				Effect.provideService(Settings, {
+					getWorktree: () => ({
+						enabled: true,
+						createCommand: 'git worktree add -b {{branch}} ../created {{base}}',
+					}),
+				} as Settings['Service']),
+			),
+		);
+		await Effect.runPromise(worktrees.create(repo, 'oagent/based', 'feature'));
+		const created = Bun.spawnSync(['git', 'rev-parse', 'HEAD'], {
+			cwd: path.join(root, 'created'),
+		});
+		expect(created.stdout.toString().trim()).toBe(featureHead);
+	} finally {
+		fs.rmSync(root, { recursive: true, force: true });
+	}
+});

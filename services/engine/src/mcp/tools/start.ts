@@ -201,7 +201,7 @@ export const startTool = {
 				model: args.model,
 				agentType: args.agent_type,
 				forkId: args.forkId,
-				worktree: args.worktree,
+				worktree: args.worktree === true ? {} : undefined,
 			})
 			.pipe(
 				Effect.tap((result) =>

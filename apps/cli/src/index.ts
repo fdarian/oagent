@@ -4,13 +4,17 @@ import * as BunServices from '@effect/platform-bun/BunServices';
 import { Effect } from 'effect';
 import { Command } from 'effect/cli';
 import cliPackage from '../package.json' with { type: 'json' };
+import { agents } from './commands/agents';
+import { aliases } from './commands/aliases';
 import { claudeCmd } from './commands/claude';
 import { doctorCmd } from './commands/doctor';
 import { jobsCmd } from './commands/jobs';
 import { mcpCmd } from './commands/mcp';
+import { models } from './commands/models';
 import { serveCmd } from './commands/serve';
 import { serviceCmd } from './commands/service';
 import { sessionCmd } from './commands/session';
+import { rewriteBareWorktreeFlag } from './commands/session/start';
 import type { Version } from './lib/misc';
 
 declare const OAGENT_BUILD_VERSION: string;
@@ -30,14 +34,17 @@ const cli = Command.make('oagent').pipe(
 		claudeCmd(version),
 		jobsCmd(version),
 		sessionCmd,
+		models,
+		agents,
+		aliases,
 		doctorCmd(version),
 		serviceCmd(version),
 	]),
 );
 
-const program = Command.run({
-	version: version,
-})(cli);
+const program = Command.runWith(cli, { version })(
+	rewriteBareWorktreeFlag(process.argv.slice(2)),
+);
 
 // Each subcommand provides Engine.layer itself where needed. The `claude mcp serve`
 // channel bridge deliberately omits it: it talks to a running engine over HTTP, so

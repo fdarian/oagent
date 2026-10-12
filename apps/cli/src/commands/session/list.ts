@@ -6,10 +6,10 @@ import {
 	callEngine,
 	connectEngine,
 	engineUrlFlag,
-	jsonFlag,
 	reportFailure,
 	writeStdout,
-} from './shared.ts';
+} from '#/lib/engine-cli.ts';
+import { jsonFlag } from './shared.ts';
 
 /** `undefined` means no filter. Relative `--cwd` paths resolve against the shell's directory. */
 export function resolveListCwd(input: {
