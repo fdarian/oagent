@@ -217,7 +217,7 @@ const router = procedure.router({
 						cwd: options.input.cwd,
 						model: options.input.model,
 						agentType: options.input.agent_type,
-						worktree: options.input.worktree,
+						worktree: options.input.worktree === true ? {} : undefined,
 					});
 				});
 				yield* Effect.logInfo(
@@ -305,7 +305,12 @@ const router = procedure.router({
 						model: Schema.optional(Schema.String),
 						agent_type: Schema.optional(Schema.String),
 						forkId: Schema.optional(Schema.String),
-						worktree: Schema.optional(Schema.Boolean),
+						worktree: Schema.optional(
+							Schema.Struct({
+								branch: Schema.optional(Schema.String),
+								base: Schema.optional(Schema.String),
+							}),
+						),
 					}),
 				),
 			)

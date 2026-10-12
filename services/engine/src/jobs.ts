@@ -24,7 +24,11 @@ import {
 	recoveryDecision,
 } from './job-recovery.ts';
 import { ModelResolutionError, parseModelInput } from './model-input.ts';
-import { type WorktreeError, Worktrees } from './worktree.ts';
+import {
+	type WorktreeError,
+	type WorktreeRequest,
+	Worktrees,
+} from './worktree.ts';
 
 export { ModelResolutionError } from './model-input.ts';
 
@@ -1079,7 +1083,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		};
 
 		const resolveJobWorktree = (
-			input: ReserveJobInput & { worktree?: boolean },
+			input: ReserveJobInput & { worktree?: WorktreeRequest },
 			reservation: JobReservation,
 		): Effect.Effect<
 			{ path: string; branch: string | undefined } | undefined,
@@ -1092,16 +1096,21 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						branch: input.session.worktree_branch ?? undefined,
 					};
 				}
-				if (input.worktree !== true) return undefined;
+				if (input.worktree === undefined) return undefined;
 
-				const branch = `oagent/${reservation.jobId.slice(-8)}`;
-				const path = yield* worktrees.create(input.session.cwd, branch);
+				const branch =
+					input.worktree.branch ?? `oagent/${reservation.jobId.slice(-8)}`;
+				const path = yield* worktrees.create(
+					input.session.cwd,
+					branch,
+					input.worktree.base,
+				);
 				return { path, branch };
 			});
 
 		const start = (
 			input: ReserveJobInput & {
-				worktree?: boolean;
+				worktree?: WorktreeRequest;
 				agentPrompt?: string;
 				onPromptDispatch?: () => void;
 			},
