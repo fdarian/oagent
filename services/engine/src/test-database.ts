@@ -17,6 +17,7 @@ CREATE TABLE sessions (
 	reasoning_effort TEXT,
 	harness_session_id TEXT,
 	cwd TEXT NOT NULL,
+	origin_cwd TEXT NOT NULL,
 	worktree_path TEXT,
 	worktree_branch TEXT,
 	forked_from_job_id INTEGER REFERENCES jobs(id),

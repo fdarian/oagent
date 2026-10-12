@@ -84,7 +84,11 @@ describe('resolveListCwd', () => {
 
 	test('resolves relative paths against the current directory', () => {
 		expect(
-			resolveListCwd({ cwd: 'apps/web', all: false, currentDirectory: '/repo' }),
+			resolveListCwd({
+				cwd: 'apps/web',
+				all: false,
+				currentDirectory: '/repo',
+			}),
 		).toBe('/repo/apps/web');
 		expect(
 			resolveListCwd({ cwd: '/other', all: false, currentDirectory: '/repo' }),

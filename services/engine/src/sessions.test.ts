@@ -1272,8 +1272,8 @@ describe('session turns', () => {
 		expect(beforeForks).toEqual(['msg-after-first-turn']);
 		expect(calls).toEqual([
 			{ sessionId: 'ses_acp_fork', model: 'second-model' },
-			{ sessionId: 'ses_acp_fork', model: 'second-model' },
 			{ sessionId: 'ses_rest_fork', model: 'first-model' },
+			{ sessionId: 'ses_acp_fork', model: 'second-model' },
 		]);
 		database.sqlite.close();
 	});
