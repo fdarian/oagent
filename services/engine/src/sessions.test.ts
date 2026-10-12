@@ -652,7 +652,9 @@ describe('session turns', () => {
 				}),
 			{
 				ensureWorktreesEnabled: () =>
-					Effect.fail(new WorktreeError({ message: 'Worktrees are disabled.' })),
+					Effect.fail(
+						new WorktreeError({ message: 'Worktrees are disabled.' }),
+					),
 			},
 		);
 		await expect(
