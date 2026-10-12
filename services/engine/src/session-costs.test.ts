@@ -34,6 +34,7 @@ function withCosts(
 				title: 'Test',
 				backend,
 				cwd: '/test',
+				origin_cwd: '/test',
 				harness_session_id: 'harness-id',
 			})
 			.returning()

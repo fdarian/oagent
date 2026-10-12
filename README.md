@@ -154,7 +154,7 @@ The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in
   - `oagent session send <sessionId> [prompt]` — send a message to a session. Flags: `--detach`, `--json`.
   - `oagent session read <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
   - `oagent session cancel <sessionId>` — cancel the running turn. Flag: `--json`.
-  - `oagent session list` — list recent sessions. Flags: `--cwd`, `--json`.
+  - `oagent session list` — list recent sessions under the current directory. Flags: `--cwd`, `--all`, `--json`.
 - **models / agents / aliases** — list valid `--model` / `--agent` values for `session start`.
   - `oagent models --backend <backend>`, `oagent agents`, `oagent aliases`. Flags: `--engine-url`, `--format` (`toon`|`json`).
 - **claude**

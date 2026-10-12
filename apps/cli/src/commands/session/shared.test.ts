@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { resolveListCwd } from './list.ts';
 import { deriveTitle, resolvePrompt } from './shared.ts';
 
 describe('deriveTitle', () => {
@@ -71,5 +72,35 @@ describe('resolvePrompt', () => {
 				readStdin: unreadable,
 			}),
 		).rejects.toThrow('empty');
+	});
+});
+
+describe('resolveListCwd', () => {
+	test('defaults to the current directory', () => {
+		expect(
+			resolveListCwd({ cwd: undefined, all: false, currentDirectory: '/repo' }),
+		).toBe('/repo');
+	});
+
+	test('resolves relative paths against the current directory', () => {
+		expect(
+			resolveListCwd({
+				cwd: 'apps/web',
+				all: false,
+				currentDirectory: '/repo',
+			}),
+		).toBe('/repo/apps/web');
+		expect(
+			resolveListCwd({ cwd: '/other', all: false, currentDirectory: '/repo' }),
+		).toBe('/other');
+	});
+
+	test('--all disables the filter and conflicts with --cwd', () => {
+		expect(
+			resolveListCwd({ cwd: undefined, all: true, currentDirectory: '/repo' }),
+		).toBeUndefined();
+		expect(() =>
+			resolveListCwd({ cwd: '/x', all: true, currentDirectory: '/repo' }),
+		).toThrow('--all and --cwd cannot be used together.');
 	});
 });

@@ -46,7 +46,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 	['send', ['--detach', '--json', '--engine-url']],
 	['read', ['--wait', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
-	['list', ['--cwd', '--json', '--engine-url']],
+	['list', ['--cwd', '--all', '--json', '--engine-url']],
 ];
 
 describe('session subcommand help', () => {
