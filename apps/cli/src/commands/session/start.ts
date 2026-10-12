@@ -95,7 +95,7 @@ export const start = Command.make(
 		worktree: Flag.String('worktree').pipe(
 			Flag.optional,
 			Flag.withDescription(
-				'Create a fresh worktree for this session (requires worktrees to be enabled in oagent settings). Optional branch name; bare `--worktree` uses the default `oagent/<id>` branch.',
+				'Create a fresh worktree for this session. Optional branch name; bare `--worktree` uses the default `oagent/<id>` branch.',
 			),
 		),
 		worktreeBaseBranch: Flag.String('worktree-base-branch').pipe(

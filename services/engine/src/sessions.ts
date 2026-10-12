@@ -8,7 +8,7 @@ import * as schema from './db/schema.ts';
 import { type Backend, parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
-import type { WorktreeRequest } from './worktree.ts';
+import { type WorktreeRequest, Worktrees } from './worktree.ts';
 
 type SessionRow = typeof schema.sessions.$inferSelect;
 type JobRow = typeof schema.jobs.$inferSelect;
@@ -91,6 +91,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		const db = dbService.db;
 		const jobs = yield* Jobs;
 		const harnessRegistry = yield* HarnessRegistry;
+		const worktrees = yield* Worktrees;
 
 		const insertSession = (input: {
 			title: string;
@@ -330,6 +331,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						message: 'agent and agent_type are mutually exclusive',
 					});
 				}
+				if (input.worktree !== undefined) yield* worktrees.ensureEnabled();
 				const source =
 					input.forkId === undefined ? undefined : findForkSource(input.forkId);
 				const forkAgentTarget =
@@ -729,5 +731,6 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		Layer.provide(Jobs.layer),
 		Layer.provide(HarnessRegistry.layer),
 		Layer.provide(Db.layer),
+		Layer.provide(Worktrees.layer),
 	);
 }

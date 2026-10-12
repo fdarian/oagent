@@ -150,6 +150,7 @@ async function createSideChatServices(
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Jobs, jobs),
 			Effect.provideService(HarnessRegistry, harnessRegistry),
+			Effect.provideService(Worktrees, {} as Worktrees['Service']),
 		),
 	);
 	const sideChats = await Effect.runPromise(
@@ -178,6 +179,7 @@ async function createSideChatService(
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Jobs, jobs),
 			Effect.provideService(HarnessRegistry, harnessRegistry),
+			Effect.provideService(Worktrees, {} as Worktrees['Service']),
 		),
 	);
 	return Effect.runPromise(

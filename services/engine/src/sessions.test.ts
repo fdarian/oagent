@@ -10,7 +10,7 @@ import { Jobs } from './jobs.ts';
 import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { createTestDatabase } from './test-database.ts';
-import { Worktrees } from './worktree.ts';
+import { WorktreeError, Worktrees } from './worktree.ts';
 
 type TestDatabase = ReturnType<typeof createTestDatabase>;
 type TurnInput = Parameters<Harness['runTurn']>[0];
@@ -27,6 +27,7 @@ function createServices(
 		getFirstMessageAfter?: Harness['getFirstMessageAfter'];
 		getLatestMessageId?: Harness['getLatestMessageId'];
 		agentResolve?: Agents['Service']['resolve'];
+		ensureWorktreesEnabled?: Worktrees['Service']['ensureEnabled'];
 	},
 ) {
 	const harness = {
@@ -58,6 +59,7 @@ function createServices(
 			((name: string) => Effect.succeed(`${name}-target`)),
 	} as unknown as Agents['Service'];
 	const worktrees = {
+		ensureEnabled: options?.ensureWorktreesEnabled ?? (() => Effect.void),
 		create: () => Effect.succeed('/tmp/worktree'),
 	} as unknown as Worktrees['Service'];
 
@@ -76,6 +78,7 @@ function createServices(
 				Effect.provideService(Db, dbService),
 				Effect.provideService(HarnessRegistry, registry),
 				Effect.provideService(Jobs, jobs),
+				Effect.provideService(Worktrees, worktrees),
 			),
 		).then((sessions) => ({ jobs, sessions, harness })),
 	);
@@ -635,6 +638,38 @@ describe('session turns', () => {
 		expect(database.db.select().from(schema.sessions).all()).toHaveLength(0);
 		database.sqlite.close();
 	});
+
+	test('rejects a worktree request before inserting a session when worktrees are disabled', async () => {
+		const database = createTestDatabase();
+		const services = await createServices(
+			database,
+			'opencode',
+			() =>
+				Effect.succeed({
+					sessionId: 'ses_unused',
+					text: 'done',
+					stopReason: 'end_turn',
+				}),
+			{
+				ensureWorktreesEnabled: () =>
+					Effect.fail(new WorktreeError({ message: 'Worktrees are disabled.' })),
+			},
+		);
+		await expect(
+			Effect.runPromise(
+				services.sessions.start({
+					title: 'Disabled worktree',
+					prompt: 'first',
+					cwd: '/repo',
+					model: 'opencode:model',
+					worktree: {},
+				}),
+			),
+		).rejects.toMatchObject({ _tag: 'WorktreeError' });
+		expect(database.db.select().from(schema.sessions).all()).toHaveLength(0);
+		database.sqlite.close();
+	});
+
 	test('persists a session before starting and continues idle turns with inherited settings', async () => {
 		const database = createTestDatabase();
 		const calls: Array<{

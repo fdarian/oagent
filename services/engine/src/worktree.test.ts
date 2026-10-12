@@ -158,3 +158,20 @@ test('uses the requested base instead of the current branch', async () => {
 		fs.rmSync(root, { recursive: true, force: true });
 	}
 });
+
+test('ensureEnabled fails with a clear error when worktrees are disabled', async () => {
+	const worktrees = await Effect.runPromise(
+		Worktrees.make.pipe(
+			Effect.provideService(Settings, {
+				getWorktree: () => ({ enabled: false, createCommand: '' }),
+			} as Settings['Service']),
+		),
+	);
+	const error = await Effect.runPromise(Effect.flip(worktrees.ensureEnabled()));
+	expect(error._tag).toBe('WorktreeError');
+	expect(error.message).toContain('Worktrees are disabled');
+	const createError = await Effect.runPromise(
+		Effect.flip(worktrees.create('/tmp', 'oagent/x')),
+	);
+	expect(createError.message).toBe(error.message);
+});
