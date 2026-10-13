@@ -10,7 +10,7 @@ import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
-import { createIdleTracker } from './idle.ts';
+import { createIdleTracker, trackResponseBody } from './idle.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
@@ -206,32 +206,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						request.signal.addEventListener('abort', finish, { once: true });
 						try {
 							const response = await dispatch(request);
-							if (response.body === null) {
-								finish();
-								return response;
-							}
-							const reader = response.body.getReader();
-							return new Response(
-								new ReadableStream({
-									async pull(controller) {
-										try {
-											const chunk = await reader.read();
-											if (chunk.done) {
-												finish();
-												controller.close();
-											} else controller.enqueue(chunk.value);
-										} catch (cause) {
-											finish();
-											controller.error(cause);
-										}
-									},
-									async cancel(reason) {
-										finish();
-										await reader.cancel(reason);
-									},
-								}),
-								response,
-							);
+							return trackResponseBody(response, finish);
 						} catch (cause) {
 							finish();
 							throw cause;

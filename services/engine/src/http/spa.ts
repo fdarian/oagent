@@ -5,5 +5,6 @@ export const serveSPA = (
 ): Response | undefined => {
 	const filePath = filemap[pathname] ?? filemap['/index.html'];
 	if (filePath === undefined) return undefined;
-	return new Response(Bun.file(filePath));
+	const file = Bun.file(filePath);
+	return new Response(file, { headers: { 'content-type': file.type } });
 };

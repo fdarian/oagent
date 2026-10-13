@@ -1,6 +1,14 @@
 import { expect, test } from 'bun:test';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { Duration, Effect } from 'effect';
-import { createIdleTracker, parseIdleDuration } from './idle.ts';
+import { serveSPA } from './http/spa.ts';
+import {
+	createIdleTracker,
+	parseIdleDuration,
+	trackResponseBody,
+} from './idle.ts';
 
 test('duration shorthand is accepted and invalid durations fail', async () => {
 	expect(
@@ -32,4 +40,32 @@ test('idle decisions include requests, jobs, activity and sticky MCP', () => {
 	tracker.enter('/mcp')();
 	now = 1000;
 	expect(tracker.shouldExit(100, false)).toBe(false);
+});
+
+test('tracked SPA asset responses keep their content-type', async () => {
+	const dir = mkdtempSync(join(tmpdir(), 'idle-spa-'));
+	const asset = join(dir, 'app.js');
+	writeFileSync(asset, 'export const x = 1;');
+	let finished = 0;
+	const server = Bun.serve({
+		port: 0,
+		fetch: (request) => {
+			const response = serveSPA(
+				{ '/app.js': asset },
+				new URL(request.url).pathname,
+			);
+			if (response === undefined)
+				return new Response('Not Found', { status: 404 });
+			return trackResponseBody(response, () => finished++);
+		},
+	});
+	try {
+		const response = await fetch(`http://127.0.0.1:${server.port}/app.js`);
+		expect(response.headers.get('content-type')).toContain('javascript');
+		expect(await response.text()).toBe('export const x = 1;');
+		expect(finished).toBe(1);
+	} finally {
+		await server.stop(true);
+		rmSync(dir, { recursive: true });
+	}
 });
