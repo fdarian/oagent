@@ -100,9 +100,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
-		const services = yield* Effect.context<
-			Exclude<EngineServices, IdleExit>
-		>();
+		const services = yield* Effect.context<Exclude<EngineServices, IdleExit>>();
 		const getMcpInstructions = () =>
 			formatMcpInstructions(jobs.listAliases(), agents.list());
 		yield* Effect.forkScoped(
