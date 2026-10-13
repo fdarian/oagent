@@ -14,13 +14,12 @@ function runUninstall() {
 		const paths = yield* getServicePaths();
 		const launchdStopped = yield* bootoutService(paths);
 		const server = yield* stopManagedServer(paths.pidPath);
-		const engine = yield* stopManagedServer(paths.enginePidPath);
 		yield* removePlistFile(paths.plistPath);
 
 		writeLines([
 			'service uninstalled',
 			`label: ${SERVICE_LABEL}`,
-			`service stopped: ${server.stopped || engine.stopped || launchdStopped ? 'yes' : 'no'}`,
+			`service stopped: ${server.stopped || launchdStopped ? 'yes' : 'no'}`,
 			'run at login: no',
 			'plist removed',
 		]);

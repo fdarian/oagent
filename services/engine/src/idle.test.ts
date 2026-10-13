@@ -6,6 +6,7 @@ import { Duration, Effect } from 'effect';
 import { serveSPA } from './http/spa.ts';
 import {
 	createIdleTracker,
+	IdleExit,
 	parseIdleDuration,
 	trackResponseBody,
 } from './idle.ts';
@@ -40,6 +41,28 @@ test('idle decisions include requests, jobs, activity and sticky MCP', () => {
 	tracker.enter('/mcp')();
 	now = 1000;
 	expect(tracker.shouldExit(100, false)).toBe(false);
+});
+
+test('disable() permanently turns off idle exit', () => {
+	let now = 0;
+	const tracker = createIdleTracker(() => now);
+	expect(tracker.isActive()).toBe(true);
+	tracker.disable();
+	now = 1000;
+	expect(tracker.isActive()).toBe(false);
+	expect(tracker.shouldExit(100, false)).toBe(false);
+});
+
+test('IdleExit service reflects the tracker and is inert without one', async () => {
+	const tracker = createIdleTracker();
+	const service = IdleExit.fromTracker(tracker);
+	expect(await Effect.runPromise(service.isActive)).toBe(true);
+	await Effect.runPromise(service.disable);
+	expect(await Effect.runPromise(service.isActive)).toBe(false);
+
+	const inert = IdleExit.fromTracker(undefined);
+	await Effect.runPromise(inert.disable);
+	expect(await Effect.runPromise(inert.isActive)).toBe(false);
 });
 
 test('tracked SPA asset responses keep their content-type', async () => {

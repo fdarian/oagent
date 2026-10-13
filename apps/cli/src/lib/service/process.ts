@@ -1,12 +1,13 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { Effect } from 'effect';
 import { ServiceError } from '#/lib/service/errors.ts';
+import { findServeIndex, tokenizeCommand } from '#/lib/service/serve-argv.ts';
 
 export type ManagedServerStatus = {
 	pid: number | undefined;
 	running: boolean;
-	binaryPath: string | undefined;
+	/** Parsed `ps` command tokens of the running process. */
+	argv: ReadonlyArray<string> | undefined;
 };
 
 export type StartManagedServerResult = {
@@ -25,44 +26,6 @@ function errorMessage(cause: unknown): string {
 
 function isMissingProcess(cause: unknown): boolean {
 	return cause instanceof Error && 'code' in cause && cause.code === 'ESRCH';
-}
-
-function isOagentServeCommand(command: string): boolean {
-	const tokens = command.trim().split(/\s+/);
-	for (let index = 0; index < tokens.length; index += 1) {
-		const token = tokens[index];
-		if (token === undefined) {
-			continue;
-		}
-
-		const commandName = path.basename(token);
-		if (
-			commandName !== 'oagent' &&
-			!commandName.endsWith('oagent') &&
-			commandName !== 'index.ts'
-		) {
-			continue;
-		}
-
-		const nextToken = tokens[index + 1];
-		if (nextToken === 'serve') {
-			return true;
-		}
-	}
-
-	return false;
-}
-
-function getProcessBinaryPath(command: string): string | undefined {
-	const trimmedCommand = command.trim();
-	if (trimmedCommand.length === 0) {
-		return undefined;
-	}
-
-	const whitespaceIndex = trimmedCommand.search(/\s/);
-	return whitespaceIndex === -1
-		? trimmedCommand
-		: trimmedCommand.slice(0, whitespaceIndex);
 }
 
 function readPidFile(
@@ -185,16 +148,17 @@ export function loadManagedServerStatus(
 	return Effect.gen(function* () {
 		const pid = yield* readPidFile(pidPath);
 		if (pid === undefined) {
-			return { pid: undefined, running: false, binaryPath: undefined };
+			return { pid: undefined, running: false, argv: undefined };
 		}
 
 		const command = yield* readProcessCommand(pid);
-		if (command === undefined || !isOagentServeCommand(command)) {
+		const argv = command === undefined ? undefined : tokenizeCommand(command);
+		if (argv === undefined || findServeIndex(argv) === undefined) {
 			yield* removePidFile(pidPath);
-			return { pid: undefined, running: false, binaryPath: undefined };
+			return { pid: undefined, running: false, argv: undefined };
 		}
 
-		return { pid, running: true, binaryPath: getProcessBinaryPath(command) };
+		return { pid, running: true, argv };
 	});
 }
 

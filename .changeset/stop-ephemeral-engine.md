@@ -2,4 +2,4 @@
 "oagent": patch
 ---
 
-`oagent service stop` and `uninstall` now also stop the on-demand engine spawned by the CLI.
+On-demand and `service start` daemons now share one pid file, so `oagent service stop`/`uninstall` stop whichever runs, and `service start` switches a running on-demand daemon to service mode in place.

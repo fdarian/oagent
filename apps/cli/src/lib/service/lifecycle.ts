@@ -3,6 +3,7 @@ import { getOagentHomeDir } from '@oagent/engine';
 import { Effect } from 'effect';
 import type { ConfigError } from 'effect/Config';
 import type { Path } from 'effect/Path';
+import { isIdleExitActive, requireServeArgv } from '#/lib/service/daemon.ts';
 import {
 	ensureMacOs,
 	getCallerPath,
@@ -27,6 +28,9 @@ import {
 	writePlistFile,
 } from '#/lib/service/plist.ts';
 import { loadManagedServerStatus } from '#/lib/service/process.ts';
+import type { ServeArgv } from '#/lib/service/serve-argv.ts';
+
+export type DaemonMode = 'service' | 'on-demand' | 'not-responding';
 
 export type ServiceStatus =
 	| {
@@ -35,6 +39,7 @@ export type ServiceStatus =
 			pid: number | undefined;
 			binaryPath: undefined;
 			runningBinaryPath: string | undefined;
+			mode: DaemonMode | undefined;
 			runAtLoad: false;
 			port: undefined;
 			paths: ServicePaths;
@@ -45,6 +50,7 @@ export type ServiceStatus =
 			pid: number | undefined;
 			binaryPath: string;
 			runningBinaryPath: string | undefined;
+			mode: DaemonMode | undefined;
 			runAtLoad: boolean;
 			port: number;
 			paths: ServicePaths;
@@ -55,6 +61,18 @@ export type InstallResult = {
 	port: number;
 	paths: ServicePaths;
 };
+
+function loadDaemonMode(argv: ServeArgv): Effect.Effect<DaemonMode, never> {
+	if (!argv.idleExit) {
+		return Effect.succeed('service');
+	}
+	return isIdleExitActive(argv).pipe(
+		Effect.map((active): DaemonMode => (active ? 'on-demand' : 'service')),
+		Effect.catchTag('ServiceError', () =>
+			Effect.succeed<DaemonMode>('not-responding'),
+		),
+	);
+}
 
 export function loadServiceStatus(): Effect.Effect<
 	ServiceStatus,
@@ -67,15 +85,19 @@ export function loadServiceStatus(): Effect.Effect<
 		const paths = yield* getServicePaths();
 		const domain = yield* getLaunchctlDomain();
 		const installed = fs.existsSync(paths.plistPath);
-		const managedServer = yield* loadManagedServerStatus(paths.pidPath);
+		const daemon = yield* loadManagedServerStatus(paths.pidPath);
+		const argv = daemon.running ? yield* requireServeArgv(daemon) : undefined;
+		const runningBinaryPath = argv?.binary.join(' ');
+		const mode = argv === undefined ? undefined : yield* loadDaemonMode(argv);
 
 		if (!installed) {
 			return {
 				installed: false,
 				loaded: false,
-				pid: managedServer.pid,
+				pid: daemon.pid,
 				binaryPath: undefined,
-				runningBinaryPath: managedServer.binaryPath,
+				runningBinaryPath,
+				mode,
 				runAtLoad: false,
 				port: undefined,
 				paths,
@@ -93,9 +115,10 @@ export function loadServiceStatus(): Effect.Effect<
 			return {
 				installed: true,
 				loaded: false,
-				pid: managedServer.pid,
+				pid: daemon.pid,
 				binaryPath: configuration.binaryPath,
-				runningBinaryPath: managedServer.binaryPath,
+				runningBinaryPath,
+				mode,
 				runAtLoad: configuration.runAtLoad,
 				port: configuration.port,
 				paths,
@@ -113,9 +136,10 @@ export function loadServiceStatus(): Effect.Effect<
 		return {
 			installed: true,
 			loaded: true,
-			pid: managedServer.pid,
+			pid: daemon.pid,
 			binaryPath: configuration.binaryPath,
-			runningBinaryPath: managedServer.binaryPath,
+			runningBinaryPath,
+			mode,
 			runAtLoad: configuration.runAtLoad,
 			port: configuration.port,
 			paths,

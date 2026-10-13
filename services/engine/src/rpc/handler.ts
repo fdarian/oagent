@@ -4,6 +4,7 @@ import { Effect } from 'effect';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
 import { HarnessModelError } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
+import type { IdleExit } from '../idle.ts';
 import { JobNotFound, JobSteerError, ModelResolutionError } from '../jobs.ts';
 import { SessionCostError } from '../session-costs.ts';
 import {
@@ -86,7 +87,7 @@ function toProcedureError(error: unknown) {
 }
 
 export const createEngineHandler = Effect.gen(function* () {
-	const services = yield* Effect.context<EngineServices>();
+	const services = yield* Effect.context<Exclude<EngineServices, IdleExit>>();
 	const handler = new RPCHandler(router, {
 		interceptors: [
 			onError(async (error, options) => {

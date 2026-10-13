@@ -10,7 +10,7 @@ import { handleJobsStream } from './http/jobs-stream.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
-import { createIdleTracker, trackResponseBody } from './idle.ts';
+import { createIdleTracker, IdleExit, trackResponseBody } from './idle.ts';
 import { Jobs } from './jobs.ts';
 import { registerTools } from './mcp/register-tools.ts';
 import { formatMcpInstructions } from './mcp/tools/start.ts';
@@ -100,7 +100,9 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		const agents = yield* Agents;
 		const harnesses = yield* Harnesses;
 		const engineHandler = yield* createEngineHandler;
-		const services = yield* Effect.context<EngineServices>();
+		const services = yield* Effect.context<
+			Exclude<EngineServices, IdleExit>
+		>();
 		const getMcpInstructions = () =>
 			formatMcpInstructions(jobs.listAliases(), agents.list());
 		yield* Effect.forkScoped(
@@ -143,6 +145,11 @@ export class Engine extends Context.Service<Engine>()('engine', {
 
 					const tracker =
 						options.idleExit === undefined ? undefined : createIdleTracker();
+					const rpcServices = Context.add(
+						services,
+						IdleExit,
+						IdleExit.fromTracker(tracker),
+					);
 					const dispatch = async (request: Request) => {
 						if (!lifecycle.accepting)
 							return new Response('oagent is restarting', {
@@ -160,7 +167,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						if (url.pathname === '/rpc' || url.pathname.startsWith('/rpc/')) {
 							const result = await engineHandler.handle(request, {
 								prefix: '/rpc',
-								context: { 'effect/context': services },
+								context: { 'effect/context': rpcServices },
 							});
 							if (result.matched) {
 								return result.response;

@@ -8,6 +8,7 @@ import { AliasPresets } from '../alias-presets.ts';
 import { BACKENDS, HarnessModelError } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
+import { IdleExit } from '../idle.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
 import { SessionCosts } from '../session-costs.ts';
@@ -25,7 +26,8 @@ export type EngineServices =
 	| Harnesses
 	| Settings
 	| HarnessRegistry
-	| Agents;
+	| Agents
+	| IdleExit;
 export type EngineContext = WithEffectContext<EngineServices>;
 
 const procedure = os.$context<EngineContext>();
@@ -147,6 +149,20 @@ const toAliasDto = (alias: AliasRow) => {
 };
 
 const router = procedure.router({
+	daemon: {
+		get: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const idleExit = yield* IdleExit;
+				return { idleExit: yield* idleExit.isActive };
+			}),
+		disableIdleExit: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const idleExit = yield* IdleExit;
+				yield* idleExit.disable;
+			}),
+	},
 	jobs: {
 		list: procedure
 			.input(Schema.toStandardSchemaV1(Schema.Void))

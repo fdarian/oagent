@@ -1,4 +1,4 @@
-import { Duration, Effect } from 'effect';
+import { Context, Duration, Effect } from 'effect';
 
 export function parseIdleDuration(value: string) {
 	return Effect.try(() => {
@@ -42,6 +42,12 @@ export function createIdleTracker(now = Date.now) {
 				lastActivity = now();
 			};
 		},
+		disable() {
+			sticky = true;
+		},
+		isActive() {
+			return !sticky;
+		},
 		shouldExit(durationMs: number, running: boolean) {
 			return (
 				!sticky &&
@@ -51,6 +57,24 @@ export function createIdleTracker(now = Date.now) {
 			);
 		},
 	};
+}
+
+export type IdleTracker = ReturnType<typeof createIdleTracker>;
+
+export class IdleExit extends Context.Service<
+	IdleExit,
+	{
+		readonly isActive: Effect.Effect<boolean>;
+		readonly disable: Effect.Effect<void>;
+	}
+>()('oagent/IdleExit') {
+	/** Servers started without `--idle-exit` have no tracker: inactive, nothing to disable. */
+	static fromTracker(tracker: IdleTracker | undefined) {
+		return IdleExit.of({
+			isActive: Effect.sync(() => tracker?.isActive() ?? false),
+			disable: Effect.sync(() => tracker?.disable()),
+		});
+	}
 }
 
 /** Calls `finish` once the response body is fully read, errors or is cancelled. */

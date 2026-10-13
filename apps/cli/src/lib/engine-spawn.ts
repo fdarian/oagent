@@ -4,6 +4,11 @@ import { Effect } from 'effect';
 import { createEngineClient } from './engine-client.ts';
 import { getServiceStartCommand } from './service/environment.ts';
 import { getServiceLogFile, getServicePaths } from './service/paths.ts';
+import {
+	loadManagedServerStatus,
+	type ManagedServerStatus,
+} from './service/process.ts';
+import { parseServeArgv } from './service/serve-argv.ts';
 
 export function isConnectionRefused(cause: unknown): boolean {
 	if (typeof cause !== 'object' || cause === null) return false;
@@ -34,6 +39,19 @@ export function retryEngineRpc<A, E, R = never>(
 	);
 }
 
+/**
+ * A live daemon already recorded in the pid file must not be orphaned by a
+ * second spawn: only one pid is tracked, so `service stop` could not find it.
+ */
+export function describeRecordedDaemonConflict(
+	daemon: ManagedServerStatus,
+	engineUrl: string,
+): string | undefined {
+	if (!daemon.running || daemon.argv === undefined) return undefined;
+	const port = parseServeArgv(daemon.argv)?.port;
+	return `oagent serve is already running (pid ${daemon.pid}, port ${port ?? 'unknown'}), but ${engineUrl} points elsewhere; use that port or run \`oagent service stop\` first`;
+}
+
 export function engineSpawnEnvironment(port: string) {
 	return { ...process.env, OPENCODE_MCP_PORT: port };
 }
@@ -50,9 +68,14 @@ export function ensureEngine(url: string, idleExit = '10m') {
 			!['localhost', '127.0.0.1'].includes(parsed.hostname)
 		)
 			return yield* Effect.fail(first.failure);
+		const pidPath = (yield* getServicePaths()).pidPath;
+		const conflict = describeRecordedDaemonConflict(
+			yield* loadManagedServerStatus(pidPath),
+			url,
+		);
+		if (conflict !== undefined) return yield* Effect.fail(new Error(conflict));
 		const command = yield* getServiceStartCommand();
 		const logFile = yield* getServiceLogFile;
-		const enginePidPath = (yield* getServicePaths()).enginePidPath;
 		yield* Effect.try(() => {
 			const child = Bun.spawn(
 				[
@@ -74,8 +97,8 @@ export function ensureEngine(url: string, idleExit = '10m') {
 				},
 			);
 			child.unref();
-			fs.mkdirSync(path.dirname(enginePidPath), { recursive: true });
-			fs.writeFileSync(enginePidPath, `${child.pid}\n`, 'utf8');
+			fs.mkdirSync(path.dirname(pidPath), { recursive: true });
+			fs.writeFileSync(pidPath, `${child.pid}\n`, 'utf8');
 		});
 		const deadline = Date.now() + 15_000;
 		while (Date.now() < deadline) {

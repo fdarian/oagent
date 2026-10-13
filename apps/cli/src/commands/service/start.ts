@@ -1,16 +1,25 @@
 import { Effect } from 'effect';
 import { Command, Flag } from 'effect/cli';
+import { disableIdleExit, requireServeArgv } from '#/lib/service/daemon.ts';
 import {
 	ensureMacOs,
 	getServiceStartCommand,
 	validatePort,
 } from '#/lib/service/environment.ts';
+import { ServiceError } from '#/lib/service/errors.ts';
 import {
 	ensureServiceDirectories,
 	getServiceLogFile,
 	getServicePaths,
 } from '#/lib/service/paths.ts';
-import { startManagedServer } from '#/lib/service/process.ts';
+import {
+	loadManagedServerStatus,
+	startManagedServer,
+} from '#/lib/service/process.ts';
+import {
+	describeDaemonMismatch,
+	formatDaemonMismatchMessage,
+} from '#/lib/service/serve-argv.ts';
 import { portOption, writeLines } from './shared.ts';
 
 function getServeArgs(params: {
@@ -49,6 +58,31 @@ export const start = Command.make(
 			const logFile = yield* getServiceLogFile;
 			const paths = yield* getServicePaths();
 			yield* ensureServiceDirectories(paths);
+
+			const running = yield* loadManagedServerStatus(paths.pidPath);
+			if (running.running && running.pid !== undefined) {
+				const argv = yield* requireServeArgv(running);
+				const differences = describeDaemonMismatch(argv, {
+					binary: startCommand,
+					port: params.port,
+					portless: params.portless,
+				});
+				if (differences.length > 0) {
+					return yield* new ServiceError({
+						message: formatDaemonMismatchMessage(running.pid, differences),
+					});
+				}
+
+				if (argv.idleExit) {
+					yield* disableIdleExit(argv);
+					writeLines([
+						`on-demand oagent serve (pid ${running.pid}) switched to service mode`,
+						`pid: ${running.pid}`,
+						`port: ${params.port}`,
+					]);
+					return;
+				}
+			}
 
 			const result = yield* startManagedServer({
 				command: [
