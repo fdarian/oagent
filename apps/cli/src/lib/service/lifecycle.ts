@@ -39,6 +39,7 @@ export type ServiceStatus =
 			pid: number | undefined;
 			binaryPath: undefined;
 			runningBinaryPath: string | undefined;
+			runningPort: number | undefined;
 			mode: DaemonMode | undefined;
 			runAtLoad: false;
 			port: undefined;
@@ -50,6 +51,7 @@ export type ServiceStatus =
 			pid: number | undefined;
 			binaryPath: string;
 			runningBinaryPath: string | undefined;
+			runningPort: number | undefined;
 			mode: DaemonMode | undefined;
 			runAtLoad: boolean;
 			port: number;
@@ -97,6 +99,7 @@ export function loadServiceStatus(): Effect.Effect<
 				pid: daemon.pid,
 				binaryPath: undefined,
 				runningBinaryPath,
+				runningPort: argv?.port,
 				mode,
 				runAtLoad: false,
 				port: undefined,
@@ -118,6 +121,7 @@ export function loadServiceStatus(): Effect.Effect<
 				pid: daemon.pid,
 				binaryPath: configuration.binaryPath,
 				runningBinaryPath,
+				runningPort: argv?.port,
 				mode,
 				runAtLoad: configuration.runAtLoad,
 				port: configuration.port,
@@ -139,6 +143,7 @@ export function loadServiceStatus(): Effect.Effect<
 			pid: daemon.pid,
 			binaryPath: configuration.binaryPath,
 			runningBinaryPath,
+			runningPort: argv?.port,
 			mode,
 			runAtLoad: configuration.runAtLoad,
 			port: configuration.port,
