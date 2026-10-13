@@ -64,6 +64,7 @@ type LoadSessionResponse = Awaited<
 type AcpTurnRecoveryInput = {
 	env: AcpTurnEnvironment;
 	cwd: string;
+	sessionMeta?: Record<string, unknown>;
 	initialSessionLoad: boolean;
 	recovery?: AcpTurnRecovery;
 	onEvent: (event: SessionUpdate) => void;
@@ -224,6 +225,7 @@ export function createAcpTurnRecovery(
 								sessionId,
 								cwd: input.cwd,
 								mcpServers: [],
+								_meta: input.sessionMeta,
 							}),
 						catch: (cause) =>
 							recoveryFailure(
@@ -487,6 +489,7 @@ export function createAcpTurnRecovery(
 							sessionId,
 							cwd: input.cwd,
 							mcpServers: [],
+							_meta: input.sessionMeta,
 						}),
 					catch: (cause) =>
 						new AcpTurnFailed({

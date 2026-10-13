@@ -476,3 +476,183 @@ describe('subagent event timelines', () => {
 		expect(final.children.get('nested-child')?.status).toBe('failed');
 	});
 });
+
+describe('Claude subagent timelines', () => {
+	function claudeMeta(parentToolUseId: string): Record<string, unknown> {
+		return { claudeCode: { parentToolUseId, toolName: 'Agent' } };
+	}
+
+	function agentCall(
+		id: string,
+		description: string,
+		parentToolUseId?: string,
+	) {
+		return {
+			sessionUpdate: 'tool_call',
+			toolCallId: id,
+			title: 'Task',
+			status: 'in_progress',
+			rawInput: { subagent_type: 'Explore', description, prompt: 'Look' },
+			...(parentToolUseId === undefined
+				? {}
+				: { _meta: claudeMeta(parentToolUseId) }),
+		} as SessionUpdate;
+	}
+
+	test('routes inner events into a child timeline linked to the Agent call', () => {
+		let state = createInitialState();
+		state = applyEvent(state, agentCall('agent-1', 'Survey the repo'), 1000);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'agent-1',
+				status: 'in_progress',
+				_meta: claudeMeta('agent-1'),
+			} as SessionUpdate,
+			1005,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'inner-read',
+				title: 'Read file',
+				kind: 'read',
+				status: 'completed',
+				_meta: claudeMeta('agent-1'),
+			} as SessionUpdate,
+			1010,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'Found it' },
+				_meta: claudeMeta('agent-1'),
+			} as SessionUpdate,
+			1020,
+		);
+
+		const live = toDisplayState(state);
+		expect(live.parts).toHaveLength(1);
+		const agent = toolPartAt(live.parts, 0);
+		expect(agent.childSessionId).toBe('agent-1');
+		const child = live.children.get('agent-1');
+		if (child === undefined) throw new Error('Missing child timeline');
+		expect(child.title).toBe('Survey the repo');
+		expect(child.depth).toBe(1);
+		expect(child.agentName).toBe('Explore');
+		expect(child.status).toBe('running');
+		expect(toolPartAt(child.parts, 0).toolCallId).toBe('inner-read');
+		expect(child.streamingTail?.kind).toBe('text');
+
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'agent-1',
+				status: 'completed',
+				_meta: claudeMeta('agent-1'),
+			} as SessionUpdate,
+			2000,
+		);
+		const done = toDisplayState(state);
+		expect(done.children.get('agent-1')?.status).toBe('completed');
+		expect(done.parts).toHaveLength(1);
+	});
+
+	test('nests a subagent launched by a subagent', () => {
+		let state = createInitialState();
+		state = applyEvent(state, agentCall('agent-1', 'Outer'), 1000);
+		state = applyEvent(state, agentCall('agent-2', 'Inner', 'agent-1'), 1010);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'deep-read',
+				title: 'Read file',
+				status: 'completed',
+				_meta: claudeMeta('agent-2'),
+			} as SessionUpdate,
+			1020,
+		);
+
+		const display = toDisplayState(state);
+		const outer = display.children.get('agent-1');
+		const inner = display.children.get('agent-2');
+		if (outer === undefined || inner === undefined) {
+			throw new Error('Missing child timelines');
+		}
+		expect(toolPartAt(outer.parts, 0).childSessionId).toBe('agent-2');
+		expect(inner.parentId).toBe('agent-1');
+		expect(inner.depth).toBe(2);
+		expect(toolPartAt(inner.parts, 0).toolCallId).toBe('deep-read');
+	});
+
+	test('keeps parallel Agent calls with the same description apart', () => {
+		let state = createInitialState();
+		state = applyEvent(state, agentCall('agent-a', 'Same work'), 1000);
+		state = applyEvent(state, agentCall('agent-b', 'Same work'), 1001);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'b-read',
+				title: 'Read file',
+				status: 'completed',
+				_meta: claudeMeta('agent-b'),
+			} as SessionUpdate,
+			1010,
+		);
+
+		const display = toDisplayState(state);
+		expect(toolPartAt(display.parts, 0).childSessionId).toBeUndefined();
+		expect(toolPartAt(display.parts, 1).childSessionId).toBe('agent-b');
+	});
+
+	test('keeps a background Agent call running until the job terminates', () => {
+		let state = createInitialState();
+		state = applyEvent(
+			state,
+			{
+				...agentCall('agent-bg', 'Background work'),
+				rawInput: {
+					subagent_type: 'Explore',
+					description: 'Background work',
+					run_in_background: true,
+				},
+			} as SessionUpdate,
+			1000,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'agent-bg',
+				status: 'completed',
+				_meta: claudeMeta('agent-bg'),
+			} as SessionUpdate,
+			1010,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'bg-read',
+				title: 'Read file',
+				status: 'completed',
+				_meta: claudeMeta('agent-bg'),
+			} as SessionUpdate,
+			1020,
+		);
+
+		const live = toDisplayState(state);
+		expect(toolPartAt(live.parts, 0).state).toBe('output-available');
+		expect(live.children.get('agent-bg')?.status).toBe('running');
+
+		const final = finalizeState(state, 3000);
+		expect(final.children.get('agent-bg')?.status).toBe('completed');
+		expect(final.children.get('agent-bg')?.endedAt).toBe(3000);
+	});
+});

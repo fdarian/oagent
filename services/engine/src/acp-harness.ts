@@ -18,6 +18,8 @@ export function makeAcpAdapterHarness(options: {
 	/** 'discover' asks the adapter which efforts each model accepts. */
 	efforts: ReadonlyArray<ModelEffort> | 'discover';
 	omitDefaultEffort?: boolean;
+	/** Adapter-specific `_meta` sent with `newSession` and `loadSession`. */
+	sessionMeta?: Record<string, unknown>;
 }) {
 	const getBinary = () =>
 		process.env[options.binaryEnvVar] ?? options.defaultBinary;
@@ -113,6 +115,7 @@ export function makeAcpAdapterHarness(options: {
 					model: undefined,
 					reasoningEffort: undefined,
 					configOptions: getConfigOptions(input.model, input.reasoningEffort),
+					sessionMeta: options.sessionMeta,
 				}),
 			listModels: () => models.get(),
 			listModelEfforts,

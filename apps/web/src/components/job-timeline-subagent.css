@@ -9,6 +9,21 @@
 	background: transparent;
 	font: inherit;
 	text-align: left;
+	--subagent-build: #2c47c8;
+	--subagent-explore: #ac8833;
+	--subagent-plan: #c83d8b;
+	--subagent-review: #198b43;
+	--subagent-writer: #623be2;
+	--subagent-default: #007b80;
+}
+
+.dark .job-timeline-subagent {
+	--subagent-build: #7b93ff;
+	--subagent-explore: #e0bc5c;
+	--subagent-plan: #f074b6;
+	--subagent-review: #4cc97a;
+	--subagent-writer: #a590ff;
+	--subagent-default: #3fc7cd;
 }
 
 .job-timeline-subagent__surface {
@@ -19,7 +34,7 @@
 	gap: 8px;
 	padding: 8px 12px;
 	border-radius: 8px;
-	color: #007b80;
+	color: var(--subagent-default);
 	transition: background-color 150ms ease;
 }
 
@@ -73,23 +88,28 @@
 
 .job-timeline-subagent:hover .job-timeline-subagent__surface,
 .job-timeline-subagent:focus-visible .job-timeline-subagent__surface {
-	background: #f2f2f2;
+	background: color-mix(in srgb, var(--muted) 50%, transparent);
 }
 
 .job-timeline-subagent[data-active="true"] .job-timeline-subagent__surface {
-	background: #f2f2f2;
+	background: color-mix(in srgb, var(--muted) 50%, transparent);
 }
 
 .job-timeline-subagent__title {
 	height: 20px;
 	flex: 0 0 auto;
 	font-weight: 530;
-	color: #161616;
+	color: var(--foreground);
 }
 
 .job-timeline-subagent__title[data-running="true"] {
 	color: transparent;
-	background: linear-gradient(90deg, #5c5c5c 0%, #161616 50%, #5c5c5c 100%);
+	background: linear-gradient(
+		90deg,
+		var(--muted-foreground) 0%,
+		var(--foreground) 50%,
+		var(--muted-foreground) 100%
+	);
 	background-size: 360% 100%;
 	-webkit-background-clip: text;
 	background-clip: text;
@@ -112,7 +132,7 @@
 	text-overflow: ellipsis;
 	white-space: nowrap;
 	font-weight: 440;
-	color: #161616;
+	color: var(--muted-foreground);
 }
 
 .job-timeline-subagent__action {
@@ -120,7 +140,7 @@
 	flex: 0 0 auto;
 	align-items: center;
 	justify-content: center;
-	color: #808080;
+	color: var(--muted-foreground);
 	opacity: 0;
 	transition: opacity 150ms ease;
 }
@@ -137,7 +157,7 @@
 	}
 
 	.job-timeline-subagent__title[data-running="true"] {
-		color: #161616;
+		color: var(--foreground);
 		background: none;
 	}
 }

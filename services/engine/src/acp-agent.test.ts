@@ -76,6 +76,77 @@ test('returns only assistant text after the last tool call', async () => {
 	expect(result.text).toBe('The final answer');
 });
 
+test('ignores subagent output when collecting the result text and forwards sessionMeta to newSession', async () => {
+	type NewSessionResult = Awaited<
+		ReturnType<ClientSideConnection['newSession']>
+	>;
+	type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
+	const state = {
+		listener: undefined as ((update: SessionUpdate) => void) | undefined,
+		newSessionMeta: undefined as unknown,
+	};
+	const subagentMeta = { claudeCode: { parentToolUseId: 'agent-1' } };
+	const conn = {
+		newSession: async (
+			input: Parameters<ClientSideConnection['newSession']>[0],
+		): Promise<NewSessionResult> => {
+			state.newSessionMeta = input._meta;
+			return { sessionId: 'ses_test' } as NewSessionResult;
+		},
+		prompt: async (): Promise<PromptResult> => {
+			const listener = state.listener;
+			if (listener === undefined)
+				throw new Error('session listener was not set');
+			listener({
+				sessionUpdate: 'tool_call',
+				toolCallId: 'agent-1',
+				title: 'Task',
+			});
+			listener({
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'subagent text' },
+				_meta: subagentMeta,
+			});
+			listener({
+				sessionUpdate: 'tool_call',
+				toolCallId: 'inner-1',
+				title: 'Read',
+				_meta: subagentMeta,
+			});
+			listener({
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'agent-1',
+				_meta: subagentMeta,
+			});
+			listener({
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'The final answer' },
+			});
+			return { stopReason: 'end_turn' } as PromptResult;
+		},
+	} as unknown as ClientSideConnection;
+
+	const sessionMeta = {
+		claudeCode: { options: { forwardSubagentText: true } },
+	};
+	const result = await Effect.runPromise(
+		runAcpTurn(
+			{
+				conn,
+				registerListener: (_sessionId, listener) => {
+					state.listener = listener;
+					return () => {};
+				},
+				extNotificationHandlers: new Map(),
+			},
+			{ prompt: 'continue', cwd: '/tmp', sessionMeta },
+		),
+	);
+
+	expect(result.text).toBe('The final answer');
+	expect(state.newSessionMeta).toEqual(sessionMeta);
+});
+
 test('keeps the last text segment when a tool call ends the turn', async () => {
 	type NewSessionResult = Awaited<
 		ReturnType<ClientSideConnection['newSession']>

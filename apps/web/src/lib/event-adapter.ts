@@ -167,6 +167,8 @@ type TimelineReduceState = {
 
 type ChildReduceState = {
 	id: string;
+	/** `session` children are announced by the harness; `tool-call` ones are synthesized from a Claude Agent tool call. */
+	origin: 'session' | 'tool-call';
 	parentId: string;
 	depth: number;
 	title: string;
@@ -689,6 +691,21 @@ function readBoolean(value: unknown, key: string): boolean | undefined {
 	return typeof property === 'boolean' ? property : undefined;
 }
 
+/** Id of the root timeline, which is not itself a child session. */
+const ROOT_TIMELINE_ID = 'root';
+
+/** Reads the Agent tool call a Claude subagent's event belongs to. */
+function readClaudeParentToolUseId(event: SessionUpdate): string | undefined {
+	if (!('_meta' in event) || !isRecord(event._meta)) return undefined;
+	const parentToolUseId = readString(event._meta.claudeCode, 'parentToolUseId');
+	if (parentToolUseId === undefined) return undefined;
+	// An Agent call's own progress updates name themselves as parent.
+	if ('toolCallId' in event && event.toolCallId === parentToolUseId) {
+		return undefined;
+	}
+	return parentToolUseId;
+}
+
 function readNestedString(
 	value: unknown,
 	parentKey: string,
@@ -748,7 +765,11 @@ export function getSubagentToolDetails(
 
 function authoritativeChildSessionId(
 	part: TimelineToolPart,
+	children: ReadonlyMap<string, ChildReduceState>,
 ): string | undefined {
+	if (children.get(part.toolCallId)?.origin === 'tool-call') {
+		return part.toolCallId;
+	}
 	const sessionId = readNestedString(part.rawOutput, 'metadata', 'sessionID');
 	if (sessionId !== undefined) return sessionId;
 	const legacySessionId = readNestedString(
@@ -774,6 +795,7 @@ function findUnlinkedChildSessionByDescription(
 				? child.depth === 1
 				: child.parentId === parentTimelineId;
 		if (
+			child.origin === 'session' &&
 			belongsToTimeline &&
 			child.title === description &&
 			!claimedChildIds.has(child.id)
@@ -783,7 +805,11 @@ function findUnlinkedChildSessionByDescription(
 	}
 
 	for (const child of children.values()) {
-		if (child.title === description && !claimedChildIds.has(child.id)) {
+		if (
+			child.origin === 'session' &&
+			child.title === description &&
+			!claimedChildIds.has(child.id)
+		) {
 			return child.id;
 		}
 	}
@@ -795,7 +821,8 @@ function childStatusForTool(part: TimelineToolPart): ChildSessionStatus {
 	if (part.state === 'output-error') return 'failed';
 	if (
 		part.state === 'output-available' &&
-		readBoolean(part.rawInput, 'background') !== true
+		readBoolean(part.rawInput, 'background') !== true &&
+		readBoolean(part.rawInput, 'run_in_background') !== true
 	) {
 		return 'completed';
 	}
@@ -877,7 +904,7 @@ function reconcileSubagentLinks(
 			if (part.kind !== 'tool' || !isSubagentToolPart(part)) return part;
 
 			const details = getSubagentToolDetails(part);
-			const authoritativeId = authoritativeChildSessionId(part);
+			const authoritativeId = authoritativeChildSessionId(part, children);
 			const fallbackId = findUnlinkedChildSessionByDescription(
 				children,
 				claimedChildIds,
@@ -965,13 +992,74 @@ function activityForChildEvent(
 	return 'Starting';
 }
 
+type ChildRoute = {
+	meta: ChildSessionMeta;
+	origin: ChildReduceState['origin'];
+};
+
+function findToolPartOwner(
+	state: ReduceState,
+	toolCallId: string,
+): { part: TimelineToolPart; parentId: string; depth: number } | undefined {
+	const rootIndex = state.timeline.toolIndices.get(toolCallId);
+	const rootPart =
+		rootIndex === undefined ? undefined : state.timeline.parts[rootIndex];
+	if (rootPart !== undefined && rootPart.kind === 'tool') {
+		return { part: rootPart, parentId: ROOT_TIMELINE_ID, depth: 0 };
+	}
+	for (const child of state.children.values()) {
+		const index = child.timeline.toolIndices.get(toolCallId);
+		const part = index === undefined ? undefined : child.timeline.parts[index];
+		if (part !== undefined && part.kind === 'tool') {
+			return { part, parentId: child.id, depth: child.depth };
+		}
+	}
+	return undefined;
+}
+
+function resolveChildRoute(
+	state: ReduceState,
+	event: SessionUpdate,
+): ChildRoute | undefined {
+	const childMeta = readChildSessionMeta(event);
+	if (childMeta !== undefined) return { meta: childMeta, origin: 'session' };
+
+	const parentToolUseId = readClaudeParentToolUseId(event);
+	if (parentToolUseId === undefined) return undefined;
+	const existing = state.children.get(parentToolUseId);
+	if (existing !== undefined) {
+		return {
+			meta: {
+				id: existing.id,
+				parentId: existing.parentId,
+				depth: existing.depth,
+				title: existing.title,
+			},
+			origin: existing.origin,
+		};
+	}
+	// Without the Agent call there is no timeline to open, so the event stays inline.
+	const owner = findToolPartOwner(state, parentToolUseId);
+	if (owner === undefined) return undefined;
+	const description = getSubagentToolDetails(owner.part).description;
+	return {
+		meta: {
+			id: parentToolUseId,
+			parentId: owner.parentId,
+			depth: owner.depth + 1,
+			title: description === undefined ? owner.part.title : description,
+		},
+		origin: 'tool-call',
+	};
+}
+
 export function applyEvent(
 	state: ReduceState,
 	event: SessionUpdate,
 	createdAt: number,
 ): ReduceState {
-	const childMeta = readChildSessionMeta(event);
-	if (childMeta === undefined) {
+	const route = resolveChildRoute(state, event);
+	if (route === undefined) {
 		return reconcileSubagentLinks(
 			{
 				timeline: applyTimelineEvent(state.timeline, event, createdAt),
@@ -981,6 +1069,7 @@ export function applyEvent(
 		);
 	}
 
+	const childMeta = route.meta;
 	const existingChild = state.children.get(childMeta.id);
 	const previousTimeline =
 		existingChild === undefined
@@ -989,6 +1078,7 @@ export function applyEvent(
 	const timeline = applyTimelineEvent(previousTimeline, event, createdAt);
 	const child: ChildReduceState = {
 		id: childMeta.id,
+		origin: route.origin,
 		parentId: childMeta.parentId,
 		depth: childMeta.depth,
 		title: childMeta.title,
@@ -1111,6 +1201,22 @@ function finalizeTimeline(
 	};
 }
 
+/**
+ * A background Claude subagent has no completion event, but the adapter holds
+ * its turn open until the subagent settles, so a launched one is done by the
+ * time the job terminates.
+ */
+function settledOnTermination(
+	state: ReduceState,
+	child: ChildReduceState,
+): ChildSessionStatus {
+	if (child.origin !== 'tool-call') return 'failed';
+	const owner = findToolPartOwner(state, child.id);
+	return owner !== undefined && owner.part.state === 'output-available'
+		? 'completed'
+		: 'failed';
+}
+
 export function finalizeState(
 	state: ReduceState,
 	finalizedAt: number = Date.now(),
@@ -1120,7 +1226,11 @@ export function finalizeState(
 	for (const child of state.children.values()) {
 		const terminalChild =
 			child.status === 'running'
-				? { ...child, status: 'failed' as const, endedAt: finalizedAt }
+				? {
+						...child,
+						status: settledOnTermination(state, child),
+						endedAt: finalizedAt,
+					}
 				: child;
 		children.set(
 			child.id,

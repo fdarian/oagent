@@ -456,6 +456,18 @@ export function checkAcpConnection(
 	);
 }
 
+/** Whether the adapter attributed the update to a subagent's tool call. */
+function isSubagentUpdate(update: SessionUpdate): boolean {
+	const meta = update._meta;
+	if (meta === undefined || meta === null) return false;
+	const claudeCode = meta.claudeCode;
+	if (typeof claudeCode !== 'object' || claudeCode === null) return false;
+	const parentToolUseId = (claudeCode as Record<string, unknown>)
+		.parentToolUseId;
+	if (typeof parentToolUseId !== 'string') return false;
+	return !('toolCallId' in update) || update.toolCallId !== parentToolUseId;
+}
+
 export function runAcpTurn(
 	env: AcpTurnEnvironment,
 	input: {
@@ -476,6 +488,7 @@ export function runAcpTurn(
 		onPromptDispatch?: () => void;
 		skipModelSet?: boolean;
 		configOptions?: ReadonlyArray<AcpConfigOption>;
+		sessionMeta?: Record<string, unknown>;
 		recovery?: AcpTurnRecovery;
 	},
 ) {
@@ -485,10 +498,13 @@ export function runAcpTurn(
 			const recoveryController = yield* createAcpTurnRecovery({
 				env,
 				cwd: input.cwd,
+				sessionMeta: input.sessionMeta,
 				initialSessionLoad: input.sessionId !== undefined,
 				recovery: input.recovery,
 				onEvent: (update) => {
 					if (input.onEvent !== undefined) input.onEvent(update);
+					// Subagent output must not become the turn's result text.
+					if (isSubagentUpdate(update)) return;
 					if (update.sessionUpdate === 'tool_call') {
 						turnState.afterToolCall = true;
 					}
@@ -519,7 +535,12 @@ export function runAcpTurn(
 						);
 					}
 					return Effect.tryPromise({
-						try: () => env.conn.newSession({ cwd: input.cwd, mcpServers: [] }),
+						try: () =>
+							env.conn.newSession({
+								cwd: input.cwd,
+								mcpServers: [],
+								_meta: input.sessionMeta,
+							}),
 						catch: (cause) => new AcpSessionError({ cause }),
 					})
 						.pipe(
@@ -724,6 +745,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			onExtensionEvent?: (method: string, params: unknown) => void;
 			onPromptDispatch?: () => void;
 			configOptions?: ReadonlyArray<AcpConfigOption>;
+			sessionMeta?: Record<string, unknown>;
 			recovery?: AcpTurnRecovery;
 		}) =>
 			Effect.scoped(

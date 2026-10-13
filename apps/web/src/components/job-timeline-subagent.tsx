@@ -110,17 +110,17 @@ function descriptionFor(
 function agentColor(agentName: string | undefined): string {
 	switch (agentName?.toLowerCase()) {
 		case 'build':
-			return '#2c47c8';
+			return 'var(--subagent-build)';
 		case 'explore':
-			return '#ac8833';
+			return 'var(--subagent-explore)';
 		case 'plan':
-			return '#c83d8b';
+			return 'var(--subagent-plan)';
 		case 'review':
-			return '#198b43';
+			return 'var(--subagent-review)';
 		case 'writer':
-			return '#623be2';
+			return 'var(--subagent-writer)';
 		default:
-			return '#007b80';
+			return 'var(--subagent-default)';
 	}
 }
 
