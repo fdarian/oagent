@@ -29,6 +29,7 @@ export function getServicePaths(): Effect.Effect<
 		return {
 			plistPath: path.join(launchAgentsDir, `${SERVICE_LABEL}.plist`),
 			pidPath: path.join(homeDir, 'service.pid'),
+			enginePidPath: path.join(homeDir, 'engine.pid'),
 			launchAgentsDir,
 		};
 	});

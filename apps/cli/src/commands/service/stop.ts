@@ -12,7 +12,8 @@ function runStop() {
 		const paths = yield* getServicePaths();
 		const launchdStopped = yield* bootoutService(paths);
 		const server = yield* stopManagedServer(paths.pidPath);
-		const wasRunning = server.stopped || launchdStopped;
+		const engine = yield* stopManagedServer(paths.enginePidPath);
+		const wasRunning = server.stopped || engine.stopped || launchdStopped;
 
 		writeLines([
 			wasRunning ? 'service stopped' : 'service was not running',

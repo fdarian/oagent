@@ -1,7 +1,9 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { Effect } from 'effect';
 import { createEngineClient } from './engine-client.ts';
 import { getServiceStartCommand } from './service/environment.ts';
-import { getServiceLogFile } from './service/paths.ts';
+import { getServiceLogFile, getServicePaths } from './service/paths.ts';
 
 export function isConnectionRefused(cause: unknown): boolean {
 	if (typeof cause !== 'object' || cause === null) return false;
@@ -50,6 +52,7 @@ export function ensureEngine(url: string, idleExit = '10m') {
 			return yield* Effect.fail(first.failure);
 		const command = yield* getServiceStartCommand();
 		const logFile = yield* getServiceLogFile;
+		const enginePidPath = (yield* getServicePaths()).enginePidPath;
 		yield* Effect.try(() => {
 			const child = Bun.spawn(
 				[
@@ -71,6 +74,8 @@ export function ensureEngine(url: string, idleExit = '10m') {
 				},
 			);
 			child.unref();
+			fs.mkdirSync(path.dirname(enginePidPath), { recursive: true });
+			fs.writeFileSync(enginePidPath, `${child.pid}\n`, 'utf8');
 		});
 		const deadline = Date.now() + 15_000;
 		while (Date.now() < deadline) {

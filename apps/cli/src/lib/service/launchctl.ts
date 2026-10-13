@@ -12,6 +12,7 @@ export type CommandResult = {
 export type ServicePaths = {
 	plistPath: string;
 	pidPath: string;
+	enginePidPath: string;
 	launchAgentsDir: string;
 };
 
