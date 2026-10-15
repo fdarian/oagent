@@ -1,7 +1,11 @@
 import { useQuery } from '@tanstack/react-query';
-import { useMemo, useState } from 'react';
-import { groupByDay } from './format.ts';
+import { useCallback, useMemo, useState } from 'react';
 import { orpc } from './orpc.ts';
+import {
+	groupSessions,
+	isSessionGroupBy,
+	type SessionGroupBy,
+} from './session-grouping.ts';
 import { useSessionListStream } from './use-session-list-stream.ts';
 
 export type SessionListItem = {
@@ -15,6 +19,17 @@ export type SessionListItem = {
 	cwd: string;
 };
 
+const GROUP_BY_STORAGE_KEY = 'oagent-session-group-by';
+
+function readStoredGroupBy(): SessionGroupBy {
+	const stored = localStorage.getItem(GROUP_BY_STORAGE_KEY);
+	if (stored === null) return 'date';
+	if (!isSessionGroupBy(stored)) {
+		throw new Error(`Invalid stored session group-by: ${stored}`);
+	}
+	return stored;
+}
+
 export function useSessionList() {
 	useSessionListStream();
 
@@ -23,6 +38,13 @@ export function useSessionList() {
 	);
 
 	const [cwdFilter, setCwdFilter] = useState('');
+	const [groupBy, setGroupByState] =
+		useState<SessionGroupBy>(readStoredGroupBy);
+
+	const setGroupBy = useCallback((next: SessionGroupBy) => {
+		localStorage.setItem(GROUP_BY_STORAGE_KEY, next);
+		setGroupByState(next);
+	}, []);
 
 	const filtered = useMemo(() => {
 		const sessions = data ?? [];
@@ -33,7 +55,10 @@ export function useSessionList() {
 		);
 	}, [data, cwdFilter]);
 
-	const grouped = useMemo(() => groupByDay(filtered), [filtered]);
+	const grouped = useMemo(
+		() => groupSessions(filtered, groupBy),
+		[filtered, groupBy],
+	);
 
 	return {
 		sessions: filtered,
@@ -41,5 +66,7 @@ export function useSessionList() {
 		isLoading,
 		cwdFilter,
 		setCwdFilter,
+		groupBy,
+		setGroupBy,
 	};
 }

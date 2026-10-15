@@ -18,6 +18,8 @@ export const Empty: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		groupBy: 'date',
+		onGroupByChange: () => {},
 	},
 };
 
@@ -39,6 +41,8 @@ export const Dense: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		groupBy: 'date',
+		onGroupByChange: () => {},
 	},
 };
 
@@ -101,6 +105,8 @@ export const MixedStatuses: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		groupBy: 'date',
+		onGroupByChange: () => {},
 	},
 };
 
@@ -124,5 +130,7 @@ export const LongTitles: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		groupBy: 'date',
+		onGroupByChange: () => {},
 	},
 };
