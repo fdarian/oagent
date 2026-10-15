@@ -656,3 +656,383 @@ describe('Claude subagent timelines', () => {
 		expect(final.children.get('agent-bg')?.endedAt).toBe(3000);
 	});
 });
+
+describe('Claude native subagent sessions', () => {
+	function nativeMeta(
+		sessionId: string,
+		parentSessionId: string | null,
+	): Record<string, unknown> {
+		return { 'oagent/subagent': { sessionId, parentSessionId } };
+	}
+
+	function subagentUpdate(
+		sessionId: string,
+		parentSessionId: string | null,
+		fields: Record<string, unknown>,
+	) {
+		return {
+			sessionUpdate: 'subagent_update',
+			sessionId,
+			...fields,
+			_meta: nativeMeta(sessionId, parentSessionId),
+		} as SessionUpdate;
+	}
+
+	function spawn(
+		sessionId: string,
+		parentSessionId: string | null,
+		name: string,
+	) {
+		return subagentUpdate(sessionId, parentSessionId, {
+			title: name,
+			description: name,
+			state: { state: 'running' },
+		});
+	}
+
+	function childOf(state: ReturnType<typeof createInitialState>, id: string) {
+		const child = toDisplayState(state).children.get(id);
+		if (child === undefined) throw new Error(`Missing child ${id}`);
+		return child;
+	}
+
+	test('creates a child with a linked card and routes its events', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-1', null, 'Survey the repo'), 1000);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'inner-read',
+				title: 'Read file',
+				kind: 'read',
+				status: 'completed',
+				_meta: nativeMeta('task-1', null),
+			} as SessionUpdate,
+			1010,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'Found it' },
+				_meta: nativeMeta('task-1', null),
+			} as SessionUpdate,
+			1020,
+		);
+
+		const live = toDisplayState(state);
+		expect(live.parts).toHaveLength(1);
+		const card = toolPartAt(live.parts, 0);
+		expect(card.toolCallId).toBe('task-1');
+		expect(card.toolName).toBe('subagent');
+		expect(card.childSessionId).toBe('task-1');
+		expect(card.state).toBe('input-available');
+
+		const child = childOf(state, 'task-1');
+		expect(child.title).toBe('Survey the repo');
+		expect(child.description).toBe('Survey the repo');
+		expect(child.parentId).toBe('root');
+		expect(child.depth).toBe(1);
+		expect(child.agentName).toBeUndefined();
+		expect(child.status).toBe('running');
+		expect(toolPartAt(child.parts, 0).toolCallId).toBe('inner-read');
+		expect(child.streamingTail?.kind).toBe('text');
+	});
+
+	test('keeps native events out of the legacy parentToolUseId route', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-1', null, 'Work'), 1000);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'inner',
+				title: 'Read file',
+				status: 'completed',
+				_meta: {
+					...nativeMeta('task-1', null),
+					claudeCode: { parentToolUseId: 'toolu_unknown' },
+				},
+			} as SessionUpdate,
+			1010,
+		);
+
+		const display = toDisplayState(state);
+		expect(display.children.size).toBe(1);
+		expect(toolPartAt(childOf(state, 'task-1').parts, 0).toolCallId).toBe(
+			'inner',
+		);
+	});
+
+	test('nests a native child under its parent child', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-1', null, 'Outer'), 1000);
+		state = applyEvent(state, spawn('task-2', 'task-1', 'Inner'), 1010);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'deep-read',
+				title: 'Read file',
+				status: 'completed',
+				_meta: nativeMeta('task-2', 'task-1'),
+			} as SessionUpdate,
+			1020,
+		);
+
+		const display = toDisplayState(state);
+		expect(display.parts).toHaveLength(1);
+		const outer = childOf(state, 'task-1');
+		const inner = childOf(state, 'task-2');
+		expect(inner.parentId).toBe('task-1');
+		expect(inner.depth).toBe(2);
+		expect(toolPartAt(outer.parts, 0).childSessionId).toBe('task-2');
+		expect(toolPartAt(inner.parts, 0).toolCallId).toBe('deep-read');
+	});
+
+	test('maps state transitions onto the child and its card', () => {
+		const cases = [
+			{ state: 'completed', status: 'completed', tool: 'output-available' },
+			{ state: 'idle', status: 'completed', tool: 'output-available' },
+			{ state: 'failed', status: 'failed', tool: 'output-error' },
+			{ state: 'cancelled', status: 'failed', tool: 'output-error' },
+			{ state: 'disconnected', status: 'failed', tool: 'output-error' },
+		] as const;
+		for (const item of cases) {
+			let state = createInitialState();
+			state = applyEvent(state, spawn('task-1', null, 'Work'), 1000);
+			state = applyEvent(
+				state,
+				subagentUpdate('task-1', null, { state: { state: item.state } }),
+				2000,
+			);
+
+			const child = childOf(state, 'task-1');
+			expect(child.status).toBe(item.status);
+			expect(child.endedAt).toBe(2000);
+			expect(child.title).toBe('Work');
+			const card = toolPartAt(toDisplayState(state).parts, 0);
+			expect(card.state).toBe(item.tool);
+			expect(card.durationMs).toBe(1000);
+		}
+	});
+
+	test('does not let the card link reconcile overwrite a native status', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-1', null, 'Work'), 1000);
+		state = applyEvent(
+			state,
+			subagentUpdate('task-1', null, { state: { state: 'completed' } }),
+			2000,
+		);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'late' },
+				_meta: nativeMeta('task-1', null),
+			} as SessionUpdate,
+			2100,
+		);
+
+		expect(childOf(state, 'task-1').status).toBe('completed');
+	});
+
+	test('ignores subagent_update without native metadata', () => {
+		const state = applyEvent(
+			createInitialState(),
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'other',
+				title: 'Other',
+			} as SessionUpdate,
+			1000,
+		);
+		expect(toDisplayState(state).children.size).toBe(0);
+		expect(toDisplayState(state).parts).toHaveLength(0);
+	});
+
+	test('settles a still-running native child to completed on termination', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-1', null, 'Work'), 1000);
+		state = applyEvent(state, spawn('task-2', 'task-1', 'Nested'), 1010);
+		state = applyEvent(
+			state,
+			subagentUpdate('task-2', 'task-1', { state: { state: 'failed' } }),
+			1500,
+		);
+
+		const final = finalizeState(state, 3000);
+		const outer = final.children.get('task-1');
+		expect(outer?.status).toBe('completed');
+		expect(outer?.endedAt).toBe(3000);
+		expect(final.children.get('task-2')?.status).toBe('failed');
+		expect(final.children.get('task-2')?.endedAt).toBe(1500);
+	});
+
+	test('creates a child lazily when its spawn happened in an earlier job', () => {
+		let state = createInitialState();
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'late output' },
+				_meta: nativeMeta('task-old', null),
+			} as SessionUpdate,
+			1000,
+		);
+		state = applyEvent(
+			state,
+			subagentUpdate('task-old', null, { state: { state: 'completed' } }),
+			1500,
+		);
+
+		const child = childOf(state, 'task-old');
+		expect(child.title).toBe('task-old');
+		expect(child.parentId).toBe('root');
+		expect(child.status).toBe('completed');
+		expect(toolPartAt(toDisplayState(state).parts, 0).childSessionId).toBe(
+			'task-old',
+		);
+
+		state = applyEvent(
+			state,
+			subagentUpdate('task-old', null, { title: 'Named later' }),
+			1600,
+		);
+		expect(childOf(state, 'task-old').title).toBe('Named later');
+		expect(toDisplayState(state).parts).toHaveLength(1);
+	});
+
+	test('falls back to the root when the parent child is unknown', () => {
+		let state = createInitialState();
+		state = applyEvent(state, spawn('task-2', 'task-missing', 'Orphan'), 1000);
+		state = applyEvent(
+			state,
+			{
+				sessionUpdate: 'tool_call',
+				toolCallId: 'x',
+				title: 'Read file',
+				status: 'completed',
+				_meta: nativeMeta('task-3', 'task-2'),
+			} as SessionUpdate,
+			1010,
+		);
+
+		expect(childOf(state, 'task-2').parentId).toBe('root');
+		expect(childOf(state, 'task-2').depth).toBe(1);
+		const lazy = childOf(state, 'task-3');
+		expect(lazy.parentId).toBe('task-2');
+		expect(lazy.depth).toBe(2);
+		expect(toolPartAt(childOf(state, 'task-2').parts, 0).childSessionId).toBe(
+			'task-3',
+		);
+	});
+
+	describe('with the parent Agent tool call present', () => {
+		function innerEvent(parentToolUseId: string): SessionUpdate {
+			return {
+				sessionUpdate: 'tool_call',
+				toolCallId: `inner-${parentToolUseId}`,
+				title: 'Read file',
+				status: 'completed',
+				_meta: {
+					...nativeMeta('task-1', null),
+					claudeCode: { parentToolUseId, toolName: 'Read' },
+				},
+			} as SessionUpdate;
+		}
+
+		const agent = {
+			sessionUpdate: 'tool_call',
+			toolCallId: 'toolu_agent',
+			title: 'Task',
+			status: 'in_progress',
+			rawInput: {
+				subagent_type: 'Explore',
+				description: 'Survey the repo',
+				run_in_background: true,
+			},
+		} as SessionUpdate;
+		const launched = {
+			sessionUpdate: 'tool_call_update',
+			toolCallId: 'toolu_agent',
+			status: 'completed',
+			rawOutput: { status: 'async_launched' },
+			_meta: { claudeCode: { parentToolUseId: 'toolu_agent' } },
+		} as SessionUpdate;
+
+		test('links the Agent part and drops the synthetic one', () => {
+			let state = createInitialState();
+			state = applyEvent(state, agent, 900);
+			state = applyEvent(state, launched, 910);
+			state = applyEvent(state, spawn('task-1', null, 'Survey'), 1000);
+			expect(toDisplayState(state).parts).toHaveLength(2);
+
+			state = applyEvent(state, innerEvent('toolu_agent'), 1010);
+
+			const display = toDisplayState(state);
+			expect(display.parts).toHaveLength(1);
+			const card = toolPartAt(display.parts, 0);
+			expect(card.toolCallId).toBe('toolu_agent');
+			expect(card.childSessionId).toBe('task-1');
+			expect(display.children.size).toBe(1);
+			const child = childOf(state, 'task-1');
+			expect(child.agentName).toBe('Explore');
+			expect(child.description).toBe('Survey the repo');
+			expect(child.status).toBe('running');
+			// The launch result must not complete the card while the child runs.
+			expect(card.state).toBe('input-available');
+
+			state = applyEvent(
+				state,
+				subagentUpdate('task-1', null, { state: { state: 'completed' } }),
+				2000,
+			);
+			expect(childOf(state, 'task-1').status).toBe('completed');
+			expect(toolPartAt(toDisplayState(state).parts, 0).state).toBe(
+				'output-available',
+			);
+			expect(toDisplayState(state).parts).toHaveLength(1);
+		});
+
+		test('links when the Agent call arrives after the child events', () => {
+			let state = createInitialState();
+			state = applyEvent(state, spawn('task-1', null, 'Survey'), 1000);
+			state = applyEvent(state, innerEvent('toolu_agent'), 1010);
+			expect(toDisplayState(state).parts).toHaveLength(1);
+
+			state = applyEvent(state, agent, 1020);
+			state = applyEvent(state, launched, 1030);
+
+			const display = toDisplayState(state);
+			expect(display.parts).toHaveLength(1);
+			expect(toolPartAt(display.parts, 0).toolCallId).toBe('toolu_agent');
+			expect(toolPartAt(display.parts, 0).childSessionId).toBe('task-1');
+			expect(display.children.size).toBe(1);
+			expect(childOf(state, 'task-1').agentName).toBe('Explore');
+			expect(childOf(state, 'task-1').status).toBe('running');
+		});
+
+		test('keeps the synthetic card when the parent part is not an Agent card', () => {
+			let state = createInitialState();
+			state = applyEvent(
+				state,
+				{
+					sessionUpdate: 'tool_call',
+					toolCallId: 'toolu_other',
+					title: 'Read file',
+					status: 'completed',
+				} as SessionUpdate,
+				900,
+			);
+			state = applyEvent(state, spawn('task-1', null, 'Survey'), 1000);
+			state = applyEvent(state, innerEvent('toolu_other'), 1010);
+
+			const display = toDisplayState(state);
+			expect(display.parts).toHaveLength(2);
+			expect(toolPartAt(display.parts, 1).childSessionId).toBe('task-1');
+		});
+	});
+});

@@ -8,6 +8,7 @@ import type {
 import { Effect } from 'effect';
 import {
 	AcpForkNotSupportedError,
+	createAcpConnection,
 	forkAcpSession,
 	makeAcpAgent,
 	runAcpTurn,
@@ -741,5 +742,177 @@ describe('shared ACP connection', () => {
 		);
 
 		expect(pids.second).not.toBe(pids.first);
+	});
+});
+
+describe('native subagent sessions', () => {
+	const agentScript = fileURLToPath(
+		new URL('./test-native-subagent-acp-agent.ts', import.meta.url),
+	);
+	const connect = (nativeSubagents: boolean) =>
+		createAcpConnection({
+			binary: process.execPath,
+			args: [agentScript],
+			clientInfoName: 'oagent-test',
+			nativeSubagents,
+		});
+	const prompt = (
+		connection: Effect.Success<ReturnType<typeof connect>>,
+		text: string,
+	) =>
+		Effect.promise(async () => {
+			const session = await connection.conn.newSession({
+				cwd: '/tmp',
+				mcpServers: [],
+			});
+			return connection.conn.prompt({
+				sessionId: session.sessionId,
+				prompt: [{ type: 'text', text }],
+			});
+		});
+
+	test('routes child session updates to the root listener with subagent meta', async () => {
+		const events = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const connection = yield* connect(true);
+					const received: Array<SessionUpdate> = [];
+					connection.registerListener('root', (update) =>
+						received.push(update),
+					);
+					yield* prompt(connection, 'go');
+					return received;
+				}),
+			),
+		);
+
+		const [capabilities, spawned, childText, nested, grandchildText, ...rest] =
+			events;
+		expect(
+			JSON.parse((capabilities as { content: { text: string } }).content.text),
+		).toMatchObject({ subagents: {} });
+
+		expect(spawned).toMatchObject({
+			sessionUpdate: 'subagent_update',
+			sessionId: 'child',
+			title: 'Explore repo',
+			description: 'Explore repo',
+			state: { state: 'running' },
+			_meta: {
+				'oagent/subagent': { sessionId: 'child', parentSessionId: null },
+			},
+		});
+		expect(childText).toMatchObject({
+			sessionUpdate: 'agent_message_chunk',
+			content: { text: 'child text' },
+			_meta: {
+				claudeCode: { parentToolUseId: 'toolu_1' },
+				'oagent/subagent': { sessionId: 'child', parentSessionId: null },
+			},
+		});
+		expect(nested).toMatchObject({
+			sessionUpdate: 'subagent_update',
+			sessionId: 'grandchild',
+			_meta: {
+				'oagent/subagent': {
+					sessionId: 'grandchild',
+					parentSessionId: 'child',
+				},
+			},
+		});
+		expect(grandchildText).toMatchObject({
+			content: { text: 'grandchild text' },
+			_meta: {
+				'oagent/subagent': {
+					sessionId: 'grandchild',
+					parentSessionId: 'child',
+				},
+			},
+		});
+		expect(rest).toMatchObject([
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'grandchild',
+				state: { state: 'completed' },
+				_meta: {
+					'oagent/subagent': {
+						sessionId: 'grandchild',
+						parentSessionId: 'child',
+					},
+				},
+			},
+			{
+				sessionUpdate: 'subagent_update',
+				sessionId: 'child',
+				state: { state: 'failed' },
+				_meta: {
+					'oagent/subagent': { sessionId: 'child', parentSessionId: null },
+				},
+			},
+		]);
+	});
+
+	test('does not advertise native subagents unless configured', async () => {
+		const events = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const connection = yield* connect(false);
+					const received: Array<SessionUpdate> = [];
+					connection.registerListener('root', (update) =>
+						received.push(update),
+					);
+					yield* prompt(connection, 'go');
+					return received;
+				}),
+			),
+		);
+
+		const first = events[0] as { content: { text: string } };
+		expect(JSON.parse(first.content.text)).not.toHaveProperty('subagents');
+	});
+
+	test('keeps subagent output out of the turn result text', async () => {
+		const result = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const connection = yield* connect(true);
+					return yield* runAcpTurn(connection, { prompt: 'go', cwd: '/tmp' });
+				}),
+			),
+		);
+
+		expect(JSON.parse(result.text)).toMatchObject({ subagents: {} });
+	});
+
+	test('resolves a child session permission request to the root turn', async () => {
+		const permissionOutcomes = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const connection = yield* connect(true);
+					const received: Array<SessionUpdate> = [];
+					connection.registerListener('root', (update) =>
+						received.push(update),
+					);
+					yield* prompt(connection, 'go');
+					yield* prompt(connection, 'permission');
+					connection.cancelPermissions('root');
+					yield* prompt(connection, 'permission');
+					return received.slice(-2).map((update) => {
+						if (update.sessionUpdate !== 'agent_message_chunk') {
+							throw new Error('expected a message chunk');
+						}
+						if (update.content.type !== 'text') {
+							throw new Error('expected text content');
+						}
+						return JSON.parse(update.content.text);
+					});
+				}),
+			),
+		);
+
+		expect(permissionOutcomes).toEqual([
+			{ outcome: 'selected', optionId: 'allow' },
+			{ outcome: 'cancelled' },
+		]);
 	});
 });

@@ -12,6 +12,11 @@ import {
 import { Context, Duration, Effect, Layer, RcRef, Schema } from 'effect';
 import type { Scope } from 'effect/Scope';
 import {
+	NativeSubagentRouter,
+	rewriteNativeSubagentMessage,
+	SUBAGENT_META_KEY,
+} from './acp-native-subagents.ts';
+import {
 	type AcpTurnEnvironment,
 	AcpTurnFailed,
 	type AcpTurnRecovery,
@@ -45,6 +50,8 @@ export type AcpAgentConfig = {
 	clientInfoName: string;
 	env?: AcpEnv;
 	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
+	/** Advertises native subagent sessions, which the adapter reports per child. */
+	nativeSubagents?: boolean;
 };
 
 export type { AcpTurnRecovery, TurnCompletion } from './acp-turn-recovery.ts';
@@ -227,13 +234,9 @@ function getConfigOptionHint(
 	return undefined;
 }
 
-export function createAcpConnection(config: {
-	binary: string;
-	args: readonly string[];
-	clientInfoName: string;
-	env?: AcpEnv;
-	extensionHandlers?: Record<string, (params: unknown) => Promise<unknown>>;
-}): Effect.Effect<AcpConnection, AcpSessionError, Scope> {
+export function createAcpConnection(
+	config: AcpAgentConfig,
+): Effect.Effect<AcpConnection, AcpSessionError, Scope> {
 	return Effect.gen(function* () {
 		const subprocess = yield* Effect.acquireRelease(
 			Effect.sync(() => {
@@ -283,13 +286,29 @@ export function createAcpConnection(config: {
 				}),
 		);
 
-		const stream = ndJsonStream(
+		const wireStream = ndJsonStream(
 			subprocess.transform.writable,
 			subprocess.proc.stdout,
 		);
+		const stream =
+			config.nativeSubagents === true
+				? {
+						writable: wireStream.writable,
+						readable: wireStream.readable.pipeThrough(
+							new TransformStream({
+								transform: (message, controller) => {
+									controller.enqueue(rewriteNativeSubagentMessage(message));
+								},
+							}),
+						),
+					}
+				: wireStream;
 
 		const listeners = new Map<string, (e: SessionUpdate) => void>();
 		const cancelledSessions = new Set<string>();
+		const subagents = new NativeSubagentRouter((sessionId) =>
+			listeners.has(sessionId),
+		);
 		const extNotificationHandlers = new Map<
 			string,
 			(method: string, params: unknown) => void
@@ -309,13 +328,12 @@ export function createAcpConnection(config: {
 		const conn = new ClientSideConnection(
 			(): Client => ({
 				sessionUpdate: async (params) => {
-					const listener = listeners.get(params.sessionId);
-					if (listener !== undefined) {
-						listener(params.update);
-					}
+					const routed = subagents.route(params.sessionId, params.update);
+					if (routed === undefined) return;
+					listeners.get(routed.rootSessionId)?.(routed.update);
 				},
 				requestPermission: async (params) => {
-					if (cancelledSessions.has(params.sessionId))
+					if (cancelledSessions.has(subagents.rootOf(params.sessionId)))
 						return { outcome: { outcome: 'cancelled' } };
 					const allowAlways = params.options.find(
 						(opt) => opt.kind === 'allow_always',
@@ -355,7 +373,7 @@ export function createAcpConnection(config: {
 							? (params as Record<string, unknown>).sessionId
 							: undefined;
 					if (typeof sid === 'string') {
-						const h = extNotificationHandlers.get(sid);
+						const h = extNotificationHandlers.get(subagents.rootOf(sid));
 						if (h !== undefined) {
 							h(method, params);
 							return;
@@ -378,6 +396,7 @@ export function createAcpConnection(config: {
 					protocolVersion: PROTOCOL_VERSION,
 					clientCapabilities: {
 						terminal: false,
+						...(config.nativeSubagents === true ? { subagents: {} } : {}),
 					},
 					clientInfo: { name: config.clientInfoName, version: '0.1.0' },
 				}),
@@ -456,10 +475,11 @@ export function checkAcpConnection(
 	);
 }
 
-/** Whether the adapter attributed the update to a subagent's tool call. */
+/** Whether the update came from a subagent, by native session or by its tool call. */
 function isSubagentUpdate(update: SessionUpdate): boolean {
 	const meta = update._meta;
 	if (meta === undefined || meta === null) return false;
+	if (SUBAGENT_META_KEY in meta) return true;
 	const claudeCode = meta.claudeCode;
 	if (typeof claudeCode !== 'object' || claudeCode === null) return false;
 	const parentToolUseId = (claudeCode as Record<string, unknown>)

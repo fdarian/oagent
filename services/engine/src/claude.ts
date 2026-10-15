@@ -14,6 +14,7 @@ const adapter = makeAcpAdapterHarness({
 		{ value: 'high', label: 'High' },
 		{ value: 'max', label: 'Max' },
 	],
+	nativeSubagents: true,
 	// Without this the adapter keeps subagent text internal to the Agent tool call.
 	sessionMeta: { claudeCode: { options: { forwardSubagentText: true } } },
 });

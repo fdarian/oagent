@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'bun:test';
+import type { SessionUpdate } from '@oagent/engine';
 import { renderToStaticMarkup } from 'react-dom/server';
-import type { ChildTimeline } from '@/lib/event-adapter';
+import {
+	applyEvent,
+	type ChildTimeline,
+	createInitialState,
+	toDisplayState,
+} from '@/lib/event-adapter';
 import { getRunningSubagentSessions, SubagentDock } from './subagent-dock';
 
 function childSession(
@@ -85,5 +91,29 @@ describe('SubagentDock timeline scope', () => {
 		expect(
 			getRunningSubagentSessions(sessions, undefined).map((child) => child.id),
 		).toEqual(['root-child', 'nested-child']);
+	});
+});
+
+describe('SubagentDock native subagents', () => {
+	function nativeUpdate(sessionId: string, state: string): SessionUpdate {
+		return {
+			sessionUpdate: 'subagent_update',
+			sessionId,
+			title: sessionId,
+			state: { state },
+			_meta: { 'oagent/subagent': { sessionId, parentSessionId: null } },
+		} as SessionUpdate;
+	}
+
+	test('counts only native children that have not completed', () => {
+		let state = createInitialState();
+		state = applyEvent(state, nativeUpdate('task-1', 'running'), 1000);
+		state = applyEvent(state, nativeUpdate('task-2', 'running'), 1001);
+		state = applyEvent(state, nativeUpdate('task-1', 'completed'), 2000);
+
+		const sessions = toDisplayState(state).children;
+		expect(
+			getRunningSubagentSessions(sessions, undefined).map((child) => child.id),
+		).toEqual(['task-2']);
 	});
 });
