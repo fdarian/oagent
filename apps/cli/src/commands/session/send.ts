@@ -40,6 +40,6 @@ export const send = Command.make(
 		),
 ).pipe(
 	Command.withDescription(
-		'Send a message to a session. If a turn is running the message is queued for the next step boundary; otherwise a new turn starts and is awaited. The prompt is the argument, or stdin when piped.',
+		'Send a message to a session. If a turn is running the message is queued for the next step boundary (supported on OpenCode and Claude; other backends reject the send while a turn is running); otherwise a new turn starts and is awaited. The prompt is the argument, or stdin when piped.',
 	),
 );

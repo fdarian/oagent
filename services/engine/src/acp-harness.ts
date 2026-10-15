@@ -6,7 +6,12 @@ import {
 	checkAcpConnection,
 	probeAcpConnection,
 } from './acp-agent.ts';
-import type { Backend, Harness, ModelEffort } from './harness.ts';
+import {
+	type Backend,
+	type Harness,
+	HarnessSteerError,
+	type ModelEffort,
+} from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
@@ -120,6 +125,17 @@ export function makeAcpAdapterHarness(options: {
 					configOptions: getConfigOptions(input.model, input.reasoningEffort),
 					sessionMeta: options.sessionMeta,
 				}),
+			steer: (input: { sessionId: string; text: string }) =>
+				acpAgent.steer(input).pipe(
+					Effect.mapError(
+						(error) =>
+							new HarnessSteerError({
+								code: error.code,
+								message: error.message,
+								cause: error,
+							}),
+					),
+				),
 			listModels: () => models.get(),
 			listModelEfforts,
 			listAgentTargets: () => Effect.succeed([]),

@@ -484,26 +484,25 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.limit(1)
 					.get();
 				if (running !== undefined) {
-					if (session.backend !== 'opencode') {
-						return yield* new SessionBusy({
-							sessionId: session.uuid,
-							code: 'UNSUPPORTED_BACKEND',
-							message: `Session ${session.uuid} is busy on the ${session.backend} backend.`,
-						});
-					}
 					const steered = yield* jobs.steer(running.uuid, input.prompt).pipe(
 						Effect.as(true),
-						Effect.catchTag('JobSteerError', (error) =>
-							error.code === 'NOT_RUNNING'
-								? Effect.succeed(false)
-								: Effect.fail(
-										new SessionBusy({
-											sessionId: session.uuid,
-											code: 'TURN_IN_PROGRESS',
-											message: error.message,
-										}),
-									),
-						),
+						Effect.catchTag('JobSteerError', (error) => {
+							if (error.code === 'NOT_RUNNING') return Effect.succeed(false);
+							const unsupported =
+								error.code === 'UNSUPPORTED_BACKEND' ||
+								error.code === 'UNSUPPORTED_VERSION';
+							return Effect.fail(
+								new SessionBusy({
+									sessionId: session.uuid,
+									code: unsupported
+										? 'UNSUPPORTED_BACKEND'
+										: 'TURN_IN_PROGRESS',
+									message: unsupported
+										? `Session ${session.uuid} is busy on the ${session.backend} backend, which cannot take messages mid-turn: ${error.message}`
+										: error.message,
+								}),
+							);
+						}),
 					);
 					if (steered) {
 						return {

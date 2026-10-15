@@ -85,10 +85,25 @@ type AcpConnection = {
 	agentCapabilities: Awaited<
 		ReturnType<ClientSideConnection['initialize']>
 	>['agentCapabilities'];
+	/** Whether the adapter advertised the `_session/steering` extension. */
+	steeringSupported: boolean;
 	processExited: Promise<number>;
 	close: () => void;
 	cancelPermissions: (sessionId: string) => void;
 };
+
+export class AcpSteerError extends Schema.TaggedError<AcpSteerError>()(
+	'AcpSteerError',
+	{
+		code: Schema.Literals([
+			'NOT_RUNNING',
+			'UNSUPPORTED_VERSION',
+			'DELIVERY_FAILED',
+		]),
+		message: Schema.String,
+		cause: Schema.Defect(),
+	},
+) {}
 
 export class AcpForkNotSupportedError extends Schema.TaggedError<AcpForkNotSupportedError>()(
 	'AcpForkNotSupportedError',
@@ -233,6 +248,20 @@ function getConfigOptionHint(
 
 	return undefined;
 }
+
+function isSteeringSupported(initializeResponse: {
+	_meta?: { [key: string]: unknown } | null;
+}): boolean {
+	const steering = initializeResponse._meta?.steering;
+	return (
+		typeof steering === 'object' &&
+		steering !== null &&
+		'supported' in steering &&
+		steering.supported === true
+	);
+}
+
+const STEERING_METHOD = '_session/steering';
 
 export function createAcpConnection(
 	config: AcpAgentConfig,
@@ -413,6 +442,7 @@ export function createAcpConnection(
 			extNotificationHandlers,
 			agentInfo,
 			agentCapabilities: initializeResponse.agentCapabilities,
+			steeringSupported: isSteeringSupported(initializeResponse),
 			processExited: subprocess.proc.exited,
 			close: () => {
 				Effect.runSync(killProcessGroup(subprocess.proc.pid));
@@ -506,6 +536,14 @@ export function runAcpTurn(
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 		onPromptDispatch?: () => void;
+		/**
+		 * Called once the turn's ACP session exists. `currentConnection` follows
+		 * mid-turn reconnects; the returned function is called when the turn ends.
+		 */
+		onTurnActive?: (
+			sessionId: string,
+			currentConnection: () => AcpTurnEnvironment,
+		) => () => void;
 		skipModelSet?: boolean;
 		configOptions?: ReadonlyArray<AcpConfigOption>;
 		sessionMeta?: Record<string, unknown>;
@@ -580,6 +618,14 @@ export function runAcpTurn(
 				const onSessionId = input.onSessionId;
 				if (onSessionId !== undefined) {
 					yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
+				}
+				const onTurnActive = input.onTurnActive;
+				if (onTurnActive !== undefined) {
+					const unregister = onTurnActive(
+						sessionResult.sessionId,
+						recoveryController.currentConnection,
+					);
+					yield* Effect.addFinalizer(() => Effect.sync(unregister));
 				}
 				if (input.beforePrompt !== undefined) {
 					yield* input.beforePrompt(sessionResult.sessionId);
@@ -748,6 +794,8 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 				idleTimeToLive: IDLE_TIME_TO_LIVE,
 			});
 
+		const activeTurns = new Map<string, () => AcpTurnEnvironment>();
+
 		const runTurn = (input: {
 			prompt: string;
 			model?: string;
@@ -777,10 +825,76 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 							createConnection: () => createAcpConnection(config),
 							onReconnect: () => RcRef.invalidate(connectionRef),
 						},
-						input,
+						{
+							...input,
+							onTurnActive: (sessionId, currentConnection) => {
+								activeTurns.set(sessionId, currentConnection);
+								return () => {
+									// A newer turn may have taken over the id before this one unwinds.
+									if (activeTurns.get(sessionId) === currentConnection) {
+										activeTurns.delete(sessionId);
+									}
+								};
+							},
+						},
 					);
 				}),
 			);
+
+		const steer = (input: { sessionId: string; text: string }) =>
+			Effect.gen(function* () {
+				const currentConnection = activeTurns.get(input.sessionId);
+				if (currentConnection === undefined) {
+					return yield* new AcpSteerError({
+						code: 'NOT_RUNNING',
+						message: `No turn is running for ACP session ${input.sessionId}.`,
+						cause: new Error('No active ACP turn'),
+					});
+				}
+				const connection = currentConnection();
+				if (connection.steeringSupported !== true) {
+					const info = connection.agentInfo;
+					const agent =
+						info === undefined
+							? config.clientInfoName
+							: `${info.name} ${info.version}`;
+					return yield* new AcpSteerError({
+						code: 'UNSUPPORTED_VERSION',
+						message: `The ${agent} ACP adapter does not support steering; upgrade it.`,
+						cause: new Error('ACP adapter did not advertise steering'),
+					});
+				}
+				const result = yield* Effect.tryPromise({
+					try: () =>
+						connection.conn.extMethod(STEERING_METHOD, {
+							sessionId: input.sessionId,
+							prompt: [{ type: 'text', text: input.text }],
+							// Without the opt-in an idle session would start a detached turn.
+							_meta: { steering: { idleBehavior: 'promptRequired' } },
+						}),
+					catch: (cause) =>
+						new AcpSteerError({
+							code: 'DELIVERY_FAILED',
+							message: getRpcMessage(cause) ?? 'Steering request failed.',
+							cause,
+						}),
+				});
+				if (result.outcome === 'promptRequired') {
+					return yield* new AcpSteerError({
+						code: 'NOT_RUNNING',
+						message: `No turn is running for ACP session ${input.sessionId}.`,
+						cause: new Error('Adapter reported promptRequired'),
+					});
+				}
+				if (result.outcome !== 'injected') {
+					return yield* new AcpSteerError({
+						code: 'DELIVERY_FAILED',
+						message: `Unexpected steering outcome: ${JSON.stringify(result.outcome)}`,
+						cause: new Error('Unexpected steering outcome'),
+					});
+				}
+				return { messageId: crypto.randomUUID(), text: input.text };
+			});
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
 			Effect.scoped(
@@ -869,6 +983,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 
 		return {
 			runTurn,
+			steer,
 			forkSession,
 			listModels,
 			listSessionCatalog,
