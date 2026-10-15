@@ -1,17 +1,20 @@
 import { Link } from '@tanstack/react-router';
 import { SettingsIcon } from 'lucide-react';
+import type { SessionGroup, SessionGroupBy } from '@/lib/session-grouping';
 import type { SessionListItem } from '@/lib/use-session-list';
 import { SessionSidebarFilters } from './session-sidebar-filters';
 import { SessionSidebarGroup } from './session-sidebar-list';
 import { ThemeToggle } from './theme-toggle';
 
 export type SessionSidebarProps = {
-	grouped: { label: string; items: SessionListItem[] }[];
+	grouped: SessionGroup<SessionListItem>[];
 	selectedId?: string;
 	selectedJobId?: string;
 	isLoading: boolean;
 	cwdFilter: string;
 	onCwdFilterChange: (value: string) => void;
+	groupBy: SessionGroupBy;
+	onGroupByChange: (value: SessionGroupBy) => void;
 };
 
 export function SessionSidebar(props: SessionSidebarProps) {
@@ -35,6 +38,8 @@ export function SessionSidebar(props: SessionSidebarProps) {
 			<SessionSidebarFilters
 				cwdFilter={props.cwdFilter}
 				onCwdFilterChange={props.onCwdFilterChange}
+				groupBy={props.groupBy}
+				onGroupByChange={props.onGroupByChange}
 			/>
 			<div className="min-h-0 flex-1 overflow-y-auto">
 				{props.grouped.length === 0 ? (
@@ -45,7 +50,7 @@ export function SessionSidebar(props: SessionSidebarProps) {
 					<div className="flex flex-col pb-22">
 						{props.grouped.map((group) => (
 							<SessionSidebarGroup
-								key={group.label}
+								key={group.label ?? 'none'}
 								label={group.label}
 								items={group.items}
 								selectedId={props.selectedId}

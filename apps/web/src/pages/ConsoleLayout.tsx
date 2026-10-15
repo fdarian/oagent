@@ -22,6 +22,8 @@ export function ConsoleLayout() {
 				isLoading={sessionList.isLoading}
 				cwdFilter={sessionList.cwdFilter}
 				onCwdFilterChange={sessionList.setCwdFilter}
+				groupBy={sessionList.groupBy}
+				onGroupByChange={sessionList.setGroupBy}
 			/>
 			<div className="flex min-h-0 min-w-0 flex-1 flex-col">
 				<Outlet />

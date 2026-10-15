@@ -46,6 +46,8 @@ export const EmptySelection: Story = {
 				isLoading={false}
 				cwdFilter=""
 				onCwdFilterChange={() => {}}
+				groupBy="date"
+				onGroupByChange={() => {}}
 			/>
 			<div className="flex min-w-0 flex-1 flex-col">
 				<JobEmptyState />
@@ -89,6 +91,8 @@ export const RunningSession: Story = {
 				isLoading={false}
 				cwdFilter=""
 				onCwdFilterChange={() => {}}
+				groupBy="date"
+				onGroupByChange={() => {}}
 			/>
 			<div className="flex min-w-0 flex-1 flex-col">
 				<JobStatusStrip status="Running tool: read_file" isRunning />

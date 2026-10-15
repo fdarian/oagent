@@ -65,11 +65,25 @@ function SessionSidebarItem(props: {
 }
 
 export function SessionSidebarGroup(props: {
-	label: string;
+	label: string | null;
 	items: SessionListItem[];
 	selectedId?: string;
 	selectedJobId?: string;
 }) {
+	if (props.label === null) {
+		return (
+			<div className="flex flex-col">
+				{props.items.map((session) => (
+					<SessionSidebarItem
+						key={session.id}
+						session={session}
+						selectedId={props.selectedId}
+						selectedJobId={props.selectedJobId}
+					/>
+				))}
+			</div>
+		);
+	}
 	return (
 		<Collapsible defaultOpen className="group flex flex-col">
 			<CollapsibleTrigger className="flex w-full items-center justify-between px-22 py-15 text-left">
