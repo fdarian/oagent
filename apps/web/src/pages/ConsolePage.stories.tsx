@@ -46,6 +46,8 @@ export const EmptySelection: Story = {
 				isLoading={false}
 				cwdFilter=""
 				onCwdFilterChange={() => {}}
+				lastActivity="3d"
+				onLastActivityChange={() => {}}
 				groupBy="date"
 				onGroupByChange={() => {}}
 			/>
@@ -91,6 +93,8 @@ export const RunningSession: Story = {
 				isLoading={false}
 				cwdFilter=""
 				onCwdFilterChange={() => {}}
+				lastActivity="3d"
+				onLastActivityChange={() => {}}
 				groupBy="date"
 				onGroupByChange={() => {}}
 			/>
