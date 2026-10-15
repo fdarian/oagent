@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { expect, userEvent, within } from 'storybook/test';
 import { SessionSidebar } from './session-sidebar';
 
 const meta: Meta<typeof SessionSidebar> = {
@@ -18,6 +19,8 @@ export const Empty: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		lastActivity: '3d',
+		onLastActivityChange: () => {},
 		groupBy: 'date',
 		onGroupByChange: () => {},
 	},
@@ -41,6 +44,8 @@ export const Dense: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		lastActivity: '3d',
+		onLastActivityChange: () => {},
 		groupBy: 'date',
 		onGroupByChange: () => {},
 	},
@@ -105,6 +110,8 @@ export const MixedStatuses: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		lastActivity: '3d',
+		onLastActivityChange: () => {},
 		groupBy: 'date',
 		onGroupByChange: () => {},
 	},
@@ -130,7 +137,26 @@ export const LongTitles: Story = {
 		isLoading: false,
 		cwdFilter: '',
 		onCwdFilterChange: () => {},
+		lastActivity: '3d',
+		onLastActivityChange: () => {},
 		groupBy: 'date',
 		onGroupByChange: () => {},
+	},
+};
+
+export const FilterMenuOpen: Story = {
+	args: MixedStatuses.args,
+	play: async (context) => {
+		const canvas = within(context.canvasElement);
+		await userEvent.click(
+			canvas.getByRole('button', { name: 'Filter and group sessions' }),
+		);
+		const menu = within(context.canvasElement.ownerDocument.body);
+		await expect(
+			await menu.findByRole('menuitem', { name: /Last activity/ }),
+		).toBeVisible();
+		await expect(
+			menu.getByRole('menuitem', { name: /Group by/ }),
+		).toBeVisible();
 	},
 };

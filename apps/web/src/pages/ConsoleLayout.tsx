@@ -22,6 +22,8 @@ export function ConsoleLayout() {
 				isLoading={sessionList.isLoading}
 				cwdFilter={sessionList.cwdFilter}
 				onCwdFilterChange={sessionList.setCwdFilter}
+				lastActivity={sessionList.lastActivity}
+				onLastActivityChange={sessionList.setLastActivity}
 				groupBy={sessionList.groupBy}
 				onGroupByChange={sessionList.setGroupBy}
 			/>

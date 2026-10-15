@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { SettingsIcon } from 'lucide-react';
 import type { SessionGroup, SessionGroupBy } from '@/lib/session-grouping';
+import type { SessionLastActivity } from '@/lib/session-last-activity';
 import type { SessionListItem } from '@/lib/use-session-list';
 import { SessionSidebarFilters } from './session-sidebar-filters';
 import { SessionSidebarGroup } from './session-sidebar-list';
@@ -13,6 +14,8 @@ export type SessionSidebarProps = {
 	isLoading: boolean;
 	cwdFilter: string;
 	onCwdFilterChange: (value: string) => void;
+	lastActivity: SessionLastActivity;
+	onLastActivityChange: (value: SessionLastActivity) => void;
 	groupBy: SessionGroupBy;
 	onGroupByChange: (value: SessionGroupBy) => void;
 };
@@ -38,6 +41,8 @@ export function SessionSidebar(props: SessionSidebarProps) {
 			<SessionSidebarFilters
 				cwdFilter={props.cwdFilter}
 				onCwdFilterChange={props.onCwdFilterChange}
+				lastActivity={props.lastActivity}
+				onLastActivityChange={props.onLastActivityChange}
 				groupBy={props.groupBy}
 				onGroupByChange={props.onGroupByChange}
 			/>

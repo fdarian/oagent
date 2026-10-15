@@ -6,6 +6,11 @@ import {
 	isSessionGroupBy,
 	type SessionGroupBy,
 } from './session-grouping.ts';
+import {
+	filterSessionsByLastActivity,
+	isSessionLastActivity,
+	type SessionLastActivity,
+} from './session-last-activity.ts';
 import { useSessionListStream } from './use-session-list-stream.ts';
 
 export type SessionListItem = {
@@ -30,6 +35,17 @@ function readStoredGroupBy(): SessionGroupBy {
 	return stored;
 }
 
+const LAST_ACTIVITY_STORAGE_KEY = 'oagent-session-last-activity';
+
+function readStoredLastActivity(): SessionLastActivity {
+	const stored = localStorage.getItem(LAST_ACTIVITY_STORAGE_KEY);
+	if (stored === null) return '3d';
+	if (!isSessionLastActivity(stored)) {
+		throw new Error(`Invalid stored session last-activity: ${stored}`);
+	}
+	return stored;
+}
+
 export function useSessionList() {
 	useSessionListStream();
 
@@ -41,19 +57,32 @@ export function useSessionList() {
 	const [groupBy, setGroupByState] =
 		useState<SessionGroupBy>(readStoredGroupBy);
 
+	const [lastActivity, setLastActivityState] = useState<SessionLastActivity>(
+		readStoredLastActivity,
+	);
+
+	const setLastActivity = useCallback((next: SessionLastActivity) => {
+		localStorage.setItem(LAST_ACTIVITY_STORAGE_KEY, next);
+		setLastActivityState(next);
+	}, []);
+
 	const setGroupBy = useCallback((next: SessionGroupBy) => {
 		localStorage.setItem(GROUP_BY_STORAGE_KEY, next);
 		setGroupByState(next);
 	}, []);
 
 	const filtered = useMemo(() => {
-		const sessions = data ?? [];
-		if (cwdFilter.trim() === '') return sessions;
+		const recent = filterSessionsByLastActivity(
+			data ?? [],
+			lastActivity,
+			Date.now(),
+		);
+		if (cwdFilter.trim() === '') return recent;
 		const needle = cwdFilter.toLowerCase();
-		return sessions.filter((session) =>
+		return recent.filter((session) =>
 			session.cwd.toLowerCase().includes(needle),
 		);
-	}, [data, cwdFilter]);
+	}, [data, cwdFilter, lastActivity]);
 
 	const grouped = useMemo(
 		() => groupSessions(filtered, groupBy),
@@ -66,6 +95,8 @@ export function useSessionList() {
 		isLoading,
 		cwdFilter,
 		setCwdFilter,
+		lastActivity,
+		setLastActivity,
 		groupBy,
 		setGroupBy,
 	};
