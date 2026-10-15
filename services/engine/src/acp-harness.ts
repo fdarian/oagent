@@ -20,6 +20,8 @@ export function makeAcpAdapterHarness(options: {
 	omitDefaultEffort?: boolean;
 	/** Adapter-specific `_meta` sent with `newSession` and `loadSession`. */
 	sessionMeta?: Record<string, unknown>;
+	/** The adapter reports subagents as separate sessions instead of tool calls. */
+	nativeSubagents?: boolean;
 }) {
 	const getBinary = () =>
 		process.env[options.binaryEnvVar] ?? options.defaultBinary;
@@ -30,6 +32,7 @@ export function makeAcpAdapterHarness(options: {
 		binary: resolveBinary() ?? getBinary(),
 		args: [],
 		clientInfoName: 'oagent',
+		...(options.nativeSubagents === true ? { nativeSubagents: true } : {}),
 		...(getExtraEnv === undefined
 			? {}
 			: { env: () => ({ ...process.env, ...getExtraEnv() }) }),
