@@ -58,7 +58,7 @@ export function SessionSidebarFilters(props: SessionSidebarFiltersProps) {
 					<DropdownMenuSub>
 						<DropdownMenuSubTrigger>
 							<span className="flex-1">Last activity</span>
-							<span className="text-muted-foreground">
+							<span className="opacity-70">
 								{optionLabel(SESSION_LAST_ACTIVITY_OPTIONS, props.lastActivity)}
 							</span>
 						</DropdownMenuSubTrigger>
@@ -91,7 +91,7 @@ export function SessionSidebarFilters(props: SessionSidebarFiltersProps) {
 					<DropdownMenuSub>
 						<DropdownMenuSubTrigger>
 							<span className="flex-1">Group by</span>
-							<span className="text-muted-foreground">
+							<span className="opacity-70">
 								{optionLabel(SESSION_GROUP_BY_OPTIONS, props.groupBy)}
 							</span>
 						</DropdownMenuSubTrigger>
