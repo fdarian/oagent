@@ -205,7 +205,7 @@ Every MCP result is returned as a single text content block; tools do not set `s
 
 #### `send_message`
 
-Continues a session. If a turn is running, the message is queued for delivery at the next step boundary. If the session is idle, a new turn starts; foreground calls wait for its response and `background: true` returns a running handle.
+Continues a session. If a turn is running, the message is queued for delivery at the next step boundary; this works on OpenCode and Claude (claude-agent-acp >= 0.89), and other backends reject a send while a turn is running. If the session is idle, a new turn starts; foreground calls wait for its response and `background: true` returns a running handle.
 
 Input:
 - `sessionId: string`

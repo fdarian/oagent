@@ -13,8 +13,9 @@ import { waitWithProgress } from '../progress.ts';
 
 const description = `\
 Send a message to a session. If a turn is running, the message is queued for \
-delivery at the next step boundary; if the session is idle, a new turn starts. \
-Use \`background\` only when starting a new turn.`;
+delivery at the next step boundary (OpenCode and Claude only; other backends \
+reject the send while a turn is running); if the session is idle, a new turn \
+starts. Use \`background\` only when starting a new turn.`;
 
 export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),

@@ -46,6 +46,8 @@ export type AcpTurnConnection = {
 		string,
 		(method: string, params: unknown) => void
 	>;
+	steeringSupported?: boolean;
+	agentInfo?: { name: string; version: string };
 	processExited?: Promise<number>;
 	close?: () => void;
 	cancelPermissions?: (sessionId: string) => void;

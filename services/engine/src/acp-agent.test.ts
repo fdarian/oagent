@@ -5,7 +5,7 @@ import type {
 	SessionConfigOption,
 	SessionUpdate,
 } from '@agentclientprotocol/sdk';
-import { Effect } from 'effect';
+import { Effect, Fiber, Schedule } from 'effect';
 import {
 	AcpForkNotSupportedError,
 	createAcpConnection,
@@ -742,6 +742,108 @@ describe('shared ACP connection', () => {
 		);
 
 		expect(pids.second).not.toBe(pids.first);
+	});
+});
+
+describe('ACP steering', () => {
+	const agentScript = fileURLToPath(
+		new URL('./test-acp-agent.ts', import.meta.url),
+	);
+	const makeAgent = (env?: Record<string, string>) =>
+		makeAcpAgent({
+			binary: process.execPath,
+			args: [agentScript],
+			clientInfoName: 'oagent-test',
+			...(env === undefined ? {} : { env }),
+		});
+
+	test('injects a message into the running turn, which then completes', async () => {
+		const result = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent();
+					const sessionId = Promise.withResolvers<string>();
+					const events: Array<SessionUpdate> = [];
+					const turn = yield* agent
+						.runTurn({
+							prompt: 'wait-for-steer',
+							cwd: process.cwd(),
+							onSessionId: sessionId.resolve,
+							onEvent: (event) => events.push(event),
+						})
+						.pipe(Effect.forkChild);
+					const id = yield* Effect.promise(() => sessionId.promise);
+					// onSessionId fires before the turn is registered as steerable.
+					const steered = yield* agent
+						.steer({ sessionId: id, text: 'also this' })
+						.pipe(
+							Effect.retry({
+								while: (error) => error.code === 'NOT_RUNNING',
+								times: 20,
+								schedule: Schedule.spaced('50 millis'),
+							}),
+						);
+					const completed = yield* Fiber.join(turn);
+					return { steered, completed, events };
+				}),
+			),
+		);
+
+		expect(result.steered.text).toBe('also this');
+		expect(result.completed.stopReason).toBe('end_turn');
+		expect(result.completed.text).toBe('steered:also this');
+	});
+
+	test('fails NOT_RUNNING when no turn is active for the session', async () => {
+		const error = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent();
+					return yield* agent
+						.steer({ sessionId: 'ses_idle', text: 'hello' })
+						.pipe(Effect.flip);
+				}),
+			),
+		);
+		expect(error).toMatchObject({
+			_tag: 'AcpSteerError',
+			code: 'NOT_RUNNING',
+		});
+	});
+
+	test('fails UNSUPPORTED_VERSION when the adapter does not advertise steering', async () => {
+		const error = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent({ TEST_ACP_NO_STEERING: '1' });
+					const sessionId = Promise.withResolvers<string>();
+					const turn = yield* agent
+						.runTurn({
+							prompt: 'wait-for-steer',
+							cwd: process.cwd(),
+							onSessionId: sessionId.resolve,
+						})
+						.pipe(Effect.forkChild);
+					const id = yield* Effect.promise(() => sessionId.promise);
+					const failure = yield* agent
+						.steer({ sessionId: id, text: 'hello' })
+						.pipe(
+							Effect.retry({
+								while: (error) => error.code === 'NOT_RUNNING',
+								times: 20,
+								schedule: Schedule.spaced('50 millis'),
+							}),
+							Effect.flip,
+						);
+					yield* Fiber.interrupt(turn);
+					return failure;
+				}),
+			),
+		);
+		expect(error).toMatchObject({
+			_tag: 'AcpSteerError',
+			code: 'UNSUPPORTED_VERSION',
+		});
 	});
 });
 

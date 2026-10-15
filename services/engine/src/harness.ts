@@ -65,6 +65,7 @@ export class HarnessSteerError extends Schema.TaggedError<HarnessSteerError>()(
 	'HarnessSteerError',
 	{
 		code: Schema.Literals([
+			'NOT_RUNNING',
 			'UNSUPPORTED_VERSION',
 			'VERSION_CHECK_FAILED',
 			'DELIVERY_FAILED',

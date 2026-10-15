@@ -4,7 +4,7 @@ import { Effect, Scope } from 'effect';
 import { Agents, AgentTypeNotFound } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Backend, Harness } from './harness.ts';
+import { type Backend, type Harness, HarnessSteerError } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Jobs } from './jobs.ts';
 import { Sessions } from './sessions.ts';
@@ -1131,6 +1131,176 @@ describe('session turns', () => {
 			services.jobs.wait({ jobId: result.jobId, timeoutMs: 1_000 }),
 		);
 		expect(prompts).toEqual(['first', 'second']);
+		database.sqlite.close();
+	});
+
+	test('steers a running Claude turn through the harness', async () => {
+		const database = createTestDatabase();
+		const turnStarted = Promise.withResolvers<void>();
+		const releaseTurn = Promise.withResolvers<void>();
+		const steered: string[] = [];
+		const services = await createServices(
+			database,
+			'claude',
+			(input) =>
+				Effect.promise(async () => {
+					input.onSessionId?.('ses_claude');
+					turnStarted.resolve();
+					await releaseTurn.promise;
+					return {
+						sessionId: input.sessionId ?? 'ses_claude',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				steer: (input) =>
+					Effect.sync(() => {
+						steered.push(`${input.sessionId}:${input.text}`);
+						return { messageId: 'msg-steered', text: input.text };
+					}),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Claude session',
+				prompt: 'work',
+				cwd: '/repo',
+				model: 'claude:model',
+			}),
+		);
+		await turnStarted.promise;
+		const result = await Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'also check tests',
+			}),
+		);
+		expect(result).toEqual({
+			sessionId: started.sessionId,
+			jobId: started.jobId,
+			delivery: 'steered',
+		});
+		expect(steered).toEqual(['ses_claude:also check tests']);
+		releaseTurn.resolve();
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
+		database.sqlite.close();
+	});
+
+	test('starts a new Claude turn when steering reports no running turn', async () => {
+		const database = createTestDatabase();
+		const firstStarted = Promise.withResolvers<void>();
+		const finishFirst = Promise.withResolvers<void>();
+		const prompts: string[] = [];
+		const services = await createServices(
+			database,
+			'claude',
+			(input) =>
+				Effect.promise(async () => {
+					prompts.push(input.prompt);
+					input.onSessionId?.('ses_claude');
+					if (prompts.length === 1) {
+						firstStarted.resolve();
+						await finishFirst.promise;
+					}
+					return {
+						sessionId: 'ses_claude',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				steer: () =>
+					Effect.fail(
+						new HarnessSteerError({
+							code: 'NOT_RUNNING',
+							message: 'No turn is running.',
+							cause: new Error('promptRequired'),
+						}),
+					),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Claude session',
+				prompt: 'first',
+				cwd: '/repo',
+				model: 'claude:model',
+			}),
+		);
+		await firstStarted.promise;
+		const followUp = Effect.runPromise(
+			services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'second',
+			}),
+		);
+		finishFirst.resolve();
+		const result = await followUp;
+		expect(result.delivery).toBe('started');
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: result.jobId, timeoutMs: 1_000 }),
+		);
+		expect(prompts).toEqual(['first', 'second']);
+		database.sqlite.close();
+	});
+
+	test('rejects a busy Claude send as unsupported when the adapter cannot steer', async () => {
+		const database = createTestDatabase();
+		const turnStarted = Promise.withResolvers<void>();
+		const releaseTurn = Promise.withResolvers<void>();
+		const services = await createServices(
+			database,
+			'claude',
+			(input) =>
+				Effect.promise(async () => {
+					input.onSessionId?.('ses_claude');
+					turnStarted.resolve();
+					await releaseTurn.promise;
+					return {
+						sessionId: 'ses_claude',
+						text: 'done',
+						stopReason: 'end_turn',
+					};
+				}),
+			{
+				steer: () =>
+					Effect.fail(
+						new HarnessSteerError({
+							code: 'UNSUPPORTED_VERSION',
+							message: 'The adapter does not support steering; upgrade it.',
+							cause: new Error('unsupported'),
+						}),
+					),
+			},
+		);
+		const started = await Effect.runPromise(
+			services.sessions.start({
+				title: 'Claude session',
+				prompt: 'work',
+				cwd: '/repo',
+				model: 'claude:model',
+			}),
+		);
+		await turnStarted.promise;
+		await expect(
+			Effect.runPromise(
+				services.sessions.sendMessage({
+					sessionId: started.sessionId,
+					prompt: 'steer this',
+				}),
+			),
+		).rejects.toMatchObject({
+			_tag: 'SessionBusy',
+			code: 'UNSUPPORTED_BACKEND',
+			message: expect.stringContaining('upgrade it'),
+		});
+		releaseTurn.resolve();
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: started.jobId, timeoutMs: 1_000 }),
+		);
 		database.sqlite.close();
 	});
 

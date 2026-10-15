@@ -54,6 +54,7 @@ describe('Pi ACP backend', () => {
 					},
 					listModels: () =>
 						Effect.succeed([{ id: 'provider/model', label: 'Model label' }]),
+					steer: () => Effect.die('Unexpected steer'),
 					forkSession: () => Effect.die('Unexpected fork'),
 					listSessionCatalog: () => Effect.die('Unexpected mode catalog'),
 					listModelConfigChoices: (input) => {
@@ -97,7 +98,7 @@ describe('Pi ACP backend', () => {
 		]);
 		expect(await Effect.runPromise(harness.listAgentTargets())).toEqual([]);
 		expect(harness.supportsModelSwitch).toBe(false);
-		expect(harness).not.toHaveProperty('steer');
+		expect(harness).toHaveProperty('steer');
 		expect(harness).not.toHaveProperty('forkSession');
 		await Effect.runPromise(
 			harness.runTurn({
