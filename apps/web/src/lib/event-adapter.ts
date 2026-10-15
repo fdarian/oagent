@@ -167,8 +167,12 @@ type TimelineReduceState = {
 
 type ChildReduceState = {
 	id: string;
-	/** `session` children are announced by the harness; `tool-call` ones are synthesized from a Claude Agent tool call. */
-	origin: 'session' | 'tool-call';
+	/**
+	 * `session` children are announced by the harness; `tool-call` ones are
+	 * synthesized from a Claude Agent tool call; `native` ones come from
+	 * `subagent_update` events carrying `oagent/subagent` metadata.
+	 */
+	origin: 'session' | 'tool-call' | 'native';
 	parentId: string;
 	depth: number;
 	title: string;
@@ -657,8 +661,9 @@ function applyTimelineEvent(
 
 	// Ignored variants: plan, plan_update, plan_removed, available_commands_update,
 	// current_mode_update, config_option_update, session_info_update, usage_update,
-	// compaction_update, compaction_summary_chunk, notice, subagent_update,
-	// session_message, session_message_chunk
+	// compaction_update, compaction_summary_chunk, notice, session_message,
+	// session_message_chunk. `subagent_update` is consumed by applyEvent when it
+	// carries `oagent/subagent` metadata and ignored here otherwise.
 	// Open text/reasoning already flushed above.
 	return nextState;
 }
@@ -767,7 +772,8 @@ function authoritativeChildSessionId(
 	part: TimelineToolPart,
 	children: ReadonlyMap<string, ChildReduceState>,
 ): string | undefined {
-	if (children.get(part.toolCallId)?.origin === 'tool-call') {
+	const origin = children.get(part.toolCallId)?.origin;
+	if (origin === 'tool-call' || origin === 'native') {
 		return part.toolCallId;
 	}
 	const sessionId = readNestedString(part.rawOutput, 'metadata', 'sessionID');
@@ -921,7 +927,8 @@ function reconcileSubagentLinks(
 
 			claimedChildIds.add(linkedId);
 			const child = children.get(linkedId);
-			if (child !== undefined) {
+			// Native children report their own state; the synthetic part follows them.
+			if (child !== undefined && child.origin !== 'native') {
 				children.set(
 					linkedId,
 					updateChildFromTool(child, part, details, createdAt),
@@ -997,6 +1004,233 @@ type ChildRoute = {
 	origin: ChildReduceState['origin'];
 };
 
+type NativeSubagentMeta = {
+	sessionId: string;
+	/** `null` when the root session spawned the subagent. */
+	parentSessionId: string | null;
+};
+
+/** Reads the engine's `oagent/subagent` tag on native Claude subagent events. */
+function readNativeSubagentMeta(
+	event: SessionUpdate,
+): NativeSubagentMeta | undefined {
+	if (!('_meta' in event) || !isRecord(event._meta)) return undefined;
+	const value = event._meta['oagent/subagent'];
+	if (value === undefined) return undefined;
+	if (!isRecord(value)) {
+		throw new Error('Invalid oagent subagent metadata');
+	}
+	const sessionId = value.sessionId;
+	const parentSessionId = value.parentSessionId;
+	if (
+		typeof sessionId !== 'string' ||
+		(parentSessionId !== null && typeof parentSessionId !== 'string')
+	) {
+		throw new Error('Invalid oagent subagent metadata fields');
+	}
+	return { sessionId, parentSessionId };
+}
+
+function resolveNativeParent(
+	state: ReduceState,
+	meta: NativeSubagentMeta,
+): { parentId: string; depth: number } {
+	if (meta.parentSessionId === null) {
+		return { parentId: ROOT_TIMELINE_ID, depth: 1 };
+	}
+	const parent = state.children.get(meta.parentSessionId);
+	if (parent === undefined) {
+		throw new Error(
+			`Native subagent ${meta.sessionId} references unknown parent ${meta.parentSessionId}`,
+		);
+	}
+	return { parentId: parent.id, depth: parent.depth + 1 };
+}
+
+function resolveNativeRoute(
+	state: ReduceState,
+	meta: NativeSubagentMeta,
+): ChildRoute {
+	const existing = state.children.get(meta.sessionId);
+	if (existing === undefined) {
+		throw new Error(`Event for unknown native subagent ${meta.sessionId}`);
+	}
+	return {
+		meta: {
+			id: existing.id,
+			parentId: existing.parentId,
+			depth: existing.depth,
+			title: existing.title,
+		},
+		origin: 'native',
+	};
+}
+
+type SubagentUpdateEvent = Extract<
+	SessionUpdate,
+	{ sessionUpdate: 'subagent_update' }
+>;
+
+function nativeStatusFromState(
+	state: SubagentUpdateEvent['state'],
+	current: ChildSessionStatus,
+): ChildSessionStatus {
+	if (state === undefined || state === null) return current;
+	switch (state.state) {
+		case 'running':
+			return 'running';
+		case 'completed':
+		case 'idle':
+			return 'completed';
+		case 'failed':
+		case 'cancelled':
+		case 'disconnected':
+			return 'failed';
+		default:
+			return current;
+	}
+}
+
+function toolStateForChildStatus(
+	status: ChildSessionStatus,
+): TimelineToolPart['state'] {
+	switch (status) {
+		case 'running':
+			return 'input-available';
+		case 'completed':
+			return 'output-available';
+		case 'failed':
+			return 'output-error';
+	}
+}
+
+/**
+ * Keeps the synthetic Agent card in the parent timeline in step with a native
+ * child. The adapter drops the parent's real Agent tool call in native mode.
+ */
+function withNativeToolPart(
+	timeline: TimelineReduceState,
+	child: ChildReduceState,
+	createdAt: number,
+): TimelineReduceState {
+	const toolState = toolStateForChildStatus(child.status);
+	const index = timeline.toolIndices.get(child.id);
+	if (index === undefined) {
+		const flushed = flushOpenReasoning(
+			flushOpenSteer(flushOpenText(timeline)),
+			createdAt,
+		);
+		const toolIndices = new Map(flushed.toolIndices);
+		toolIndices.set(child.id, flushed.parts.length);
+		return {
+			...flushed,
+			toolIndices,
+			parts: [
+				...flushed.parts,
+				{
+					kind: 'tool',
+					id: `tool-${child.id}`,
+					toolCallId: child.id,
+					toolName: 'subagent',
+					title: 'Subagent',
+					state: toolState,
+					content: [],
+					locations: [],
+					childSessionId: child.id,
+					createdAt: child.startedAt,
+					durationMs:
+						child.endedAt === undefined
+							? undefined
+							: child.endedAt - child.startedAt,
+				},
+			],
+		};
+	}
+	const existing = timeline.parts[index];
+	if (existing === undefined || existing.kind !== 'tool') return timeline;
+	if (existing.state === toolState) return timeline;
+	const parts = [...timeline.parts];
+	parts[index] = {
+		...existing,
+		state: toolState,
+		durationMs:
+			child.endedAt === undefined
+				? undefined
+				: child.endedAt - existing.createdAt,
+	};
+	return { ...timeline, parts };
+}
+
+function applyNativeSubagentUpdate(
+	state: ReduceState,
+	event: SubagentUpdateEvent,
+	meta: NativeSubagentMeta,
+	createdAt: number,
+): ReduceState {
+	const existing = state.children.get(meta.sessionId);
+	const placement =
+		existing === undefined
+			? resolveNativeParent(state, meta)
+			: { parentId: existing.parentId, depth: existing.depth };
+
+	const status = nativeStatusFromState(
+		event.state,
+		existing === undefined ? 'running' : existing.status,
+	);
+	const endedAt =
+		status === 'running'
+			? undefined
+			: existing?.endedAt !== undefined
+				? existing.endedAt
+				: createdAt;
+	const description =
+		event.description === undefined
+			? existing?.description
+			: event.description === null
+				? undefined
+				: event.description;
+	const title =
+		event.title !== undefined && event.title !== null
+			? event.title
+			: existing !== undefined
+				? existing.title
+				: description !== undefined
+					? description
+					: meta.sessionId;
+
+	const child: ChildReduceState = {
+		id: meta.sessionId,
+		origin: 'native',
+		parentId: placement.parentId,
+		depth: placement.depth,
+		title,
+		timeline:
+			existing === undefined ? createInitialTimelineState() : existing.timeline,
+		status,
+		startedAt: existing === undefined ? createdAt : existing.startedAt,
+		lastEventAt: createdAt,
+		endedAt,
+		lastActivity: existing === undefined ? 'Starting' : existing.lastActivity,
+		description,
+	};
+
+	const children = new Map(state.children);
+	children.set(child.id, child);
+	let timeline = state.timeline;
+	if (child.parentId === ROOT_TIMELINE_ID) {
+		timeline = withNativeToolPart(timeline, child, createdAt);
+	} else {
+		const parent = children.get(child.parentId);
+		if (parent !== undefined) {
+			children.set(parent.id, {
+				...parent,
+				timeline: withNativeToolPart(parent.timeline, child, createdAt),
+			});
+		}
+	}
+	return reconcileSubagentLinks({ timeline, children }, createdAt);
+}
+
 function findToolPartOwner(
 	state: ReduceState,
 	toolCallId: string,
@@ -1023,6 +1257,9 @@ function resolveChildRoute(
 ): ChildRoute | undefined {
 	const childMeta = readChildSessionMeta(event);
 	if (childMeta !== undefined) return { meta: childMeta, origin: 'session' };
+
+	const nativeMeta = readNativeSubagentMeta(event);
+	if (nativeMeta !== undefined) return resolveNativeRoute(state, nativeMeta);
 
 	const parentToolUseId = readClaudeParentToolUseId(event);
 	if (parentToolUseId === undefined) return undefined;
@@ -1058,6 +1295,13 @@ export function applyEvent(
 	event: SessionUpdate,
 	createdAt: number,
 ): ReduceState {
+	if (event.sessionUpdate === 'subagent_update') {
+		const nativeMeta = readNativeSubagentMeta(event);
+		if (nativeMeta !== undefined) {
+			return applyNativeSubagentUpdate(state, event, nativeMeta, createdAt);
+		}
+	}
+
 	const route = resolveChildRoute(state, event);
 	if (route === undefined) {
 		return reconcileSubagentLinks(
@@ -1202,14 +1446,17 @@ function finalizeTimeline(
 }
 
 /**
- * A background Claude subagent has no completion event, but the adapter holds
- * its turn open until the subagent settles, so a launched one is done by the
- * time the job terminates.
+ * A background Claude subagent launched through the Agent tool call has no
+ * completion event, but the adapter holds its turn open until the subagent
+ * settles, so a launched one is done by the time the job terminates. Native
+ * subagents are treated the same way when their final state update never
+ * arrives.
  */
 function settledOnTermination(
 	state: ReduceState,
 	child: ChildReduceState,
 ): ChildSessionStatus {
+	if (child.origin === 'native') return 'completed';
 	if (child.origin !== 'tool-call') return 'failed';
 	const owner = findToolPartOwner(state, child.id);
 	return owner !== undefined && owner.part.state === 'output-available'
