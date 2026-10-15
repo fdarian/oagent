@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { expect, userEvent, within } from 'storybook/test';
+import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { SessionSidebar } from './session-sidebar';
 
 const meta: Meta<typeof SessionSidebar> = {
@@ -152,11 +152,13 @@ export const FilterMenuOpen: Story = {
 			canvas.getByRole('button', { name: 'Filter and group sessions' }),
 		);
 		const menu = within(context.canvasElement.ownerDocument.body);
-		await expect(
-			await menu.findByRole('menuitem', { name: /Last activity/ }),
-		).toBeVisible();
-		await expect(
-			menu.getByRole('menuitem', { name: /Group by/ }),
-		).toBeVisible();
+		await waitFor(async () => {
+			await expect(
+				menu.getByRole('menuitem', { name: /Last activity/ }),
+			).toBeVisible();
+			await expect(
+				menu.getByRole('menuitem', { name: /Group by/ }),
+			).toBeVisible();
+		});
 	},
 };
