@@ -1,4 +1,5 @@
 import type { Decorator } from '@storybook/react-vite';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
 	createMemoryHistory,
 	createRootRoute,
@@ -28,10 +29,20 @@ function StorybookRouter(props: StorybookRouterProps) {
 	);
 }
 
+function StorybookQueryClient(props: { children: ReactNode }) {
+	const client = useState(() => new QueryClient())[0];
+
+	return (
+		<QueryClientProvider client={client}>{props.children}</QueryClientProvider>
+	);
+}
+
 export const withAppProviders: Decorator = (Story, context) => (
 	<ThemeProvider>
-		<StorybookRouter key={context.id}>
-			<Story />
-		</StorybookRouter>
+		<StorybookQueryClient key={context.id}>
+			<StorybookRouter key={context.id}>
+				<Story />
+			</StorybookRouter>
+		</StorybookQueryClient>
 	</ThemeProvider>
 );
