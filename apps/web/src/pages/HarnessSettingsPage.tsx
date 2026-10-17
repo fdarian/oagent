@@ -152,6 +152,7 @@ function HarnessSettings(props: { backend: string }) {
 						<CustomHarnessSection
 							key={customHarness.id}
 							harness={customHarness}
+							onSaved={() => checkMutation.reset()}
 						/>
 					) : null}
 
@@ -537,7 +538,10 @@ function PageHeader(props: { title: string }) {
 	);
 }
 
-function CustomHarnessSection(props: { harness: CustomHarness }) {
+function CustomHarnessSection(props: {
+	harness: CustomHarness;
+	onSaved: () => void;
+}) {
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
 	const refreshHarnesses = useRefreshHarnesses();
@@ -562,7 +566,7 @@ function CustomHarnessSection(props: { harness: CustomHarness }) {
 					Saved changes apply to newly started sessions.
 				</p>
 			</div>
-			<CustomHarnessForm harness={props.harness} onSaved={() => {}} />
+			<CustomHarnessForm harness={props.harness} onSaved={props.onSaved} />
 			<div>
 				<Button
 					type="button"
