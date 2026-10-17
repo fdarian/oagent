@@ -78,50 +78,28 @@ const failWhenProcessExits = (
 	);
 };
 
-export type ClaudeBackgroundTasks = {
+export type BackgroundTaskTracker = {
 	/** Feeds `_claude/sdkMessage` notifications; every other method is ignored. */
 	observe: (method: string, params: unknown) => void;
-	/** The SDK's task level is per process, so it is meaningless after a reconnect. */
-	reset: () => void;
 	/**
 	 * Extension notifications can be delivered after the prompt response that
 	 * followed them, so the check waits briefly for them to land.
 	 */
 	hasLiveTasksAfterFlush: Effect.Effect<boolean>;
 	/**
-	 * Returns once no background task is live and the SDK has been idle for
-	 * `settleMs` (the gap between a task ending and its follow-up cycle starting
-	 * must not end the hold), or once `release` is called.
+	 * Completes once no background task is live and the SDK has been idle for
+	 * `settleMs`: the gap between a task ending and its follow-up cycle starting
+	 * must not end a hold.
 	 */
-	hold: (input: {
-		settleMs: number;
-		processExited?: Promise<number>;
-		cancel: Effect.Effect<void>;
-	}) => Effect.Effect<void, AcpTurnFailed>;
-	/** Ends an in-progress hold; false when the turn is not being held. */
-	release: () => boolean;
+	untilSettled: (settleMs: number) => Effect.Effect<void>;
 };
 
-export const makeClaudeBackgroundTasks: Effect.Effect<ClaudeBackgroundTasks> =
-	Effect.gen(function* () {
+const makeTracker: Effect.Effect<BackgroundTaskTracker> = Effect.gen(
+	function* () {
 		const state = yield* SubscriptionRef.make(initialState);
-		const released = yield* Deferred.make<void>();
-		const holding = { active: false };
-
 		const update = (change: (current: TrackerState) => TrackerState): void => {
 			Effect.runSync(SubscriptionRef.update(state, change));
 		};
-
-		const untilSettled = (settleMs: number) =>
-			SubscriptionRef.changes(state).pipe(
-				Stream.map(isSettled),
-				Stream.changes,
-				Stream.debounce(Duration.millis(settleMs)),
-				Stream.filter((settled) => settled),
-				Stream.take(1),
-				Stream.runDrain,
-			);
-
 		return {
 			observe: (method, params) => {
 				if (method !== SDK_MESSAGE_METHOD) return;
@@ -140,24 +118,78 @@ export const makeClaudeBackgroundTasks: Effect.Effect<ClaudeBackgroundTasks> =
 				).length;
 				update((current) => ({ ...current, liveTasks }));
 			},
-			reset: () => {
-				update(() => initialState);
-			},
 			hasLiveTasksAfterFlush: Effect.sleep(
 				Duration.millis(NOTIFICATION_FLUSH_MS),
 			).pipe(Effect.map(() => SubscriptionRef.getUnsafe(state).liveTasks > 0)),
-			hold: (input) => {
-				const processGone = failWhenProcessExits(input.processExited);
-				return Effect.sync(() => {
+			untilSettled: (settleMs) =>
+				SubscriptionRef.changes(state).pipe(
+					Stream.map(isSettled),
+					Stream.changes,
+					Stream.debounce(Duration.millis(settleMs)),
+					Stream.filter((settled) => settled),
+					Stream.take(1),
+					Stream.runDrain,
+				),
+		};
+	},
+);
+
+export type BackgroundTaskRegistry = {
+	/** Routes a connection-level notification to the tracker of its ACP session. */
+	observe: (sessionId: string, method: string, params: unknown) => void;
+	forSession: (sessionId: string) => BackgroundTaskTracker;
+};
+
+/**
+ * Background task state is per adapter process and outlives any one turn, so
+ * it lives with the connection: a shell left running by one turn must still be
+ * visible to the next turn on that session.
+ */
+export function createBackgroundTaskRegistry(): BackgroundTaskRegistry {
+	const trackers = new Map<string, BackgroundTaskTracker>();
+	const forSession = (sessionId: string): BackgroundTaskTracker => {
+		const existing = trackers.get(sessionId);
+		if (existing !== undefined) return existing;
+		const created = Effect.runSync(makeTracker);
+		trackers.set(sessionId, created);
+		return created;
+	};
+	return {
+		observe: (sessionId, method, params) => {
+			forSession(sessionId).observe(method, params);
+		},
+		forSession,
+	};
+}
+
+export type BackgroundHold = {
+	/** Keeps the turn open until the tracker settles, the hold is released, or the process dies. */
+	hold: (input: {
+		tracker: BackgroundTaskTracker;
+		settleMs: number;
+		processExited?: Promise<number>;
+		cancel: Effect.Effect<void>;
+	}) => Effect.Effect<void, AcpTurnFailed>;
+	/** Ends an in-progress hold; false when the turn is not being held. */
+	release: () => boolean;
+};
+
+export const makeBackgroundHold: Effect.Effect<BackgroundHold> = Effect.gen(
+	function* () {
+		const released = yield* Deferred.make<void>();
+		const holding = { active: false };
+		return {
+			hold: (input) =>
+				Effect.sync(() => {
 					holding.active = true;
 				}).pipe(
 					Effect.andThen(
 						Effect.raceFirst(
 							Effect.raceFirst(
-								untilSettled(input.settleMs),
+								input.tracker.untilSettled(input.settleMs),
 								Deferred.await(released),
 							),
-							processGone,
+							failWhenProcessExits(input.processExited),
 						),
 					),
 					Effect.onInterrupt(() => input.cancel),
@@ -166,12 +198,12 @@ export const makeClaudeBackgroundTasks: Effect.Effect<ClaudeBackgroundTasks> =
 							holding.active = false;
 						}),
 					),
-				);
-			},
+				),
 			release: () => {
 				if (!holding.active) return false;
 				Effect.runSync(Deferred.succeed(released, undefined));
 				return true;
 			},
 		};
-	});
+	},
+);

@@ -6,6 +6,7 @@ import {
 import { Effect, Schema, Semaphore } from 'effect';
 import type { Scope } from 'effect/Scope';
 import { createAcpTurnReplay } from './acp-turn-replay.ts';
+import type { BackgroundTaskRegistry } from './claude-background-tasks.ts';
 
 export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	'AcpTurnFailed',
@@ -47,6 +48,7 @@ export type AcpTurnConnection = {
 		(method: string, params: unknown) => void
 	>;
 	steeringSupported?: boolean;
+	backgroundTasks?: BackgroundTaskRegistry;
 	agentInfo?: { name: string; version: string };
 	processExited?: Promise<number>;
 	close?: () => void;

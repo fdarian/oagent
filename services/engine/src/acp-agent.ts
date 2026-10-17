@@ -22,7 +22,11 @@ import {
 	type AcpTurnRecovery,
 	createAcpTurnRecovery,
 } from './acp-turn-recovery.ts';
-import { makeClaudeBackgroundTasks } from './claude-background-tasks.ts';
+import {
+	type BackgroundTaskRegistry,
+	createBackgroundTaskRegistry,
+	makeBackgroundHold,
+} from './claude-background-tasks.ts';
 import type { Backend, HarnessCheckResult } from './harness.ts';
 
 type AcpEnv =
@@ -88,6 +92,8 @@ type AcpConnection = {
 	>['agentCapabilities'];
 	/** Whether the adapter advertised the `_session/steering` extension. */
 	steeringSupported: boolean;
+	/** Claude background task state per ACP session, fed by raw SDK messages. */
+	backgroundTasks: BackgroundTaskRegistry;
 	processExited: Promise<number>;
 	close: () => void;
 	cancelPermissions: (sessionId: string) => void;
@@ -343,6 +349,7 @@ export function createAcpConnection(
 			string,
 			(method: string, params: unknown) => void
 		>();
+		const backgroundTasks = createBackgroundTaskRegistry();
 
 		const registerListener = (
 			sessionId: string,
@@ -403,6 +410,8 @@ export function createAcpConnection(
 							? (params as Record<string, unknown>).sessionId
 							: undefined;
 					if (typeof sid === 'string') {
+						// Tracked even with no turn listening: a shell can end between turns.
+						backgroundTasks.observe(subagents.rootOf(sid), method, params);
 						const h = extNotificationHandlers.get(subagents.rootOf(sid));
 						if (h !== undefined) {
 							h(method, params);
@@ -444,6 +453,7 @@ export function createAcpConnection(
 			agentInfo,
 			agentCapabilities: initializeResponse.agentCapabilities,
 			steeringSupported: isSteeringSupported(initializeResponse),
+			backgroundTasks,
 			processExited: subprocess.proc.exited,
 			close: () => {
 				Effect.runSync(killProcessGroup(subprocess.proc.pid));
@@ -561,22 +571,12 @@ export function runAcpTurn(
 	return Effect.scoped(
 		Effect.gen(function* () {
 			const turnState = { buffer: '', afterToolCall: false };
-			const background =
+			const backgroundHold =
 				input.backgroundTasks === undefined
 					? undefined
-					: yield* makeClaudeBackgroundTasks;
+					: yield* makeBackgroundHold;
 			const recoveryController = yield* createAcpTurnRecovery({
-				env:
-					background === undefined
-						? env
-						: {
-								...env,
-								onReconnect: () =>
-									(env.onReconnect === undefined
-										? Effect.void
-										: env.onReconnect()
-									).pipe(Effect.tap(() => Effect.sync(background.reset))),
-							},
+				env,
 				cwd: input.cwd,
 				sessionMeta: input.sessionMeta,
 				initialSessionLoad: input.sessionId !== undefined,
@@ -599,13 +599,7 @@ export function runAcpTurn(
 						turnState.buffer += update.content.text;
 					}
 				},
-				onExtensionEvent:
-					background === undefined
-						? input.onExtensionEvent
-						: (method, params) => {
-								background.observe(method, params);
-								input.onExtensionEvent?.(method, params);
-							},
+				onExtensionEvent: input.onExtensionEvent,
 			});
 
 			const turn = Effect.gen(function* () {
@@ -652,7 +646,7 @@ export function runAcpTurn(
 					const unregister = onTurnActive(
 						sessionResult.sessionId,
 						recoveryController.currentConnection,
-						background === undefined ? () => false : background.release,
+						backgroundHold === undefined ? () => false : backgroundHold.release,
 					);
 					yield* Effect.addFinalizer(() => Effect.sync(unregister));
 				}
@@ -740,18 +734,30 @@ export function runAcpTurn(
 					input.onPromptDispatch,
 				);
 				if (
-					background !== undefined &&
+					backgroundHold !== undefined &&
 					input.backgroundTasks !== undefined &&
-					response.stopReason === 'end_turn' &&
-					(yield* background.hasLiveTasksAfterFlush)
+					response.stopReason === 'end_turn'
 				) {
-					// The follow-up cycle's answer replaces the pre-hold "waiting" text.
-					turnState.afterToolCall = true;
-					yield* background.hold({
-						settleMs: input.backgroundTasks.settleMs ?? BACKGROUND_SETTLE_MS,
-						processExited: recoveryController.currentConnection().processExited,
-						cancel: recoveryController.cancel,
-					});
+					// A reconnect swaps the connection, and with it the task state.
+					const connection = recoveryController.currentConnection();
+					if (connection.backgroundTasks === undefined) {
+						return yield* Effect.die(
+							new Error('Background task holding needs a connection tracker'),
+						);
+					}
+					const tracker = connection.backgroundTasks.forSession(
+						sessionResult.sessionId,
+					);
+					if (yield* tracker.hasLiveTasksAfterFlush) {
+						// The follow-up cycle's answer replaces the pre-hold "waiting" text.
+						turnState.afterToolCall = true;
+						yield* backgroundHold.hold({
+							tracker,
+							settleMs: input.backgroundTasks.settleMs ?? BACKGROUND_SETTLE_MS,
+							processExited: connection.processExited,
+							cancel: recoveryController.cancel,
+						});
+					}
 				}
 				return { sessionResult, response };
 			}).pipe(Effect.ensuring(recoveryController.cleanup));

@@ -8,7 +8,8 @@
  * shell: it reports the task through `_claude/sdkMessage`, answers "waiting" and
  * ends the turn. `background-shell:finish` then ends the shell 100ms later and
  * runs an autonomous follow-up cycle answering "shell finished"; plain
- * `background-shell` never finishes.
+ * `background-shell` never finishes. A `finish-shell` prompt, sent on a later turn,
+ * answers "ok" and ends the still-running shell the same way.
  */
 import {
 	AgentSideConnection,
@@ -28,6 +29,32 @@ const sdkMessage = (
 	message: Record<string, unknown>,
 ) => conn.extNotification('_claude/sdkMessage', { sessionId, message });
 
+const finishShell = (conn: AgentSideConnection, sessionId: string) =>
+	setTimeout(async () => {
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'background_tasks_changed',
+			tasks: [],
+		});
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'session_state_changed',
+			state: 'running',
+		});
+		await conn.sessionUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'shell finished' },
+			},
+		});
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'session_state_changed',
+			state: 'idle',
+		});
+	}, 100);
+
 const inFlight = new Map<string, (steeredText: string) => Promise<void>>();
 const cancelInFlight = new Map<string, () => void>();
 
@@ -41,6 +68,7 @@ new AgentSideConnection(
 				: { _meta: { steering: { supported: true } } }),
 		}),
 		newSession: async () => ({ sessionId: crypto.randomUUID() }),
+		loadSession: async () => ({}),
 		authenticate: async () => ({}),
 		cancel: async (params) => {
 			cancelInFlight.get(params.sessionId)?.();
@@ -92,31 +120,19 @@ new AgentSideConnection(
 					},
 				});
 				if (first.text === 'background-shell:finish') {
-					setTimeout(async () => {
-						await sdkMessage(conn, params.sessionId, {
-							type: 'system',
-							subtype: 'background_tasks_changed',
-							tasks: [],
-						});
-						await sdkMessage(conn, params.sessionId, {
-							type: 'system',
-							subtype: 'session_state_changed',
-							state: 'running',
-						});
-						await conn.sessionUpdate({
-							sessionId: params.sessionId,
-							update: {
-								sessionUpdate: 'agent_message_chunk',
-								content: { type: 'text', text: 'shell finished' },
-							},
-						});
-						await sdkMessage(conn, params.sessionId, {
-							type: 'system',
-							subtype: 'session_state_changed',
-							state: 'idle',
-						});
-					}, 100);
+					finishShell(conn, params.sessionId);
 				}
+				return { stopReason: 'end_turn' };
+			}
+			if (first?.type === 'text' && first.text === 'finish-shell') {
+				finishShell(conn, params.sessionId);
+				await conn.sessionUpdate({
+					sessionId: params.sessionId,
+					update: {
+						sessionUpdate: 'agent_message_chunk',
+						content: { type: 'text', text: 'ok' },
+					},
+				});
 				return { stopReason: 'end_turn' };
 			}
 			await conn.sessionUpdate({

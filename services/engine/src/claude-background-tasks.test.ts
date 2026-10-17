@@ -6,6 +6,7 @@ import type {
 } from '@agentclientprotocol/sdk';
 import { Effect, Fiber, Schedule } from 'effect';
 import { makeAcpAgent, runAcpTurn } from './acp-agent.ts';
+import { createBackgroundTaskRegistry } from './claude-background-tasks.ts';
 
 const SESSION_ID = 'ses_claude';
 const SETTLE_MS = 50;
@@ -40,6 +41,7 @@ function createFakeClaude(
 		string,
 		(method: string, params: unknown) => void
 	>();
+	const backgroundTasks = createBackgroundTaskRegistry();
 	const conn = {
 		newSession: async (): Promise<NewSessionResult> =>
 			({ sessionId: SESSION_ID }) as NewSessionResult,
@@ -47,10 +49,7 @@ function createFakeClaude(
 			await prompt({
 				update: (event) => state.listener?.(event),
 				raw: (params) =>
-					extNotificationHandlers.get(SESSION_ID)?.(
-						'_claude/sdkMessage',
-						params,
-					),
+					backgroundTasks.observe(SESSION_ID, '_claude/sdkMessage', params),
 			});
 			return { stopReason: 'end_turn' } as PromptResult;
 		},
@@ -72,6 +71,7 @@ function createFakeClaude(
 				};
 			},
 			extNotificationHandlers,
+			backgroundTasks,
 		},
 	};
 }
@@ -244,6 +244,50 @@ describe('Claude background task hold through the ACP agent', () => {
 					: undefined,
 			),
 		).toEqual(['waiting on the shell', 'shell finished']);
+	});
+
+	test('holds the next turn on a session whose shell outlived a released hold', async () => {
+		const result = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent();
+					const sessionId = Promise.withResolvers<string>();
+					const held = Promise.withResolvers<void>();
+					const first = yield* agent
+						.runTurn({
+							prompt: 'background-shell',
+							cwd: process.cwd(),
+							backgroundTasks: { settleMs: SETTLE_MS },
+							onSessionId: sessionId.resolve,
+							onEvent: () => held.resolve(),
+						})
+						.pipe(Effect.forkChild);
+					const id = yield* Effect.promise(() => sessionId.promise);
+					yield* Effect.promise(() => held.promise);
+					yield* agent.steer({ sessionId: id, text: 'next' }).pipe(
+						Effect.retry({
+							while: (error) =>
+								!error.message.includes('waiting for background tasks'),
+							times: 20,
+							schedule: Schedule.spaced('50 millis'),
+						}),
+						Effect.flip,
+					);
+					const firstResult = yield* Fiber.join(first);
+					// The shell is still running; this turn never launches it again.
+					const second = yield* agent.runTurn({
+						prompt: 'finish-shell',
+						sessionId: id,
+						cwd: process.cwd(),
+						backgroundTasks: { settleMs: SETTLE_MS },
+					});
+					return { firstResult, second };
+				}),
+			),
+		);
+
+		expect(result.firstResult.text).toBe('waiting on the shell');
+		expect(result.second.text).toBe('shell finished');
 	});
 
 	test('ends a held turn as done with its current text when a new message arrives', async () => {
