@@ -21,7 +21,11 @@ export {
 	formatTurnResult,
 } from './format/turn-result.ts';
 export { Grok } from './grok.ts';
-export { BACKENDS } from './harness.ts';
+export {
+	BACKENDS,
+	CUSTOM_HARNESS_ID_PATTERN,
+	INLINE_ACP_HARNESS_ID,
+} from './harness.ts';
 export { HarnessRegistry } from './harness-registry.ts';
 export { Harnesses } from './harnesses.ts';
 export { serveSPA } from './http/spa.ts';

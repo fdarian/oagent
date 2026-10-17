@@ -6,6 +6,7 @@ import {
 	engineUrlFlag,
 	reportFailure,
 } from '#/lib/engine-cli.ts';
+import { splitShellWords } from '#/lib/shell-words.ts';
 import {
 	deriveTitle,
 	detachFlag,
@@ -37,6 +38,23 @@ export function rewriteBareWorktreeFlag(
 		}
 	}
 	return rewritten;
+}
+
+export function parseAcpCommand(commandLine: string) {
+	return Effect.try({
+		try: () => {
+			const words = splitShellWords(commandLine);
+			const binary = words[0];
+			if (binary === undefined) {
+				throw new Error('--acp needs a command to run.');
+			}
+			return { binary, args: words.slice(1) };
+		},
+		catch: (cause) =>
+			new Error(
+				`Invalid --acp command: ${cause instanceof Error ? cause.message : String(cause)}`,
+			),
+	});
 }
 
 function resolveWorktreeRequest(
@@ -79,7 +97,13 @@ export const start = Command.make(
 		model: Flag.String('model').pipe(
 			Flag.optional,
 			Flag.withDescription(
-				'Model as <alias>[#effort] or <backend>:<modelId>[#effort]. See `oagent aliases` and `oagent models`.',
+				'Model as <alias>[#effort] or <backend>:<modelId>[#effort]. See `oagent aliases` and `oagent models`. With --acp, a bare adapter model id instead (default: the adapter’s current model).',
+			),
+		),
+		acp: Flag.String('acp').pipe(
+			Flag.optional,
+			Flag.withDescription(
+				'Run against an arbitrary ACP agent without saving it, e.g. --acp "bunx my-acp-agent --flag". The command line is split like a shell would (quotes and escapes, nothing expanded or executed). Cannot be combined with --fork.',
 			),
 		),
 		agent: Flag.String('agent').pipe(
@@ -114,6 +138,14 @@ export const start = Command.make(
 				options.worktree,
 				options.worktreeBaseBranch,
 			);
+			const acp = Option.isSome(options.acp)
+				? yield* parseAcpCommand(options.acp.value)
+				: undefined;
+			if (acp !== undefined && Option.isSome(options.fork)) {
+				return yield* Effect.fail(
+					new Error('--acp and --fork cannot be used together.'),
+				);
+			}
 			const prompt = yield* readPrompt(options.prompt);
 			const engine = connectEngine(options.engineUrl);
 			const fork = Option.getOrUndefined(options.fork);
@@ -129,6 +161,7 @@ export const start = Command.make(
 					model: Option.getOrUndefined(options.model),
 					agent_type: Option.getOrUndefined(options.agent),
 					forkId: fork,
+					acp,
 					worktree,
 				}),
 			);

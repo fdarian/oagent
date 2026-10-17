@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_WORKTREE_SENTINEL, rewriteBareWorktreeFlag } from './start.ts';
+import { Effect } from 'effect';
+import {
+	DEFAULT_WORKTREE_SENTINEL,
+	parseAcpCommand,
+	rewriteBareWorktreeFlag,
+} from './start.ts';
 
 async function runCli(args: ReadonlyArray<string>) {
 	const child = Bun.spawn(
@@ -36,6 +41,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 			'--model',
 			'--agent',
 			'--fork',
+			'--acp',
 			'--worktree',
 			'--worktree-base-branch',
 			'--detach',
@@ -145,5 +151,25 @@ describe('rewriteBareWorktreeFlag', () => {
 		const jobs = ['jobs', 'list', '--worktree'];
 		expect(rewriteBareWorktreeFlag(send)).toEqual(send);
 		expect(rewriteBareWorktreeFlag(jobs)).toEqual(jobs);
+	});
+});
+
+describe('parseAcpCommand', () => {
+	test('splits the command line into a binary and arguments', async () => {
+		expect(
+			await Effect.runPromise(
+				parseAcpCommand('bunx my-agent --name "two words"'),
+			),
+		).toEqual({ binary: 'bunx', args: ['my-agent', '--name', 'two words'] });
+		expect(await Effect.runPromise(parseAcpCommand('my-agent'))).toEqual({
+			binary: 'my-agent',
+			args: [],
+		});
+	});
+
+	test.each(['', '   ', 'agent "unterminated'])('rejects %j', async (input) => {
+		await expect(Effect.runPromise(parseAcpCommand(input))).rejects.toThrow(
+			/--acp/,
+		);
 	});
 });

@@ -1,14 +1,21 @@
 import {
 	type AgentDefinition,
 	type AliasPreset,
-	BACKENDS,
+	CUSTOM_HARNESS_ID_PATTERN,
+	INLINE_ACP_HARNESS_ID,
 	parseModelInput,
 } from '@oagent/engine';
 import { Effect, Schema } from 'effect';
 import { FileSystem } from 'effect/FileSystem';
 
 const text = Schema.String.check(Schema.isMinLength(1));
-const backend = Schema.Literals(BACKENDS);
+/** A builtin or saved custom harness id; whether it exists is the engine's call. */
+const backend = Schema.String.check(
+	Schema.isPattern(CUSTOM_HARNESS_ID_PATTERN),
+	Schema.makeFilter((value) => value !== INLINE_ACP_HARNESS_ID, {
+		message: `"${INLINE_ACP_HARNESS_ID}" is reserved for --acp sessions`,
+	}),
+);
 const aliasSchema = Schema.Struct({
 	name: text,
 	backend,
