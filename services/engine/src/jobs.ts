@@ -283,9 +283,18 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
 
-		const isModelReference = (model: string) =>
-			resolveModel(model).pipe(
-				Effect.as(true),
+		/**
+		 * Whether `model` starts with a builtin or saved-harness prefix. Alias
+		 * names are deliberately not checked: an inline session's bare model id
+		 * may coincide with one.
+		 */
+		const hasHarnessPrefix = (model: string) =>
+			parseModelInput(model).pipe(
+				Effect.flatMap((parsed) =>
+					parsed.explicit === undefined
+						? Effect.succeed(false)
+						: ensureKnownHarness(parsed.explicit.backend).pipe(Effect.as(true)),
+				),
 				Effect.catchTag('ModelResolutionError', () => Effect.succeed(false)),
 			);
 
@@ -1734,7 +1743,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					.limit(1)
 					.get() !== undefined,
 			resolveBackend,
-			isModelReference,
+			hasHarnessPrefix,
 			validateStart,
 			runReserved,
 			failReserved,

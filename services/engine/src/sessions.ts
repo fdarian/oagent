@@ -397,11 +397,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				if (
 					input.model !== undefined &&
 					(input.acp !== undefined || inlineSource) &&
-					(yield* jobs.isModelReference(input.model))
+					(yield* jobs.hasHarnessPrefix(input.model))
 				) {
 					return yield* new SessionStartError({
 						code: 'ACP_WITH_MODEL_REFERENCE',
-						message: `Inline ACP sessions take the adapter's bare model id, but "${input.model}" is a harness-prefixed model or alias.`,
+						message: `Inline ACP sessions take the adapter's bare model id, but "${input.model}" starts with a harness prefix.`,
 					});
 				}
 				const forkAgentTarget =

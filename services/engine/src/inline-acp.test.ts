@@ -89,6 +89,7 @@ function createEnvironment() {
 	);
 	return {
 		database,
+		customHarnesses,
 		registry,
 		jobs,
 		sessions,
@@ -226,13 +227,17 @@ describe('sessions.start with an inline acp definition', () => {
 		await environment.close();
 	});
 
-	test('rejects a harness-prefixed model and an alias', async () => {
+	test('rejects a model with a builtin or saved-harness prefix', async () => {
 		const environment = createEnvironment();
-		environment.database.db
-			.insert(schema.modelAliases)
-			.values({ name: 'fast', backend: 'claude', model_id: 'haiku' })
-			.run();
-		for (const model of ['claude:haiku', 'fast']) {
+		await Effect.runPromise(
+			environment.customHarnesses.create({
+				id: 'my-agent',
+				name: 'My agent',
+				binary: process.execPath,
+				args: [agentScript],
+			}),
+		);
+		for (const model of ['claude:haiku', 'my-agent:m1', 'claude:haiku#high']) {
 			const error = await Effect.runPromise(
 				environment.sessions
 					.start({
@@ -262,6 +267,21 @@ describe('sessions.start with an inline acp definition', () => {
 		expect(jobRow(environment, started.jobId).model).toBe(
 			'vendor/model:latest',
 		);
+		await environment.close();
+	});
+
+	test('treats an alias name as a literal adapter id', async () => {
+		const environment = createEnvironment();
+		environment.database.db
+			.insert(schema.modelAliases)
+			.values({ name: 'fast', backend: 'claude', model_id: 'haiku' })
+			.run();
+		const started = await startInline(environment, {
+			acp: freshCommand(),
+			model: 'fast',
+		});
+		await finish(environment, started.jobId);
+		expect(jobRow(environment, started.jobId).model).toBe('fast');
 		await environment.close();
 	});
 
