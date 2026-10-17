@@ -2,11 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import {
-	HARNESS_NAMES,
-	harnessesQueryOptions,
-	isBackend,
-} from '@/lib/harnesses';
+import { harnessesQueryOptions, harnessName, isBackend } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 
@@ -96,7 +92,7 @@ export function SettingsSidebar() {
 						inactiveProps={{ className: inactiveNavItemClass }}
 						className={cn(navItemClass)}
 					>
-						{HARNESS_NAMES[harness.backend]}
+						{harnessName(harness.backend)}
 					</Link>
 				))
 			)}

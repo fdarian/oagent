@@ -185,6 +185,22 @@ CREATE TABLE session_message_chunk_events (
 	content TEXT NOT NULL
 );
 
+CREATE TABLE custom_harnesses (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	binary TEXT NOT NULL,
+	args TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE harnesses (
+	backend TEXT PRIMARY KEY,
+	binary_path TEXT NOT NULL,
+	version TEXT,
+	detected_at INTEGER NOT NULL
+);
+
 CREATE TABLE model_aliases (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT NOT NULL UNIQUE,

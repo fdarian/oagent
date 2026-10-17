@@ -19,7 +19,7 @@ import {
 	PopoverTrigger,
 } from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
-import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import { harnessName } from '@/lib/harnesses';
 import type { client } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
@@ -52,7 +52,7 @@ export type JobHeaderProps = {
 	cwd: string;
 	worktreePath?: string;
 	worktreeBranch?: string;
-	backend: Backend;
+	backend: string;
 	model?: string;
 	sessionModelControl?: SessionModelControl;
 	agentType?: string;
@@ -74,7 +74,7 @@ const moreMenuItemClassName =
 	'bg-popover text-popover-foreground hover:bg-secondary hover:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground';
 
 type HarnessSessionPopoverProps = {
-	backend: Backend;
+	backend: string;
 	sessionId?: string;
 	harnessSessionId?: string;
 };
@@ -218,13 +218,13 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 						render={
 							<button
 								type="button"
-								aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
+								aria-label={`${harnessName(props.backend)} harness; show session IDs`}
 								onPointerEnter={handleOpen}
 								onPointerLeave={handleClose}
 								onFocus={handleTriggerFocus}
 								onBlur={handleClose}
 							>
-								{HARNESS_NAMES[props.backend]}
+								{harnessName(props.backend)}
 							</button>
 						}
 					></Badge>
@@ -246,7 +246,7 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 							Session IDs
 						</span>
 						<span className="text-caption text-muted-foreground">
-							{HARNESS_NAMES[props.backend]}
+							{harnessName(props.backend)}
 						</span>
 					</div>
 					<SessionIdRow label="Oagent session ID" id={props.sessionId} />

@@ -4,7 +4,7 @@ import { Effect, Fiber, Scope } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Harness } from './harness.ts';
+import { type Harness, UnknownHarness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Jobs } from './jobs.ts';
 import { Settings } from './settings.ts';
@@ -36,8 +36,9 @@ function insertSession(
 
 function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 	return {
-		all: [harness],
-		get: () => harness,
+		builtin: () => harness,
+		resolve: () => Effect.succeed(harness),
+		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	};
 }
@@ -779,4 +780,79 @@ test('keeps the session busy until its completion checkpoint is saved', async ()
 		harnessSessionId: 'ses_checkpoint',
 	});
 	database.sqlite.close();
+});
+
+describe('custom harness model prefixes', () => {
+	const customHarness = {
+		backend: 'my-agent',
+		supportsModelSwitch: false,
+		runTurn: (input: { model?: string }) =>
+			Effect.succeed({
+				sessionId: 'ses_custom',
+				text: `ran:${input.model}`,
+				stopReason: 'end_turn',
+			}),
+	} as unknown as Harness;
+
+	const makeJobs = (database: ReturnType<typeof createDatabase>) =>
+		Jobs.make.pipe(
+			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
+			Effect.provideService(Db, database),
+			Effect.provideService(HarnessRegistry, {
+				builtin: () => customHarness,
+				resolve: (harnessId: string) =>
+					harnessId === 'my-agent'
+						? Effect.succeed(customHarness)
+						: Effect.fail(new UnknownHarness({ harnessId })),
+				list: () => Effect.succeed([customHarness]),
+				listAgentTargets: () => Effect.succeed([]),
+			} as unknown as HarnessRegistry['Service']),
+			Effect.provideService(Agents, {} as Agents['Service']),
+			Effect.provideService(Worktrees, {} as Worktrees['Service']),
+		);
+
+	test('resolves a saved custom id used as the model prefix', async () => {
+		const jobs = await Effect.runPromise(makeJobs(createDatabase()));
+		expect(await Effect.runPromise(jobs.resolveBackend('my-agent:m1'))).toBe(
+			'my-agent',
+		);
+	});
+
+	test('rejects a prefix that is neither builtin nor a saved harness', async () => {
+		const jobs = await Effect.runPromise(makeJobs(createDatabase()));
+		const error = await Effect.runPromise(
+			jobs.resolveBackend('ghost:m1').pipe(Effect.flip),
+		);
+		expect(error).toMatchObject({
+			_tag: 'ModelResolutionError',
+			code: 'UNKNOWN_BACKEND',
+		});
+	});
+
+	test('rejects an effort suffix on a custom harness', async () => {
+		const jobs = await Effect.runPromise(makeJobs(createDatabase()));
+		const error = await Effect.runPromise(
+			jobs.resolveBackend('my-agent:m1#high').pipe(Effect.flip),
+		);
+		expect(error).toMatchObject({
+			_tag: 'ModelResolutionError',
+			code: 'INVALID_FORMAT',
+		});
+	});
+
+	test('runs a turn on a session stored under the custom id', async () => {
+		const database = createDatabase();
+		const session = insertSession(database, {
+			uuid: 'custom-session',
+			title: 'Custom',
+			cwd: '/tmp',
+			backend: 'my-agent',
+		});
+		const jobs = await Effect.runPromise(makeJobs(database));
+		const started = await Effect.runPromise(
+			jobs.start({ session, prompt: 'hi', model: 'my-agent:m1' }),
+		);
+		const done = await Effect.runPromise(jobs.wait({ jobId: started.jobId }));
+		expect(done).toMatchObject({ status: 'done', text: 'ran:m1' });
+	});
 });

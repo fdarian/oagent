@@ -481,3 +481,16 @@ export const harnesses = sqliteTable('harnesses', {
 		.notNull()
 		.$defaultFn(() => new Date()),
 });
+
+export const customHarnesses = sqliteTable('custom_harnesses', {
+	id: text().primaryKey(),
+	name: text().notNull(),
+	binary: text().notNull(),
+	args: text({ mode: 'json' }).$type<string[]>().notNull(),
+	created_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updated_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});

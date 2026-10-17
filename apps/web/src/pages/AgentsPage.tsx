@@ -26,7 +26,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import { type Backend, HARNESS_NAMES, harnessName } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 
 type Agent = Awaited<ReturnType<typeof orpc.agents.list.call>>[number];
@@ -485,7 +485,7 @@ function AgentTargets(props: { agent: Agent }) {
 			{props.agent.targets.map((target) => (
 				<div key={target.backend} className="flex items-baseline gap-2">
 					<span className="text-muted-foreground">
-						{HARNESS_NAMES[target.backend]}
+						{harnessName(target.backend)}
 					</span>
 					<code className="font-mono text-foreground">{target.target}</code>
 				</div>

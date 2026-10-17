@@ -1,7 +1,13 @@
 import { type client, orpc } from './orpc';
 
 export type Harness = Awaited<ReturnType<typeof client.harnesses.list>>[number];
-export type Backend = Harness['backend'];
+export type Backend =
+	| 'opencode'
+	| 'cursor'
+	| 'grok'
+	| 'codex'
+	| 'claude'
+	| 'pi';
 
 export const HARNESS_NAMES: Record<Backend, string> = {
 	opencode: 'OpenCode',
@@ -16,6 +22,11 @@ export const BACKENDS = Object.keys(HARNESS_NAMES) as Array<Backend>;
 
 export function isBackend(value: string): value is Backend {
 	return (BACKENDS as ReadonlyArray<string>).includes(value);
+}
+
+/** Falls back to the raw id until saved harnesses come from the engine's harness catalog. */
+export function harnessName(id: string): string {
+	return isBackend(id) ? HARNESS_NAMES[id] : id;
 }
 
 export function harnessesQueryOptions() {

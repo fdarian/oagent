@@ -7,7 +7,7 @@ import { Effect, Fiber, Scope } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Backend, Harness } from './harness.ts';
+import { type Backend, type Harness, UnknownHarness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import type { OpenCode } from './opencode.ts';
@@ -119,13 +119,19 @@ function createHarnessRegistry(
 	others: OtherHarnesses = {},
 ): HarnessRegistry['Service'] {
 	return {
-		all: [opencode, ...Object.values(others)],
-		get: (backend) => {
+		builtin: (backend) => {
 			if (backend === 'opencode') return opencode;
 			const other = others[backend];
 			if (other !== undefined) return other;
 			throw new Error(`Unexpected test harness: ${backend}`);
 		},
+		resolve: (harnessId) => {
+			if (harnessId === 'opencode') return Effect.succeed(opencode);
+			const other = others[harnessId as Backend];
+			if (other !== undefined) return Effect.succeed(other);
+			return Effect.fail(new UnknownHarness({ harnessId }));
+		},
+		list: () => Effect.succeed([opencode, ...Object.values(others)]),
 		listAgentTargets: (backend) => {
 			if (backend === 'opencode') return opencode.listAgentTargets();
 			throw new Error(`Unexpected test harness: ${backend}`);

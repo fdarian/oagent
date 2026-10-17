@@ -19,6 +19,22 @@ test('model input splits on the last effort separator and first backend separato
 		'empty reasoning-effort',
 	);
 	await expect(
-		Effect.runPromise(parseModelInput('unknown:model')),
+		Effect.runPromise(parseModelInput('Not_A_Slug:model')),
 	).rejects.toThrow('Unknown backend');
+});
+
+test('model input accepts a slug-shaped custom harness id as the prefix', async () => {
+	expect(
+		await Effect.runPromise(parseModelInput('my-agent:org:model#high')),
+	).toEqual({
+		name: 'my-agent:org:model',
+		suffixEffort: 'high',
+		explicit: { backend: 'my-agent', modelId: 'org:model' },
+	});
+});
+
+test('model input rejects the reserved inline harness id as a prefix', async () => {
+	await expect(Effect.runPromise(parseModelInput('acp:model'))).rejects.toThrow(
+		'Unknown backend',
+	);
 });

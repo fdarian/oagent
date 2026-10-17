@@ -7,7 +7,6 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
 import { Sessions } from './sessions.ts';
@@ -107,23 +106,33 @@ export class SideChats extends Context.Service<SideChats>()(
 
 			const validateSource = (
 				sourceJob: SourceJob,
-			): Effect.Effect<SourceJob, SideChatError, never> => {
-				const backend = parseBackend(sourceJob.session.backend);
-				if (harnessRegistry.get(backend).forkSession === undefined) {
-					return new SideChatError({
-						code: 'UNSUPPORTED_HARNESS',
-						message: `Side chats are not supported for the ${backend} harness.`,
-					});
-				}
-				if (sourceJob.job.side_chat_id !== null) {
-					return new SideChatError({
-						code: 'SOURCE_NOT_READY',
-						message:
-							'A side-chat turn cannot be used as the source of another side chat.',
-					});
-				}
-				return Effect.succeed(sourceJob);
-			};
+			): Effect.Effect<SourceJob, SideChatError, never> =>
+				Effect.gen(function* () {
+					const backend = sourceJob.session.backend;
+					const harness = yield* harnessRegistry.resolve(backend).pipe(
+						Effect.mapError(
+							(error) =>
+								new SideChatError({
+									code: 'UNSUPPORTED_HARNESS',
+									message: error.message,
+								}),
+						),
+					);
+					if (harness.forkSession === undefined) {
+						return yield* new SideChatError({
+							code: 'UNSUPPORTED_HARNESS',
+							message: `Side chats are not supported for the ${backend} harness.`,
+						});
+					}
+					if (sourceJob.job.side_chat_id !== null) {
+						return yield* new SideChatError({
+							code: 'SOURCE_NOT_READY',
+							message:
+								'A side-chat turn cannot be used as the source of another side chat.',
+						});
+					}
+					return sourceJob;
+				});
 
 			const readTurnEvents = (jobId: string) => {
 				const events: Array<{ event: SessionUpdate; createdAt: number }> = [];
@@ -219,7 +228,7 @@ export class SideChats extends Context.Service<SideChats>()(
 					}
 					yield* validateSource(sourceJob);
 
-					const sourceBackend = parseBackend(sourceJob.session.backend);
+					const sourceBackend = sourceJob.session.backend;
 					const sourceSessionId = sourceJob.session.harness_session_id;
 					if (sourceSessionId === null) {
 						return yield* new SideChatError({
@@ -339,8 +348,17 @@ export class SideChats extends Context.Service<SideChats>()(
 										),
 									);
 
-								const forkSession =
-									harnessRegistry.get(sourceBackend).forkSession;
+								const forkSession = (yield* harnessRegistry
+									.resolve(sourceBackend)
+									.pipe(
+										Effect.mapError(
+											(error) =>
+												new SideChatError({
+													code: 'UNSUPPORTED_HARNESS',
+													message: error.message,
+												}),
+										),
+									)).forkSession;
 								const forkedSession =
 									sideChat.session_id !== null
 										? Effect.succeed(sideChat.session_id)

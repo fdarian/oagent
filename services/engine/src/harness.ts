@@ -21,9 +21,40 @@ export function isBackend(value: string): value is Backend {
 	return (BACKENDS as ReadonlyArray<string>).includes(value);
 }
 
-export function parseBackend(value: string): Backend {
-	if (isBackend(value)) return value;
-	throw new Error(`Invalid persisted job backend: ${value}`);
+/** A builtin backend, a saved custom harness id, or the reserved inline id. */
+export type HarnessId = string;
+
+export const INLINE_ACP_HARNESS_ID = 'acp';
+
+export const BUILTIN_HARNESS_NAMES: Record<Backend, string> = {
+	opencode: 'OpenCode',
+	cursor: 'Cursor',
+	grok: 'Grok',
+	codex: 'Codex',
+	claude: 'Claude',
+	pi: 'Pi',
+};
+
+export const CUSTOM_HARNESS_ID_PATTERN = /^[a-z][a-z0-9-]{0,31}$/;
+
+/** Syntactic slug check only; whether the id is taken is the registry's call. */
+export function isCustomHarnessIdFormat(value: string): boolean {
+	return CUSTOM_HARNESS_ID_PATTERN.test(value);
+}
+
+export function isReservedHarnessId(value: string): boolean {
+	return isBackend(value) || value === INLINE_ACP_HARNESS_ID;
+}
+
+export class UnknownHarness extends Schema.TaggedError<UnknownHarness>()(
+	'UnknownHarness',
+	{
+		harnessId: Schema.String,
+	},
+) {
+	override get message() {
+		return `Harness "${this.harnessId}" no longer exists or was never defined.`;
+	}
 }
 
 export type ModelEntry = { id: string; label?: string };
@@ -84,13 +115,13 @@ export type HarnessError =
 
 export type HarnessCheckResult =
 	| {
-			backend: Backend;
+			backend: HarnessId;
 			ok: true;
 			agentName?: string;
 			agentVersion?: string;
 	  }
 	| {
-			backend: Backend;
+			backend: HarnessId;
 			ok: false;
 			message: string;
 	  };
@@ -161,7 +192,7 @@ export type HarnessForkSessionBefore = (input: {
 }) => Effect.Effect<{ sessionId: string }, Error, never>;
 
 export type Harness = {
-	backend: Backend;
+	backend: HarnessId;
 	supportsModelSwitch: boolean;
 	runTurn: AcpAgent['Service']['runTurn'];
 	listModels: () => Effect.Effect<

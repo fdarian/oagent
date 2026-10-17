@@ -7,7 +7,7 @@ import { Context, Effect, Layer, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { type Backend, parseBackend } from './harness.ts';
+import type { HarnessId } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import { type WorktreeRequest, Worktrees } from './worktree.ts';
@@ -111,7 +111,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const insertSession = (input: {
 			title: string;
-			backend: Backend;
+			backend: HarnessId;
 			harnessSessionId?: string;
 			cwd: string;
 			originCwd: string;
@@ -245,8 +245,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					});
 				}
 
-				const backend = parseBackend(source.session.backend);
-				const harness = harnessRegistry.get(backend);
+				const backend = source.session.backend;
+				const harness = yield* harnessRegistry.resolve(backend);
 				const isLatest = source.job.id === source.latestJob.id;
 				const forked = isLatest
 					? (() => {
@@ -361,8 +361,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						? yield* jobs.validateStart({
 								model:
 									input.model ??
-									`${parseBackend(source.session.backend)}:${source.job.model}`,
-								backend: parseBackend(source.session.backend),
+									`${source.session.backend}:${source.job.model}`,
+								backend: source.session.backend,
 								agentType:
 									input.agent === undefined
 										? (input.agentType ?? source.job.agent_type ?? undefined)
@@ -440,7 +440,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		const setModel = (sessionId: string, model: string) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(sessionId);
-				const harness = harnessRegistry.get(parseBackend(session.backend));
+				const harness = yield* harnessRegistry.resolve(session.backend);
 				if (!harness.supportsModelSwitch) {
 					return yield* new SessionModelError({
 						sessionId,
@@ -537,7 +537,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.start({
 						session,
 						prompt: input.prompt,
-						model: `${parseBackend(session.backend)}:${model}`,
+						model: `${session.backend}:${model}`,
 						reasoningEffort:
 							(session.model !== null
 								? session.reasoning_effort
@@ -643,7 +643,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					originCwd: string;
 					worktreePath?: string;
 					worktreeBranch?: string;
-					backend: Backend;
+					backend: HarnessId;
 					model?: string;
 					agentType?: string;
 					createdAt: number;
@@ -662,7 +662,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						originCwd: session.origin_cwd,
 						worktreePath: session.worktree_path ?? undefined,
 						worktreeBranch: session.worktree_branch ?? undefined,
-						backend: parseBackend(session.backend),
+						backend: session.backend,
 						model: job.model ?? undefined,
 						agentType: job.agent_type ?? undefined,
 						createdAt: session.created_at.getTime(),
@@ -682,11 +682,14 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					title: session.title,
 					cwd: session.cwd,
 					createdAt: session.created_at.getTime(),
-					backend: parseBackend(session.backend),
+					backend: session.backend,
 					model: session.model ?? last?.model,
-					supportsModelSwitch: harnessRegistry.get(
-						parseBackend(session.backend),
-					).supportsModelSwitch,
+					supportsModelSwitch: yield* harnessRegistry
+						.resolve(session.backend)
+						.pipe(
+							Effect.map((harness) => harness.supportsModelSwitch),
+							Effect.catchTag('UnknownHarness', () => Effect.succeed(false)),
+						),
 					status: last?.status,
 					jobs: rootJobs,
 				};
@@ -722,7 +725,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				return yield* insertSession({
 					title: sourceSession.title,
-					backend: parseBackend(sourceSession.backend),
+					backend: sourceSession.backend,
 					cwd: sourceSession.cwd,
 					originCwd: sourceSession.origin_cwd,
 					worktreePath: sourceSession.worktree_path ?? undefined,

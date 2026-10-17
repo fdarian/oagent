@@ -46,8 +46,9 @@ function createServices(
 		sqlite: database.sqlite,
 	} as unknown as Db['Service'];
 	const registry = {
-		all: [harness],
-		get: () => harness,
+		builtin: () => harness,
+		resolve: () => Effect.succeed(harness),
+		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	} as unknown as HarnessRegistry['Service'];
 	const settings = {

@@ -22,7 +22,7 @@ import {
 	type AcpTurnRecovery,
 	createAcpTurnRecovery,
 } from './acp-turn-recovery.ts';
-import type { Backend, HarnessCheckResult } from './harness.ts';
+import type { HarnessCheckResult, HarnessId } from './harness.ts';
 
 type AcpEnv =
 	| Record<string, string | undefined>
@@ -490,7 +490,7 @@ export function probeAcpConnection(
 }
 
 export function checkAcpConnection(
-	backend: Backend,
+	backend: HarnessId,
 	config: AcpAgentConfig,
 ): Effect.Effect<HarnessCheckResult, never, never> {
 	return probeAcpConnection(config).pipe(
