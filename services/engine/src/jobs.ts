@@ -16,7 +16,12 @@ import { Db } from './db/client.ts';
 import { toPatchColumn } from './db/patch-column.ts';
 import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
-import { BACKENDS, type HarnessId, isBackend } from './harness.ts';
+import {
+	BACKENDS,
+	type HarnessId,
+	INLINE_ACP_HARNESS_ID,
+	isBackend,
+} from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import {
 	continuationPrompt,
@@ -86,7 +91,8 @@ type JobReservation = {
 	readonly prompt: string;
 	readonly cwd: string;
 	readonly backend: HarnessId;
-	readonly model: string;
+	/** Undefined only for an inline ACP session that defers to the adapter's default model. */
+	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
 	readonly agentTarget: string | undefined;
 	readonly session: typeof schema.sessions.$inferSelect;
@@ -276,6 +282,12 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			}
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
+
+		const isModelReference = (model: string) =>
+			resolveModel(model).pipe(
+				Effect.as(true),
+				Effect.catchTag('ModelResolutionError', () => Effect.succeed(false)),
+			);
 
 		const resolveAgentTarget = (
 			input: {
@@ -718,15 +730,20 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Engine shutting down'),
 					});
 				}
-				if (model === undefined) {
-					return yield* new ModelResolutionError({
-						code: 'MISSING',
-						message:
-							'model is required: specify `<backend>:<modelId>` or an alias name',
-					});
-				}
-
-				const resolvedModel = yield* resolveModel(model);
+				const resolvedModel =
+					input.session.backend === INLINE_ACP_HARNESS_ID
+						? {
+								backend: INLINE_ACP_HARNESS_ID,
+								modelId: model,
+								reasoningEffort: undefined,
+							}
+						: yield* model === undefined
+								? new ModelResolutionError({
+										code: 'MISSING',
+										message:
+											'model is required: specify `<backend>:<modelId>` or an alias name',
+									})
+								: resolveModel(model);
 				const backend = resolvedModel.backend;
 				const rest = resolvedModel.modelId;
 				if (input.session.backend !== backend) {
@@ -913,7 +930,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				const harness = yield* harnessRegistry
-					.resolve(input.reservation.backend)
+					.resolveForSession(input.reservation.session)
 					.pipe(
 						Effect.mapError(
 							(error) =>
@@ -981,9 +998,27 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				};
 
+				// Recovery refuses to resume a job without a model, so an inline
+				// session that took the adapter's default records it here.
+				const onSessionModel =
+					input.reservation.model === undefined
+						? (model: string): void => {
+								db.update(schema.jobs)
+									.set({ model })
+									.where(
+										and(
+											eq(schema.jobs.id, input.reservation.internalId),
+											isNull(schema.jobs.model),
+										),
+									)
+									.run();
+							}
+						: undefined;
+
 				const runTurnEffect = harness.runTurn({
 					prompt: agentPrompt,
 					model: input.reservation.model,
+					onSessionModel,
 					reasoningEffort: input.reservation.reasoningEffort,
 					mode: input.reservation.agentTarget,
 					sessionId: harnessSessionId,
@@ -1266,7 +1301,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				}
 
 				const backend = session.backend;
-				const harness = yield* harnessRegistry.resolve(backend).pipe(
+				const harness = yield* harnessRegistry.resolveForSession(session).pipe(
 					Effect.mapError(
 						(error) =>
 							new JobSteerError({
@@ -1699,6 +1734,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					.limit(1)
 					.get() !== undefined,
 			resolveBackend,
+			isModelReference,
 			validateStart,
 			runReserved,
 			failReserved,

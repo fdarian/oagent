@@ -38,6 +38,7 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 	return {
 		builtin: () => harness,
 		resolve: () => Effect.succeed(harness),
+		resolveForSession: () => Effect.succeed(harness),
 		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	};
@@ -794,16 +795,19 @@ describe('custom harness model prefixes', () => {
 			}),
 	} as unknown as Harness;
 
+	const resolve = (harnessId: string) =>
+		harnessId === 'my-agent'
+			? Effect.succeed(customHarness)
+			: Effect.fail(new UnknownHarness({ harnessId }));
 	const makeJobs = (database: ReturnType<typeof createDatabase>) =>
 		Jobs.make.pipe(
 			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, database),
 			Effect.provideService(HarnessRegistry, {
 				builtin: () => customHarness,
-				resolve: (harnessId: string) =>
-					harnessId === 'my-agent'
-						? Effect.succeed(customHarness)
-						: Effect.fail(new UnknownHarness({ harnessId })),
+				resolve,
+				resolveForSession: (session: { backend: string }) =>
+					resolve(session.backend),
 				list: () => Effect.succeed([customHarness]),
 				listAgentTargets: () => Effect.succeed([]),
 			} as unknown as HarnessRegistry['Service']),

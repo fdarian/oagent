@@ -350,6 +350,12 @@ const router = procedure.router({
 						model: Schema.optional(Schema.String),
 						agent_type: Schema.optional(Schema.String),
 						forkId: Schema.optional(Schema.String),
+						acp: Schema.optional(
+							Schema.Struct({
+								binary: Schema.String,
+								args: Schema.Array(Schema.String),
+							}),
+						),
 						worktree: Schema.optional(
 							Schema.Struct({
 								branch: Schema.optional(Schema.String),
@@ -362,6 +368,7 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.start({
+					acp: options.input.acp,
 					title: options.input.title,
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,

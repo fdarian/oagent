@@ -26,6 +26,20 @@ export type HarnessId = string;
 
 export const INLINE_ACP_HARNESS_ID = 'acp';
 
+/** The launch definition an inline (`--acp`) session stores on its row. */
+export type AcpCommand = {
+	readonly binary: string;
+	readonly args: ReadonlyArray<string>;
+};
+
+/**
+ * The `model` string `Jobs` expects for a session on `backend`. Inline sessions
+ * take the adapter's bare model id because `acp` is not a model prefix.
+ */
+export function sessionModelInput(backend: HarnessId, modelId: string): string {
+	return backend === INLINE_ACP_HARNESS_ID ? modelId : `${backend}:${modelId}`;
+}
+
 export const BUILTIN_HARNESS_NAMES: Record<Backend, string> = {
 	opencode: 'OpenCode',
 	cursor: 'Cursor',

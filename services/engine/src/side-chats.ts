@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import { sessionModelInput } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
 import { Sessions } from './sessions.ts';
@@ -109,15 +110,17 @@ export class SideChats extends Context.Service<SideChats>()(
 			): Effect.Effect<SourceJob, SideChatError, never> =>
 				Effect.gen(function* () {
 					const backend = sourceJob.session.backend;
-					const harness = yield* harnessRegistry.resolve(backend).pipe(
-						Effect.mapError(
-							(error) =>
-								new SideChatError({
-									code: 'UNSUPPORTED_HARNESS',
-									message: error.message,
-								}),
-						),
-					);
+					const harness = yield* harnessRegistry
+						.resolveForSession(sourceJob.session)
+						.pipe(
+							Effect.mapError(
+								(error) =>
+									new SideChatError({
+										code: 'UNSUPPORTED_HARNESS',
+										message: error.message,
+									}),
+							),
+						);
 					if (harness.forkSession === undefined) {
 						return yield* new SideChatError({
 							code: 'UNSUPPORTED_HARNESS',
@@ -281,7 +284,7 @@ export class SideChats extends Context.Service<SideChats>()(
 								.reserve({
 									session,
 									prompt: input.prompt,
-									model: `${sourceBackend}:${sourceModel}`,
+									model: sessionModelInput(sourceBackend, sourceModel),
 									sideChatId: sideChat.id,
 								})
 								.pipe(
@@ -349,7 +352,7 @@ export class SideChats extends Context.Service<SideChats>()(
 									);
 
 								const forkSession = (yield* harnessRegistry
-									.resolve(sourceBackend)
+									.resolveForSession(sourceJob.session)
 									.pipe(
 										Effect.mapError(
 											(error) =>

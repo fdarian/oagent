@@ -48,6 +48,7 @@ function createServices(
 	const registry = {
 		builtin: () => harness,
 		resolve: () => Effect.succeed(harness),
+		resolveForSession: () => Effect.succeed(harness),
 		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	} as unknown as HarnessRegistry['Service'];

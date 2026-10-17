@@ -5,11 +5,13 @@ import { Cursor } from './cursor.ts';
 import { CustomHarnesses } from './custom-harnesses.ts';
 import { Grok } from './grok.ts';
 import {
+	type AcpCommand,
 	type Backend,
 	type Harness,
 	type HarnessId,
+	INLINE_ACP_HARNESS_ID,
 	isBackend,
-	type UnknownHarness,
+	UnknownHarness,
 } from './harness.ts';
 import { OpenCode } from './opencode.ts';
 import { Pi } from './pi.ts';
@@ -50,6 +52,22 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 				isBackend(harnessId)
 					? Effect.succeed(byBackend[harnessId])
 					: customHarnesses.resolve(harnessId);
+			/**
+			 * The one place that turns a session row into its harness: inline
+			 * sessions launch from the definition stored on the row, everything
+			 * else resolves by id.
+			 */
+			const resolveForSession = (session: {
+				readonly backend: HarnessId;
+				readonly acp_command: AcpCommand | null;
+			}): Effect.Effect<Harness, UnknownHarness> => {
+				if (session.backend !== INLINE_ACP_HARNESS_ID) {
+					return resolve(session.backend);
+				}
+				return session.acp_command === null
+					? Effect.fail(new UnknownHarness({ harnessId: session.backend }))
+					: customHarnesses.resolveInline(session.acp_command);
+			};
 			const list = () =>
 				customHarnesses
 					.resolveAll()
@@ -59,7 +77,7 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 					Effect.flatMap((harness) => harness.listAgentTargets()),
 				);
 
-			return { builtin, resolve, list, listAgentTargets };
+			return { builtin, resolve, resolveForSession, list, listAgentTargets };
 		}),
 	},
 ) {

@@ -13,6 +13,7 @@ CREATE TABLE sessions (
 	uuid TEXT NOT NULL UNIQUE,
 	title TEXT NOT NULL,
 	backend TEXT NOT NULL,
+	acp_command TEXT,
 	model TEXT,
 	reasoning_effort TEXT,
 	harness_session_id TEXT,

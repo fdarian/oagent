@@ -167,16 +167,29 @@ export function extractSelectOptions(
 	return choices;
 }
 
-function extractSessionModelIds(
+function findModelSelectOption(
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
-): ReadonlyArray<string> | undefined {
+) {
 	const modelOption =
 		configOptions?.find((option) => option.category === 'model') ??
 		configOptions?.find((option) => option.id === 'model');
-	if (modelOption === undefined || modelOption.type !== 'select') {
-		return undefined;
-	}
+	return modelOption === undefined || modelOption.type !== 'select'
+		? undefined
+		: modelOption;
+}
+
+function extractSessionModelIds(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): ReadonlyArray<string> | undefined {
+	const modelOption = findModelSelectOption(configOptions);
+	if (modelOption === undefined) return undefined;
 	return extractModelIds(modelOption.options).map((model) => model.id);
+}
+
+function extractSessionCurrentModel(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): string | undefined {
+	return findModelSelectOption(configOptions)?.currentValue;
 }
 
 export type AcpModeOption = {
@@ -198,6 +211,7 @@ export type AcpConfigOption = {
 type AcpTurnSessionResult = {
 	readonly sessionId: string;
 	readonly availableModels: ReadonlyArray<string> | undefined;
+	readonly currentModel: string | undefined;
 	readonly availableModes: ReadonlyArray<AcpModeOption>;
 };
 
@@ -533,6 +547,8 @@ export function runAcpTurn(
 		sessionId?: string;
 		cwd: string;
 		onSessionId?: (sessionId: string) => void;
+		/** Reports the model the adapter's `session/new` or `session/load` says is current, when it reports one. */
+		onSessionModel?: (model: string) => void;
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 		onPromptDispatch?: () => void;
@@ -588,6 +604,7 @@ export function runAcpTurn(
 							Effect.map((res) => ({
 								sessionId: sid,
 								availableModels: extractSessionModelIds(res.configOptions),
+								currentModel: extractSessionCurrentModel(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						);
@@ -605,6 +622,7 @@ export function runAcpTurn(
 							Effect.map((res) => ({
 								sessionId: res.sessionId,
 								availableModels: extractSessionModelIds(res.configOptions),
+								currentModel: extractSessionCurrentModel(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						)
@@ -618,6 +636,12 @@ export function runAcpTurn(
 				const onSessionId = input.onSessionId;
 				if (onSessionId !== undefined) {
 					yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
+				}
+				if (
+					input.onSessionModel !== undefined &&
+					sessionResult.currentModel !== undefined
+				) {
+					input.onSessionModel(sessionResult.currentModel);
 				}
 				const onTurnActive = input.onTurnActive;
 				if (onTurnActive !== undefined) {
@@ -809,6 +833,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			sessionId?: string;
 			cwd: string;
 			onSessionId?: (sessionId: string) => void;
+			onSessionModel?: (model: string) => void;
 			onEvent?: (event: SessionUpdate) => void;
 			onExtensionEvent?: (method: string, params: unknown) => void;
 			onPromptDispatch?: () => void;

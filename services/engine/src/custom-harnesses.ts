@@ -4,8 +4,10 @@ import { makeAcpAdapterHarness } from './acp-harness.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import {
+	type AcpCommand,
 	type Harness,
 	type HarnessId,
+	INLINE_ACP_HARNESS_ID,
 	isCustomHarnessIdFormat,
 	isReservedHarnessId,
 	UnknownHarness,
@@ -52,6 +54,11 @@ type Instance = {
 	readonly harness: Harness;
 	readonly scope: Scope.Closeable;
 };
+
+const inlineInstanceKey = (command: AcpCommand) =>
+	`inline:${new Bun.CryptoHasher('sha256')
+		.update(JSON.stringify([command.binary, command.args]))
+		.digest('hex')}`;
 
 const toDefinition = (
 	row: typeof schema.customHarnesses.$inferSelect,
@@ -103,8 +110,8 @@ export class CustomHarnesses extends Context.Service<CustomHarnesses>()(
 
 			// Each instance owns a scope, so its ACP connection (an RcRef inside
 			// `AcpAgent`) lives and dies with the definition it was built from.
-			// Slice 2 adds inline `--acp` definitions to this same cache, keyed by
-			// a hash of binary+args instead of a saved id.
+			// Saved definitions are keyed by id; inline `--acp` definitions by a
+			// hash of binary+args, with a prefix that no slug id can collide with.
 			const instances = new Map<string, Instance>();
 
 			const closeInstance = (instance: Instance) =>
@@ -191,6 +198,15 @@ export class CustomHarnesses extends Context.Service<CustomHarnesses>()(
 					}),
 				);
 
+			const resolveInline = (command: AcpCommand) =>
+				lock.withPermit(
+					acquireInstance(inlineInstanceKey(command), {
+						id: INLINE_ACP_HARNESS_ID,
+						binary: command.binary,
+						args: command.args,
+					}),
+				);
+
 			const resolveAll = () =>
 				lock.withPermit(
 					Effect.forEach(list(), (definition) =>
@@ -258,7 +274,16 @@ export class CustomHarnesses extends Context.Service<CustomHarnesses>()(
 					}),
 				);
 
-			return { list, get, create, update, remove, resolve, resolveAll };
+			return {
+				list,
+				get,
+				create,
+				update,
+				remove,
+				resolve,
+				resolveInline,
+				resolveAll,
+			};
 		}),
 	},
 ) {

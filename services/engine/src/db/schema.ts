@@ -24,6 +24,10 @@ export const sessions = sqliteTable(
 		uuid: text().notNull(),
 		title: text().notNull(),
 		backend: text().notNull(),
+		acp_command: text({ mode: 'json' }).$type<{
+			binary: string;
+			args: string[];
+		}>(),
 		model: text(),
 		reasoning_effort: text(),
 		harness_session_id: text(),

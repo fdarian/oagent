@@ -118,6 +118,12 @@ function createHarnessRegistry(
 	opencode: OpenCode['Service'],
 	others: OtherHarnesses = {},
 ): HarnessRegistry['Service'] {
+	const resolve = (harnessId: string) => {
+		if (harnessId === 'opencode') return Effect.succeed(opencode);
+		const other = others[harnessId as Backend];
+		if (other !== undefined) return Effect.succeed(other);
+		return Effect.fail(new UnknownHarness({ harnessId }));
+	};
 	return {
 		builtin: (backend) => {
 			if (backend === 'opencode') return opencode;
@@ -125,12 +131,8 @@ function createHarnessRegistry(
 			if (other !== undefined) return other;
 			throw new Error(`Unexpected test harness: ${backend}`);
 		},
-		resolve: (harnessId) => {
-			if (harnessId === 'opencode') return Effect.succeed(opencode);
-			const other = others[harnessId as Backend];
-			if (other !== undefined) return Effect.succeed(other);
-			return Effect.fail(new UnknownHarness({ harnessId }));
-		},
+		resolve,
+		resolveForSession: (session) => resolve(session.backend),
 		list: () => Effect.succeed([opencode, ...Object.values(others)]),
 		listAgentTargets: (backend) => {
 			if (backend === 'opencode') return opencode.listAgentTargets();
