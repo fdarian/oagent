@@ -13,6 +13,7 @@ CREATE TABLE sessions (
 	uuid TEXT NOT NULL UNIQUE,
 	title TEXT NOT NULL,
 	backend TEXT NOT NULL,
+	acp_command TEXT,
 	model TEXT,
 	reasoning_effort TEXT,
 	harness_session_id TEXT,
@@ -183,6 +184,22 @@ CREATE TABLE session_message_chunk_events (
 	sender_session_id TEXT,
 	recipient_session_id TEXT,
 	content TEXT NOT NULL
+);
+
+CREATE TABLE custom_harnesses (
+	id TEXT PRIMARY KEY,
+	name TEXT NOT NULL,
+	binary TEXT NOT NULL,
+	args TEXT NOT NULL,
+	created_at INTEGER NOT NULL,
+	updated_at INTEGER NOT NULL
+);
+
+CREATE TABLE harnesses (
+	backend TEXT PRIMARY KEY,
+	binary_path TEXT NOT NULL,
+	version TEXT,
+	detected_at INTEGER NOT NULL
 );
 
 CREATE TABLE model_aliases (

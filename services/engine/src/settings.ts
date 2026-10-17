@@ -4,7 +4,7 @@ import { eq } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import type { Backend } from './harness.ts';
+import type { HarnessId } from './harness.ts';
 
 const CODEX_HOME_KEY = 'codex_home';
 const WORKTREE_KEY = 'worktree';
@@ -20,7 +20,7 @@ const WorktreeJsonSchema = Schema.fromJsonString(
 export type WorktreeSetting = Schema.Schema.Type<typeof WorktreeJsonSchema>;
 type HarnessEnv = Schema.Schema.Type<typeof HarnessEnvSchema>;
 
-function harnessEnvKey(backend: Backend): string {
+function harnessEnvKey(backend: HarnessId): string {
 	return `${HARNESS_ENV_KEY_PREFIX}${backend}`;
 }
 
@@ -82,13 +82,13 @@ export class Settings extends Context.Service<Settings>()('oagent/Settings', {
 			setSetting(CODEX_HOME_KEY, value);
 		};
 
-		const getHarnessEnv = (backend: Backend): HarnessEnv => {
+		const getHarnessEnv = (backend: HarnessId): HarnessEnv => {
 			const value = getSetting(harnessEnvKey(backend));
 			if (value === undefined) return {};
 			return Schema.decodeUnknownSync(HarnessEnvJsonSchema)(value);
 		};
 
-		const setHarnessEnv = (backend: Backend, env: HarnessEnv): void => {
+		const setHarnessEnv = (backend: HarnessId, env: HarnessEnv): void => {
 			if (Object.keys(env).length === 0) {
 				deleteSetting(harnessEnvKey(backend));
 				return;

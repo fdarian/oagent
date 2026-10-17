@@ -7,35 +7,52 @@ import {
 	probeAcpConnection,
 } from './acp-agent.ts';
 import {
-	type Backend,
 	type Harness,
+	type HarnessId,
 	HarnessSteerError,
 	type ModelEffort,
 } from './harness.ts';
 import { ModelsCache } from './models-cache.ts';
 import { Settings } from './settings.ts';
 
-export function makeAcpAdapterHarness(options: {
-	backend: Backend;
-	defaultBinary: string;
-	binaryEnvVar: string;
-	effortConfigId: string;
-	/** 'discover' asks the adapter which efforts each model accepts. */
-	efforts: ReadonlyArray<ModelEffort> | 'discover';
-	omitDefaultEffort?: boolean;
-	/** Adapter-specific `_meta` sent with `newSession` and `loadSession`. */
-	sessionMeta?: Record<string, unknown>;
-	/** The adapter reports subagents as separate sessions instead of tool calls. */
-	nativeSubagents?: boolean;
-}) {
+type AdapterEffortOptions =
+	| {
+			effortConfigId: string;
+			/** 'discover' asks the adapter which efforts each model accepts. */
+			efforts: ReadonlyArray<ModelEffort> | 'discover';
+			omitDefaultEffort?: boolean;
+	  }
+	| {
+			/** The adapter has no effort selection; requested efforts are dropped. */
+			effortConfigId?: undefined;
+			efforts?: undefined;
+			omitDefaultEffort?: undefined;
+	  };
+
+export function makeAcpAdapterHarness(
+	options: {
+		/** Harness id; also the key of the harness's stored environment. */
+		backend: HarnessId;
+		defaultBinary: string;
+		/** Environment variable that overrides `defaultBinary`; none for saved harnesses. */
+		binaryEnvVar?: string;
+		args?: ReadonlyArray<string>;
+		/** Adapter-specific `_meta` sent with `newSession` and `loadSession`. */
+		sessionMeta?: Record<string, unknown>;
+		/** The adapter reports subagents as separate sessions instead of tool calls. */
+		nativeSubagents?: boolean;
+	} & AdapterEffortOptions,
+) {
 	const getBinary = () =>
-		process.env[options.binaryEnvVar] ?? options.defaultBinary;
+		options.binaryEnvVar === undefined
+			? options.defaultBinary
+			: (process.env[options.binaryEnvVar] ?? options.defaultBinary);
 	const resolveBinary = () => Bun.which(getBinary()) ?? undefined;
 	const createConfig = (
 		getExtraEnv?: () => Record<string, string>,
 	): AcpAgentConfig => ({
 		binary: resolveBinary() ?? getBinary(),
-		args: [],
+		args: options.args ?? [],
 		clientInfoName: 'oagent',
 		...(options.nativeSubagents === true ? { nativeSubagents: true } : {}),
 		...(getExtraEnv === undefined
@@ -49,6 +66,7 @@ export function makeAcpAdapterHarness(options: {
 		const configOptions = [
 			...(model === undefined ? [] : [{ configId: 'model', value: model }]),
 			...(effort === undefined ||
+			options.effortConfigId === undefined ||
 			(options.omitDefaultEffort === true && effort === 'default')
 				? []
 				: [{ configId: options.effortConfigId, value: effort }]),
@@ -93,13 +111,14 @@ export function makeAcpAdapterHarness(options: {
 					Effect.map((entries) => entries.map((entry) => ({ id: entry.id }))),
 				),
 		);
+		const effortConfigId = options.effortConfigId;
 		const discoveredEfforts =
-			options.efforts === 'discover'
+			options.efforts === 'discover' && effortConfigId !== undefined
 				? yield* ModelsCache.makeKeyed((model) =>
 						acpAgent
 							.listModelConfigChoices({
 								model,
-								configId: options.effortConfigId,
+								configId: effortConfigId,
 							})
 							.pipe(
 								Effect.map((choices) =>
@@ -112,7 +131,10 @@ export function makeAcpAdapterHarness(options: {
 				: undefined;
 		const listModelEfforts = (model: string) => {
 			if (discoveredEfforts !== undefined) return discoveredEfforts.get(model);
-			return Effect.succeed(options.efforts as ReadonlyArray<ModelEffort>);
+			if (options.efforts === undefined || options.efforts === 'discover') {
+				return Effect.succeed([] as ReadonlyArray<ModelEffort>);
+			}
+			return Effect.succeed(options.efforts);
 		};
 		return {
 			backend: options.backend,

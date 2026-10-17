@@ -16,7 +16,12 @@ import { Db } from './db/client.ts';
 import { toPatchColumn } from './db/patch-column.ts';
 import * as schema from './db/schema.ts';
 import { EVENT_DEDUPE_META_KEY, eventDedupeKey } from './event-key.ts';
-import { type Backend, isBackend, parseBackend } from './harness.ts';
+import {
+	BACKENDS,
+	type HarnessId,
+	INLINE_ACP_HARNESS_ID,
+	isBackend,
+} from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import {
 	continuationPrompt,
@@ -67,6 +72,7 @@ export class JobStartError extends Schema.TaggedError<JobStartError>()(
 			'SESSION_BACKEND_MISMATCH',
 			'PERSISTENCE_FAILED',
 			'SHUTTING_DOWN',
+			'HARNESS_UNAVAILABLE',
 		]),
 		message: Schema.String,
 		cause: Schema.Defect(),
@@ -84,8 +90,9 @@ type JobReservation = {
 	readonly jobId: string;
 	readonly prompt: string;
 	readonly cwd: string;
-	readonly backend: Backend;
-	readonly model: string;
+	readonly backend: HarnessId;
+	/** Undefined only for an inline ACP session that defers to the adapter's default model. */
+	readonly model: string | undefined;
 	readonly reasoningEffort: string | undefined;
 	readonly agentTarget: string | undefined;
 	readonly session: typeof schema.sessions.$inferSelect;
@@ -180,15 +187,26 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		const dbService = yield* Db;
 		const db = dbService.db;
 
-		const unsupportedSuffixBackends: ReadonlySet<Backend> = new Set([
+		const unsupportedSuffixBackends: ReadonlySet<HarnessId> = new Set([
 			'cursor',
 			'grok',
 		]);
+		const ensureKnownHarness = (harnessId: HarnessId) =>
+			harnessRegistry.resolve(harnessId).pipe(
+				Effect.asVoid,
+				Effect.mapError(
+					() =>
+						new ModelResolutionError({
+							code: 'UNKNOWN_BACKEND',
+							message: `Unknown backend "${harnessId}". Valid backends: ${BACKENDS.join(', ')}, or a saved custom harness id.`,
+						}),
+				),
+			);
 		const resolveModelName = (
 			parsed: Effect.Success<ReturnType<typeof parseModelInput>>,
 		): Effect.Effect<
 			{
-				backend: Backend;
+				backend: HarnessId;
 				modelId: string;
 				reasoningEffort: string | undefined;
 			},
@@ -197,8 +215,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		> =>
 			Effect.gen(function* () {
 				const modelName = parsed.name;
-				if (parsed.explicit !== undefined)
+				if (parsed.explicit !== undefined) {
+					yield* ensureKnownHarness(parsed.explicit.backend);
 					return { ...parsed.explicit, reasoningEffort: undefined };
+				}
 
 				const alias = db
 					.select()
@@ -213,12 +233,15 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						message: `Model "${modelName}" is not a defined alias. Pass <backend>:<modelId> or define an alias first.`,
 					});
 				}
-				if (!isBackend(alias.backend)) {
-					return yield* new ModelResolutionError({
-						code: 'UNKNOWN_BACKEND',
-						message: `Model alias "${modelName}" references unknown backend "${alias.backend}".`,
-					});
-				}
+				yield* ensureKnownHarness(alias.backend).pipe(
+					Effect.mapError(
+						() =>
+							new ModelResolutionError({
+								code: 'UNKNOWN_BACKEND',
+								message: `Model alias "${modelName}" references unknown backend "${alias.backend}".`,
+							}),
+					),
+				);
 				return {
 					backend: alias.backend,
 					modelId: alias.model_id,
@@ -233,7 +256,8 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const resolved = yield* resolveModelName(parsed);
 				if (
 					suffixEffort !== undefined &&
-					unsupportedSuffixBackends.has(resolved.backend)
+					(unsupportedSuffixBackends.has(resolved.backend) ||
+						!isBackend(resolved.backend))
 				) {
 					return yield* new ModelResolutionError({
 						code: 'INVALID_FORMAT',
@@ -259,13 +283,28 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			return Effect.map(resolveModel(model), (resolved) => resolved.backend);
 		};
 
+		/**
+		 * Whether `model` starts with a builtin or saved-harness prefix. Alias
+		 * names are deliberately not checked: an inline session's bare model id
+		 * may coincide with one.
+		 */
+		const hasHarnessPrefix = (model: string) =>
+			parseModelInput(model).pipe(
+				Effect.flatMap((parsed) =>
+					parsed.explicit === undefined
+						? Effect.succeed(false)
+						: ensureKnownHarness(parsed.explicit.backend).pipe(Effect.as(true)),
+				),
+				Effect.catchTag('ModelResolutionError', () => Effect.succeed(false)),
+			);
+
 		const resolveAgentTarget = (
 			input: {
 				agentTarget?: string;
 				agent?: import('./agents.ts').AgentDefinition;
 				agentType?: string;
 			},
-			backend: Backend,
+			backend: HarnessId,
 		) => {
 			if (input.agentTarget !== undefined)
 				return Effect.succeed(input.agentTarget);
@@ -277,7 +316,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 		};
 		const validateStart = (input: {
 			model: string;
-			backend: Backend;
+			backend: HarnessId;
 			agentType?: string;
 			agentTarget?: string;
 			agent?: import('./agents.ts').AgentDefinition;
@@ -700,15 +739,20 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 						cause: new Error('Engine shutting down'),
 					});
 				}
-				if (model === undefined) {
-					return yield* new ModelResolutionError({
-						code: 'MISSING',
-						message:
-							'model is required: specify `<backend>:<modelId>` or an alias name',
-					});
-				}
-
-				const resolvedModel = yield* resolveModel(model);
+				const resolvedModel =
+					input.session.backend === INLINE_ACP_HARNESS_ID
+						? {
+								backend: INLINE_ACP_HARNESS_ID,
+								modelId: model,
+								reasoningEffort: undefined,
+							}
+						: yield* model === undefined
+								? new ModelResolutionError({
+										code: 'MISSING',
+										message:
+											'model is required: specify `<backend>:<modelId>` or an alias name',
+									})
+								: resolveModel(model);
 				const backend = resolvedModel.backend;
 				const rest = resolvedModel.modelId;
 				if (input.session.backend !== backend) {
@@ -894,6 +938,19 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					return { jobId: input.reservation.jobId };
 				}
 
+				const harness = yield* harnessRegistry
+					.resolveForSession(input.reservation.session)
+					.pipe(
+						Effect.mapError(
+							(error) =>
+								new JobStartError({
+									code: 'HARNESS_UNAVAILABLE',
+									message: error.message,
+									cause: error,
+								}),
+						),
+					);
+
 				const emitter = new EventEmitter();
 				emitter.setMaxListeners(0);
 				liveEmitters.set(input.reservation.jobId, emitter);
@@ -915,9 +972,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				});
 
 				const captureLastMessageId = Effect.gen(function* () {
-					const getLatestMessageId = harnessRegistry.get(
-						input.reservation.backend,
-					).getLatestMessageId;
+					const getLatestMessageId = harness.getLatestMessageId;
 					if (getLatestMessageId === undefined) return;
 					const session = db
 						.select({ harness_session_id: schema.sessions.harness_session_id })
@@ -952,19 +1007,35 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				};
 
-				const runTurnEffect = harnessRegistry
-					.get(input.reservation.backend)
-					.runTurn({
-						prompt: agentPrompt,
-						model: input.reservation.model,
-						reasoningEffort: input.reservation.reasoningEffort,
-						mode: input.reservation.agentTarget,
-						sessionId: harnessSessionId,
-						cwd: input.reservation.cwd,
-						onSessionId,
-						onEvent,
-						onPromptDispatch: input.onPromptDispatch,
-					});
+				// Recovery refuses to resume a job without a model, so an inline
+				// session that took the adapter's default records it here.
+				const onSessionModel =
+					input.reservation.model === undefined
+						? (model: string): void => {
+								db.update(schema.jobs)
+									.set({ model })
+									.where(
+										and(
+											eq(schema.jobs.id, input.reservation.internalId),
+											isNull(schema.jobs.model),
+										),
+									)
+									.run();
+							}
+						: undefined;
+
+				const runTurnEffect = harness.runTurn({
+					prompt: agentPrompt,
+					model: input.reservation.model,
+					onSessionModel,
+					reasoningEffort: input.reservation.reasoningEffort,
+					mode: input.reservation.agentTarget,
+					sessionId: harnessSessionId,
+					cwd: input.reservation.cwd,
+					onSessionId,
+					onEvent,
+					onPromptDispatch: input.onPromptDispatch,
+				});
 
 				const fiber = yield* Effect.forkDetach(
 					runTurnEffect.pipe(
@@ -1238,8 +1309,16 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					});
 				}
 
-				const backend = parseBackend(session.backend);
-				const harness = harnessRegistry.get(backend);
+				const backend = session.backend;
+				const harness = yield* harnessRegistry.resolveForSession(session).pipe(
+					Effect.mapError(
+						(error) =>
+							new JobSteerError({
+								code: 'UNSUPPORTED_BACKEND',
+								message: error.message,
+							}),
+					),
+				);
 				const steer = harness.steer;
 				if (steer === undefined) {
 					return yield* new JobSteerError({
@@ -1353,7 +1432,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			terminatedAt?: number;
 			prompt: string;
 			cwd: string;
-			backend: Backend;
+			backend: HarnessId;
 			model?: string;
 			agentType?: string;
 			sessionId: string;
@@ -1373,7 +1452,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			terminatedAt: row.job.terminated_at?.getTime(),
 			prompt: row.job.prompt,
 			cwd: row.session.cwd,
-			backend: parseBackend(row.session.backend),
+			backend: row.session.backend,
 			model: row.job.model ?? undefined,
 			agentType: row.job.agent_type ?? undefined,
 			sessionId: row.session.uuid,
@@ -1609,7 +1688,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				continue;
 			}
 			if (row.job.model === null) continue;
-			const backend = parseBackend(row.session.backend);
+			const backend = row.session.backend;
 			const reservation: JobReservation = {
 				internalId: row.job.id,
 				jobId: row.job.uuid,
@@ -1664,6 +1743,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 					.limit(1)
 					.get() !== undefined,
 			resolveBackend,
+			hasHarnessPrefix,
 			validateStart,
 			runReserved,
 			failReserved,

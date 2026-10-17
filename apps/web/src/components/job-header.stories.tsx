@@ -14,7 +14,7 @@ const base = {
 	id: '550e8400-e29b-41d4-a716-446655440000',
 	title: 'Refactor authentication middleware',
 	cwd: '/Users/dev/project/apps/api',
-	backend: 'opencode' as const,
+	harnessLabel: 'OpenCode',
 	model: 'opencode-go/kimi-k2.6',
 	sessionId: '01a0d126-0000-7000-8000-000000000001',
 	harnessSessionId: 'ses_01JSESSIONEXAMPLE1234567890',
@@ -156,7 +156,23 @@ export const CostError: Story = {
 };
 
 export const UnsupportedCost: Story = {
-	args: { ...Completed.args, backend: 'grok', cost: { status: 'unsupported' } },
+	args: {
+		...Completed.args,
+		harnessLabel: 'Grok',
+		cost: { status: 'unsupported' },
+	},
+};
+
+export const InlineAcp: Story = {
+	args: {
+		...Completed.args,
+		harnessLabel: 'ACP',
+		acpCommand: {
+			binary: 'gemini',
+			args: ['--experimental-acp', '--model', 'gemini 2.5 pro'],
+		},
+		cost: { status: 'unsupported' },
+	},
 };
 
 export const SwitchModel: Story = {
@@ -198,7 +214,7 @@ export const SwitchModel: Story = {
 };
 
 export const UnsupportedModelSwitch: Story = {
-	args: { ...base, backend: 'grok', status: 'done', model: 'grok-4' },
+	args: { ...base, harnessLabel: 'Grok', status: 'done', model: 'grok-4' },
 	play: async (context) => {
 		const canvas = within(context.canvasElement);
 		await expect(

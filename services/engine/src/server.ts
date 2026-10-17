@@ -4,6 +4,7 @@ import { Context, Deferred, Duration, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
+import { CustomHarnesses } from './custom-harnesses.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
@@ -372,6 +373,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(HarnessRegistry.layer),
+		Layer.provide(CustomHarnesses.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 	);

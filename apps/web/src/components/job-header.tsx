@@ -19,7 +19,7 @@ import {
 	PopoverTrigger,
 } from '@/components/ui/popover';
 import { formatAge, formatElapsed } from '@/lib/format';
-import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import { formatAcpCommand } from '@/lib/harnesses';
 import type { client } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 import { ActionRow } from './ui/action-row';
@@ -52,7 +52,10 @@ export type JobHeaderProps = {
 	cwd: string;
 	worktreePath?: string;
 	worktreeBranch?: string;
-	backend: Backend;
+	/** Display name of the harness; the raw `backend` id is not user-facing. */
+	harnessLabel: string;
+	/** Launch command of an inline `acp` session. */
+	acpCommand?: { binary: string; args: ReadonlyArray<string> };
 	model?: string;
 	sessionModelControl?: SessionModelControl;
 	agentType?: string;
@@ -74,7 +77,8 @@ const moreMenuItemClassName =
 	'bg-popover text-popover-foreground hover:bg-secondary hover:text-secondary-foreground focus:bg-secondary focus:text-secondary-foreground data-[highlighted]:bg-secondary data-[highlighted]:text-secondary-foreground';
 
 type HarnessSessionPopoverProps = {
-	backend: Backend;
+	harnessLabel: string;
+	acpCommand?: { binary: string; args: ReadonlyArray<string> };
 	sessionId?: string;
 	harnessSessionId?: string;
 };
@@ -218,13 +222,13 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 						render={
 							<button
 								type="button"
-								aria-label={`${HARNESS_NAMES[props.backend]} harness; show session IDs`}
+								aria-label={`${props.harnessLabel} harness; show session IDs`}
 								onPointerEnter={handleOpen}
 								onPointerLeave={handleClose}
 								onFocus={handleTriggerFocus}
 								onBlur={handleClose}
 							>
-								{HARNESS_NAMES[props.backend]}
+								{props.harnessLabel}
 							</button>
 						}
 					></Badge>
@@ -246,9 +250,15 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 							Session IDs
 						</span>
 						<span className="text-caption text-muted-foreground">
-							{HARNESS_NAMES[props.backend]}
+							{props.harnessLabel}
 						</span>
 					</div>
+					{props.acpCommand === undefined ? null : (
+						<SessionIdRow
+							label="ACP command"
+							id={formatAcpCommand(props.acpCommand)}
+						/>
+					)}
 					<SessionIdRow label="Oagent session ID" id={props.sessionId} />
 					<SessionIdRow
 						label="Harness session ID"
@@ -418,7 +428,8 @@ export function JobHeader(props: JobHeaderProps) {
 								</Badge>
 							)}
 							<HarnessSessionPopover
-								backend={props.backend}
+								harnessLabel={props.harnessLabel}
+								acpCommand={props.acpCommand}
 								sessionId={props.sessionId}
 								harnessSessionId={props.harnessSessionId}
 							/>

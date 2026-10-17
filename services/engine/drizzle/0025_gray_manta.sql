@@ -1,0 +1,1 @@
+ALTER TABLE `sessions` ADD `acp_command` text;

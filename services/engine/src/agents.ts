@@ -2,10 +2,10 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { type Backend, parseBackend } from './harness.ts';
+import type { HarnessId } from './harness.ts';
 
 export type AgentHarnessTarget = {
-	readonly backend: Backend;
+	readonly backend: HarnessId;
 	readonly target: string;
 };
 
@@ -43,7 +43,7 @@ export class AgentNotMappedForBackend extends Schema.TaggedError<AgentNotMappedF
 	}
 }
 
-export function resolveInlineAgent(agent: AgentDefinition, backend: Backend) {
+export function resolveInlineAgent(agent: AgentDefinition, backend: HarnessId) {
 	const mapping = agent.targets.find((target) => target.backend === backend);
 	return mapping === undefined
 		? new AgentNotMappedForBackend({ agentType: agent.name, backend })
@@ -82,7 +82,7 @@ export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 			);
 			for (const targetRow of targetRows) {
 				const target = {
-					backend: parseBackend(targetRow.backend),
+					backend: targetRow.backend,
 					target: targetRow.target,
 				};
 				const targets = targetsByAgent.get(targetRow.agent_id);
@@ -173,7 +173,7 @@ export class Agents extends Context.Service<Agents>()('oagent/Agents', {
 
 		const resolve = (
 			name: string,
-			backend: Backend,
+			backend: HarnessId,
 		): Effect.Effect<
 			string,
 			AgentTypeNotFound | AgentNotMappedForBackend,

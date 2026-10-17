@@ -1,28 +1,46 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useParams } from '@tanstack/react-router';
+import { useNavigate, useParams } from '@tanstack/react-router';
 import { useEffect, useRef, useState } from 'react';
+import { CustomHarnessForm } from '@/components/custom-harness-form';
 import { HarnessEnvSection } from '@/components/harness-env-section';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import {
+	Dialog,
+	DialogContent,
+	DialogDescription,
+	DialogFooter,
+	DialogHeader,
+	DialogTitle,
+} from '@/components/ui/dialog';
 import { Field, FieldDescription, FieldLabel } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Spinner } from '@/components/ui/spinner';
 import {
-	HARNESS_NAMES,
-	harnessAuthStatusQueryOptions,
+	type CustomHarness,
+	codexAuthStatusQueryOptions,
+	customHarnessesQueryOptions,
+	harnessCatalogQueryOptions,
 	harnessesQueryOptions,
-	isBackend,
+	invalidateCustomHarnesses,
+	useRefreshHarnesses,
 } from '@/lib/harnesses';
-import { orpc } from '@/lib/orpc';
+import { client, orpc } from '@/lib/orpc';
 
 export function HarnessSettingsPage() {
 	const params = useParams({ from: '/settings/harnesses/$backend' });
-	const backend = isBackend(params.backend) ? params.backend : undefined;
+	return <HarnessSettings key={params.backend} backend={params.backend} />;
+}
+
+function HarnessSettings(props: { backend: string }) {
+	const backend = props.backend;
 	const queryClient = useQueryClient();
 	const [codexHome, setCodexHome] = useState('');
 
 	const harnessesQuery = useQuery(harnessesQueryOptions());
+	const catalogQuery = useQuery(harnessCatalogQueryOptions());
+	const customHarnessesQuery = useQuery(customHarnessesQueryOptions());
 	const codexHomeQuery = useQuery(
 		orpc.settings.getCodexHome.queryOptions({
 			enabled: backend === 'codex',
@@ -49,11 +67,6 @@ export function HarnessSettingsPage() {
 	);
 
 	useEffect(() => {
-		if (backend === undefined) return;
-		checkMutation.reset();
-	}, [backend, checkMutation.reset]);
-
-	useEffect(() => {
 		if (codexHomeQuery.data === undefined) return;
 		setCodexHome(
 			codexHomeQuery.data.home === undefined ? '' : codexHomeQuery.data.home,
@@ -63,9 +76,17 @@ export function HarnessSettingsPage() {
 	const harness = harnessesQuery.data?.find(
 		(entry) => entry.backend === backend,
 	);
-	const title = backend === undefined ? 'Harness' : HARNESS_NAMES[backend];
+	const catalogEntry = catalogQuery.data?.find((entry) => entry.id === backend);
+	const customHarness = customHarnessesQuery.data?.find(
+		(entry) => entry.id === backend,
+	);
+	const title = catalogEntry === undefined ? 'Harness' : catalogEntry.name;
 
-	if (harnessesQuery.isLoading) {
+	if (
+		harnessesQuery.isLoading ||
+		catalogQuery.isLoading ||
+		customHarnessesQuery.isLoading
+	) {
 		return (
 			<div className="flex min-h-0 flex-1 flex-col">
 				<PageHeader title={title} />
@@ -78,10 +99,14 @@ export function HarnessSettingsPage() {
 		);
 	}
 
+	const isCustom = catalogEntry !== undefined && !catalogEntry.builtin;
 	if (
 		harnessesQuery.isError ||
-		harness === undefined ||
-		backend === undefined
+		catalogQuery.isError ||
+		customHarnessesQuery.isError ||
+		catalogEntry === undefined ||
+		(isCustom && customHarness === undefined) ||
+		(!isCustom && harness === undefined)
 	) {
 		return (
 			<div className="flex min-h-0 flex-1 flex-col">
@@ -89,7 +114,9 @@ export function HarnessSettingsPage() {
 				<main className="flex-1 overflow-y-auto px-33 py-22">
 					<div className="mx-auto max-w-[900px]">
 						<p className="text-sm text-muted-foreground">
-							{harnessesQuery.isError
+							{harnessesQuery.isError ||
+							catalogQuery.isError ||
+							customHarnessesQuery.isError
 								? 'Failed to load harnesses'
 								: 'Harness not found'}
 						</p>
@@ -121,23 +148,33 @@ export function HarnessSettingsPage() {
 			<PageHeader title={title} />
 			<main className="flex-1 overflow-y-auto px-33 py-22">
 				<div className="mx-auto grid max-w-[900px] gap-8">
+					{customHarness !== undefined ? (
+						<CustomHarnessSection
+							key={customHarness.id}
+							harness={customHarness}
+							onSaved={() => checkMutation.reset()}
+						/>
+					) : null}
+
 					<div className="grid max-w-xl gap-4">
 						<Field>
 							<FieldLabel htmlFor="harness-binary-path">Binary path</FieldLabel>
 							<Input
 								id="harness-binary-path"
 								readOnly
-								value={harness.binaryPath}
+								value={harness === undefined ? 'Not found' : harness.binaryPath}
 								className="font-mono text-xs"
 								onFocus={(event) => event.currentTarget.select()}
 							/>
 							<FieldDescription>
-								Detected executable used for ACP sessions.
+								{harness === undefined
+									? 'The command was not found on PATH. Fix the command above and save.'
+									: 'Detected executable used for ACP sessions.'}
 							</FieldDescription>
 						</Field>
 						<Field>
 							<FieldLabel htmlFor="harness-version">Version</FieldLabel>
-							{harness.version !== undefined ? (
+							{harness?.version !== undefined ? (
 								<Input
 									id="harness-version"
 									readOnly
@@ -278,7 +315,7 @@ function CodexAuthSection() {
 	const [loginPrompt, setLoginPrompt] = useState<
 		{ verificationUrl: string; userCode: string } | undefined
 	>(undefined);
-	const authStatusQuery = useQuery(harnessAuthStatusQueryOptions('codex'));
+	const authStatusQuery = useQuery(codexAuthStatusQueryOptions());
 	const loginMutation = useMutation(
 		orpc.harnesses.login.mutationOptions({
 			onSuccess: (result) => {
@@ -498,5 +535,90 @@ function PageHeader(props: { title: string }) {
 				{props.title}
 			</span>
 		</header>
+	);
+}
+
+function CustomHarnessSection(props: {
+	harness: CustomHarness;
+	onSaved: () => void;
+}) {
+	const queryClient = useQueryClient();
+	const navigate = useNavigate();
+	const refreshHarnesses = useRefreshHarnesses();
+	const [confirmingDelete, setConfirmingDelete] = useState(false);
+	const deleteMutation = useMutation({
+		mutationFn: () => client.customHarnesses.delete({ id: props.harness.id }),
+		onSuccess: async () => {
+			await refreshHarnesses.mutateAsync();
+			await invalidateCustomHarnesses(queryClient);
+			setConfirmingDelete(false);
+			void navigate({ to: '/settings/aliases' });
+		},
+	});
+
+	return (
+		<div className="grid max-w-xl gap-4">
+			<div>
+				<h2 className="text-base font-medium text-foreground">
+					ACP harness definition
+				</h2>
+				<p className="mt-1 text-sm text-muted-foreground">
+					Saved changes apply to newly started sessions.
+				</p>
+			</div>
+			<CustomHarnessForm harness={props.harness} onSaved={props.onSaved} />
+			<div>
+				<Button
+					type="button"
+					variant="outline"
+					className="text-destructive hover:text-destructive"
+					onClick={() => {
+						deleteMutation.reset();
+						setConfirmingDelete(true);
+					}}
+				>
+					Delete harness
+				</Button>
+			</div>
+
+			<Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+				<DialogContent>
+					<DialogHeader>
+						<DialogTitle>Delete harness?</DialogTitle>
+						<DialogDescription>
+							This removes{' '}
+							<code className="rounded bg-muted px-1 py-0.5 font-mono text-sm">
+								{props.harness.id}
+							</code>{' '}
+							and its environment variables. Existing sessions that used it can
+							no longer be resumed, and aliases or agent mappings that reference
+							it will stop working.
+						</DialogDescription>
+					</DialogHeader>
+					{deleteMutation.isError ? (
+						<p className="text-sm text-destructive">
+							{deleteMutation.error.message}
+						</p>
+					) : null}
+					<DialogFooter>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={() => setConfirmingDelete(false)}
+						>
+							Cancel
+						</Button>
+						<Button
+							type="button"
+							variant="destructive"
+							disabled={deleteMutation.isPending}
+							onClick={() => deleteMutation.mutate()}
+						>
+							{deleteMutation.isPending ? 'Deleting…' : 'Delete'}
+						</Button>
+					</DialogFooter>
+				</DialogContent>
+			</Dialog>
+		</div>
 	);
 }
