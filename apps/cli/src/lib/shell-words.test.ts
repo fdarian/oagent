@@ -24,6 +24,9 @@ describe('splitShellWords', () => {
 		['bunx @zed-industries/codex-acp', ['bunx', '@zed-industries/codex-acp']],
 		['a \\\nb', ['a', 'b']],
 		['"a\\\nb"', ['ab']],
+		['a \\\n b', ['a', 'b']],
+		['a \\\n', ['a']],
+		['a\\\nb', ['ab']],
 	])('splits %j', (input, expected) => {
 		expect(splitShellWords(input)).toEqual(expected);
 	});

@@ -21,6 +21,12 @@ export function splitShellWords(input: string): Array<string> {
 			index++;
 			continue;
 		}
+		// A backslash-newline is a line continuation: it contributes nothing and
+		// must not start a word of its own.
+		if (char === '\\' && input.charAt(index + 1) === '\n') {
+			index += 2;
+			continue;
+		}
 		inWord = true;
 		if (char === "'") {
 			const end = input.indexOf("'", index + 1);
@@ -61,9 +67,7 @@ export function splitShellWords(input: string): Array<string> {
 			if (index + 1 >= input.length) {
 				throw new Error('Trailing backslash with nothing to escape.');
 			}
-			const next = input.charAt(index + 1);
-			// A backslash-newline is a line continuation and contributes nothing.
-			if (next !== '\n') current += next;
+			current += input.charAt(index + 1);
 			index += 2;
 			continue;
 		}
