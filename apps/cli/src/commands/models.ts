@@ -1,3 +1,4 @@
+import { BACKENDS } from '@oagent/engine';
 import { Effect } from 'effect';
 import { Command, Flag } from 'effect/cli';
 import {
@@ -13,15 +14,9 @@ import {
 export const models = Command.make(
 	'models',
 	{
-		backend: Flag.Literals('backend', [
-			'opencode',
-			'cursor',
-			'grok',
-			'codex',
-			'claude',
-		]).pipe(
+		backend: Flag.Literals('backend', BACKENDS).pipe(
 			Flag.withDescription(
-				'Backend whose models to list: opencode, cursor, grok, codex or claude.',
+				`Backend whose models to list: ${BACKENDS.join(', ')}.`,
 			),
 		),
 		format: formatFlag,
