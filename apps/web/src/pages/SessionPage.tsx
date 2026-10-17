@@ -333,14 +333,12 @@ function SessionConversation(props: {
 			open: true,
 		});
 		setSideChatError(undefined);
-		if (selectedJob.backend !== 'opencode') return;
 		void completeSideChatCreation(creation);
 	}, [
 		beginDrawerInstance,
 		completeSideChatCreation,
 		isCreatingSideChat,
 		jobId,
-		selectedJob,
 	]);
 	const handleOpenSideChats = useCallback(() => {
 		const firstSideChat = sideChats?.[0];
@@ -582,11 +580,6 @@ function SessionConversation(props: {
 				onCreate={handleNewSideChat}
 				isCreating={isCreatingSideChat}
 				isLoading={sideChatsQuery.isLoading}
-				unsupportedMessage={
-					selectedJob.backend === 'opencode'
-						? undefined
-						: `Side chats are currently available only for OpenCode jobs. This job uses the ${selectedJob.backend} harness.`
-				}
 				errorMessage={drawerError}
 				timeline={selectedSideChat === undefined ? undefined : sideChatTimeline}
 				onSend={handleSendSideChat}

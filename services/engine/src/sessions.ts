@@ -4,6 +4,7 @@ import { randomUUIDv7 } from 'bun';
 import { and, desc, eq, getTableColumns, isNull, or, sql } from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Context, Effect, Layer, Schema } from 'effect';
+import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
 import { type Backend, parseBackend } from './harness.ts';
@@ -267,7 +268,10 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 									(error) =>
 										new SessionForkError({
 											forkId,
-											code: 'FORK_FAILED',
+											code:
+												error instanceof AcpForkNotSupportedError
+													? 'FORK_NOT_SUPPORTED'
+													: 'FORK_FAILED',
 											message: error.message,
 										}),
 								),

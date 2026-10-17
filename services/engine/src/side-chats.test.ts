@@ -7,6 +7,7 @@ import { Effect, Fiber, Scope } from 'effect';
 import { Agents } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import type { Backend, Harness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import type { OpenCode } from './opencode.ts';
@@ -111,13 +112,18 @@ function createSharedTestDatabases() {
 	};
 }
 
+type OtherHarnesses = Partial<Record<Backend, Harness>>;
+
 function createHarnessRegistry(
 	opencode: OpenCode['Service'],
+	others: OtherHarnesses = {},
 ): HarnessRegistry['Service'] {
 	return {
-		all: [opencode],
+		all: [opencode, ...Object.values(others)],
 		get: (backend) => {
 			if (backend === 'opencode') return opencode;
+			const other = others[backend];
+			if (other !== undefined) return other;
 			throw new Error(`Unexpected test harness: ${backend}`);
 		},
 		listAgentTargets: (backend) => {
@@ -130,6 +136,7 @@ function createHarnessRegistry(
 async function createSideChatServices(
 	database: TestDatabase,
 	opencode: OpenCode['Service'],
+	others?: OtherHarnesses,
 ) {
 	const dbService = {
 		db: database.db,
@@ -139,13 +146,16 @@ async function createSideChatServices(
 		Jobs.make.pipe(
 			Effect.provideService(Scope.Scope, Effect.runSync(Scope.make())),
 			Effect.provideService(Db, dbService),
-			Effect.provideService(HarnessRegistry, createHarnessRegistry(opencode)),
+			Effect.provideService(
+				HarnessRegistry,
+				createHarnessRegistry(opencode, others),
+			),
 			Effect.provideService(Settings, {} as Settings['Service']),
 			Effect.provideService(Agents, {} as Agents['Service']),
 			Effect.provideService(Worktrees, {} as Worktrees['Service']),
 		),
 	);
-	const harnessRegistry = createHarnessRegistry(opencode);
+	const harnessRegistry = createHarnessRegistry(opencode, others);
 	const sessions = await Effect.runPromise(
 		Sessions.make.pipe(
 			Effect.provideService(Db, dbService),
@@ -169,12 +179,13 @@ async function createSideChatService(
 	database: TestDatabase,
 	jobs: Jobs['Service'],
 	opencode: OpenCode['Service'],
+	others?: OtherHarnesses,
 ) {
 	const dbService = {
 		db: database.db,
 		sqlite: database.sqlite,
 	} as unknown as Db['Service'];
-	const harnessRegistry = createHarnessRegistry(opencode);
+	const harnessRegistry = createHarnessRegistry(opencode, others);
 	const sessions = await Effect.runPromise(
 		Sessions.make.pipe(
 			Effect.provideService(Db, dbService),
@@ -902,13 +913,15 @@ describe('side chats', () => {
 		database.sqlite.close();
 	});
 
-	test('rejects a non-OpenCode source before creating a tab', async () => {
+	test('rejects a source whose harness cannot fork before creating a tab', async () => {
 		const database = createTestDatabase();
 		const jobs = {
 			readEventsPage: () => ({ events: [], nextCursor: null }),
 		} as unknown as Jobs['Service'];
 		const opencode = {} as OpenCode['Service'];
-		const sideChats = await createSideChatService(database, jobs, opencode);
+		const sideChats = await createSideChatService(database, jobs, opencode, {
+			cursor: { backend: 'cursor' } as unknown as Harness,
+		});
 
 		insertJob(database, {
 			uuid: 'cursor-source',
@@ -924,7 +937,79 @@ describe('side chats', () => {
 			Effect.runPromise(sideChats.create('cursor-source')),
 		).rejects.toMatchObject({
 			code: 'UNSUPPORTED_HARNESS',
+			message: 'Side chats are not supported for the cursor harness.',
 		});
+		database.sqlite.close();
+	});
+
+	test('forks a Claude-backed source through the Claude harness', async () => {
+		const database = createTestDatabase();
+		const forkInputs: Array<{ sessionId: string; cwd: string }> = [];
+		const turnInputs: Array<{ sessionId?: string; model?: string }> = [];
+		const claude = {
+			backend: 'claude',
+			forkSession: (input: { sessionId: string; cwd: string }) =>
+				Effect.sync(() => {
+					forkInputs.push(input);
+					return { sessionId: 'ses_claude_side_chat' };
+				}),
+			runTurn: (turn: {
+				sessionId?: string;
+				model?: string;
+				onPromptDispatch?: () => void;
+			}) =>
+				Effect.sync(() => {
+					turnInputs.push({ sessionId: turn.sessionId, model: turn.model });
+					const onPromptDispatch = turn.onPromptDispatch;
+					if (onPromptDispatch !== undefined) onPromptDispatch();
+					return {
+						sessionId: 'ses_claude_side_chat',
+						text: '',
+						stopReason: undefined,
+					};
+				}),
+		} as unknown as Harness;
+		const services = await createSideChatServices(
+			database,
+			{} as OpenCode['Service'],
+			{ claude },
+		);
+		insertJob(database, {
+			uuid: 'claude-source',
+			status: 'done',
+			prompt: 'Source prompt',
+			cwd: '/workspace',
+			model: 'sonnet',
+			backend: 'claude',
+			harnessSessionId: 'ses_claude_source',
+		});
+
+		const sideChat = await Effect.runPromise(
+			services.sideChats.create('claude-source'),
+		);
+		const turn = await Effect.runPromise(
+			services.sideChats.send({ sideChatId: sideChat.id, prompt: 'Side' }),
+		);
+		await Effect.runPromise(
+			services.jobs.wait({ jobId: turn.jobId, timeoutMs: 1_000 }),
+		);
+
+		expect(forkInputs).toEqual([
+			{ sessionId: 'ses_claude_source', cwd: '/workspace' },
+		]);
+		expect(turnInputs).toEqual([
+			{ sessionId: 'ses_claude_side_chat', model: 'sonnet' },
+		]);
+		const turnSession = database.db
+			.select({ backend: schema.sessions.backend })
+			.from(schema.jobs)
+			.innerJoin(
+				schema.sessions,
+				eq(schema.jobs.session_id, schema.sessions.id),
+			)
+			.where(eq(schema.jobs.uuid, turn.jobId))
+			.get();
+		expect(turnSession?.backend).toBe('claude');
 		database.sqlite.close();
 	});
 });

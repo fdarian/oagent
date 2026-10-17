@@ -99,7 +99,7 @@ describe('Pi ACP backend', () => {
 		expect(await Effect.runPromise(harness.listAgentTargets())).toEqual([]);
 		expect(harness.supportsModelSwitch).toBe(false);
 		expect(harness).toHaveProperty('steer');
-		expect(harness).not.toHaveProperty('forkSession');
+		expect(harness).toHaveProperty('forkSession');
 		await Effect.runPromise(
 			harness.runTurn({
 				prompt: 'OK',
