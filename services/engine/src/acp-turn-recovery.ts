@@ -83,6 +83,8 @@ export type AcpTurnRecoveryController = {
 		prompt: string,
 		onPromptDispatch?: () => void,
 	) => Effect.Effect<PromptResponse, AcpTurnFailed, Scope>;
+	/** Cancels the session's current work, including a turn that outlived its prompt. */
+	cancel: Effect.Effect<void, never, never>;
 	cleanup: Effect.Effect<void, never, never>;
 };
 
@@ -513,6 +515,7 @@ export function createAcpTurnRecovery(
 				runPromptEffect(prompt, onPromptDispatch).pipe(
 					Effect.onInterrupt(() => cancelAndAwait),
 				),
+			cancel: cancelAndAwait,
 			cleanup: Effect.sync(() => {
 				state.unregister();
 				for (const connection of connections) {

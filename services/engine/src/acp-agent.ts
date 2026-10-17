@@ -22,6 +22,7 @@ import {
 	type AcpTurnRecovery,
 	createAcpTurnRecovery,
 } from './acp-turn-recovery.ts';
+import { makeClaudeBackgroundTasks } from './claude-background-tasks.ts';
 import type { Backend, HarnessCheckResult } from './harness.ts';
 
 type AcpEnv =
@@ -543,7 +544,14 @@ export function runAcpTurn(
 		onTurnActive?: (
 			sessionId: string,
 			currentConnection: () => AcpTurnEnvironment,
+			releaseBackgroundHold: () => boolean,
 		) => () => void;
+		/**
+		 * Keeps the turn open after `end_turn` while background shell tasks run,
+		 * so their autonomous follow-up cycle is recorded into the same turn.
+		 * Needs raw SDK messages enabled in `sessionMeta` (Claude adapter only).
+		 */
+		backgroundTasks?: { settleMs?: number };
 		skipModelSet?: boolean;
 		configOptions?: ReadonlyArray<AcpConfigOption>;
 		sessionMeta?: Record<string, unknown>;
@@ -553,8 +561,22 @@ export function runAcpTurn(
 	return Effect.scoped(
 		Effect.gen(function* () {
 			const turnState = { buffer: '', afterToolCall: false };
+			const background =
+				input.backgroundTasks === undefined
+					? undefined
+					: yield* makeClaudeBackgroundTasks;
 			const recoveryController = yield* createAcpTurnRecovery({
-				env,
+				env:
+					background === undefined
+						? env
+						: {
+								...env,
+								onReconnect: () =>
+									(env.onReconnect === undefined
+										? Effect.void
+										: env.onReconnect()
+									).pipe(Effect.tap(() => Effect.sync(background.reset))),
+							},
 				cwd: input.cwd,
 				sessionMeta: input.sessionMeta,
 				initialSessionLoad: input.sessionId !== undefined,
@@ -577,7 +599,13 @@ export function runAcpTurn(
 						turnState.buffer += update.content.text;
 					}
 				},
-				onExtensionEvent: input.onExtensionEvent,
+				onExtensionEvent:
+					background === undefined
+						? input.onExtensionEvent
+						: (method, params) => {
+								background.observe(method, params);
+								input.onExtensionEvent?.(method, params);
+							},
 			});
 
 			const turn = Effect.gen(function* () {
@@ -624,6 +652,7 @@ export function runAcpTurn(
 					const unregister = onTurnActive(
 						sessionResult.sessionId,
 						recoveryController.currentConnection,
+						background === undefined ? () => false : background.release,
 					);
 					yield* Effect.addFinalizer(() => Effect.sync(unregister));
 				}
@@ -710,6 +739,20 @@ export function runAcpTurn(
 					input.prompt,
 					input.onPromptDispatch,
 				);
+				if (
+					background !== undefined &&
+					input.backgroundTasks !== undefined &&
+					response.stopReason === 'end_turn' &&
+					(yield* background.hasLiveTasksAfterFlush)
+				) {
+					// The follow-up cycle's answer replaces the pre-hold "waiting" text.
+					turnState.afterToolCall = true;
+					yield* background.hold({
+						settleMs: input.backgroundTasks.settleMs ?? BACKGROUND_SETTLE_MS,
+						processExited: recoveryController.currentConnection().processExited,
+						cancel: recoveryController.cancel,
+					});
+				}
 				return { sessionResult, response };
 			}).pipe(Effect.ensuring(recoveryController.cleanup));
 
@@ -760,6 +803,7 @@ export function forkAcpSession(
 
 /** How long a backend's ACP subprocess stays alive after its last turn finishes. */
 const IDLE_TIME_TO_LIVE = Duration.minutes(5);
+const BACKGROUND_SETTLE_MS = 2_000;
 const SESSION_CATALOG_TIMEOUT_MS = 15_000;
 const MODEL_CONFIG_CHOICES_TIMEOUT_MS = 15_000;
 
@@ -794,7 +838,13 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 				idleTimeToLive: IDLE_TIME_TO_LIVE,
 			});
 
-		const activeTurns = new Map<string, () => AcpTurnEnvironment>();
+		const activeTurns = new Map<
+			string,
+			{
+				currentConnection: () => AcpTurnEnvironment;
+				releaseBackgroundHold: () => boolean;
+			}
+		>();
 
 		const runTurn = (input: {
 			prompt: string;
@@ -815,6 +865,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			configOptions?: ReadonlyArray<AcpConfigOption>;
 			sessionMeta?: Record<string, unknown>;
 			recovery?: AcpTurnRecovery;
+			backgroundTasks?: { settleMs?: number };
 		}) =>
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -827,11 +878,16 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						},
 						{
 							...input,
-							onTurnActive: (sessionId, currentConnection) => {
-								activeTurns.set(sessionId, currentConnection);
+							onTurnActive: (
+								sessionId,
+								currentConnection,
+								releaseBackgroundHold,
+							) => {
+								const active = { currentConnection, releaseBackgroundHold };
+								activeTurns.set(sessionId, active);
 								return () => {
 									// A newer turn may have taken over the id before this one unwinds.
-									if (activeTurns.get(sessionId) === currentConnection) {
+									if (activeTurns.get(sessionId) === active) {
 										activeTurns.delete(sessionId);
 									}
 								};
@@ -843,15 +899,24 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 
 		const steer = (input: { sessionId: string; text: string }) =>
 			Effect.gen(function* () {
-				const currentConnection = activeTurns.get(input.sessionId);
-				if (currentConnection === undefined) {
+				const activeTurn = activeTurns.get(input.sessionId);
+				if (activeTurn === undefined) {
 					return yield* new AcpSteerError({
 						code: 'NOT_RUNNING',
 						message: `No turn is running for ACP session ${input.sessionId}.`,
 						cause: new Error('No active ACP turn'),
 					});
 				}
-				const connection = currentConnection();
+				// The prompt already returned, so there is no turn to steer into. The
+				// caller starts a fresh turn instead.
+				if (activeTurn.releaseBackgroundHold()) {
+					return yield* new AcpSteerError({
+						code: 'NOT_RUNNING',
+						message: `The turn for ACP session ${input.sessionId} was only waiting for background tasks and has been ended.`,
+						cause: new Error('ACP turn released from background hold'),
+					});
+				}
+				const connection = activeTurn.currentConnection();
 				if (connection.steeringSupported !== true) {
 					const info = connection.agentInfo;
 					const agent =

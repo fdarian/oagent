@@ -27,6 +27,11 @@ export function makeAcpAdapterHarness(options: {
 	sessionMeta?: Record<string, unknown>;
 	/** The adapter reports subagents as separate sessions instead of tool calls. */
 	nativeSubagents?: boolean;
+	/**
+	 * Holds a turn open while background shell tasks run. The adapter must be
+	 * asked for raw SDK messages through `sessionMeta`.
+	 */
+	holdForBackgroundTasks?: boolean;
 }) {
 	const getBinary = () =>
 		process.env[options.binaryEnvVar] ?? options.defaultBinary;
@@ -124,6 +129,9 @@ export function makeAcpAdapterHarness(options: {
 					reasoningEffort: undefined,
 					configOptions: getConfigOptions(input.model, input.reasoningEffort),
 					sessionMeta: options.sessionMeta,
+					...(options.holdForBackgroundTasks === true
+						? { backgroundTasks: {} }
+						: {}),
 				}),
 			steer: (input: { sessionId: string; text: string }) =>
 				acpAgent.steer(input).pipe(

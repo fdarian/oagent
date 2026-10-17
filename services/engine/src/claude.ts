@@ -1,5 +1,6 @@
 import { Context, Layer } from 'effect';
 import { makeAcpAdapterHarness } from './acp-harness.ts';
+import { claudeRawMessageFilter } from './claude-background-tasks.ts';
 import { Settings } from './settings.ts';
 
 const adapter = makeAcpAdapterHarness({
@@ -15,8 +16,15 @@ const adapter = makeAcpAdapterHarness({
 		{ value: 'max', label: 'Max' },
 	],
 	nativeSubagents: true,
-	// Without this the adapter keeps subagent text internal to the Agent tool call.
-	sessionMeta: { claudeCode: { options: { forwardSubagentText: true } } },
+	holdForBackgroundTasks: true,
+	sessionMeta: {
+		claudeCode: {
+			// Background task state is only visible in raw SDK messages.
+			emitRawSDKMessages: claudeRawMessageFilter,
+			// Without this the adapter keeps subagent text internal to the Agent tool call.
+			options: { forwardSubagentText: true },
+		},
+	},
 });
 
 export const getClaudeBinary = adapter.getBinary;
