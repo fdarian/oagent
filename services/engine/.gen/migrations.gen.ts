@@ -25,6 +25,7 @@ import m0020 from '../drizzle/0020_minor_frightful_four.sql' with { type: 'text'
 import m0021 from '../drizzle/0021_naive_tempest.sql' with { type: 'text' };
 import m0022 from '../drizzle/0022_fair_joseph.sql' with { type: 'text' };
 import m0023 from '../drizzle/0023_fancy_synch.sql' with { type: 'text' };
+import m0024 from '../drizzle/0024_empty_night_nurse.sql' with { type: 'text' };
 
 export default {
   journal: journal as { entries: { idx: number; when: number; tag: string; breakpoints: boolean }[] },
@@ -52,6 +53,7 @@ export default {
   '0020_minor_frightful_four': m0020,
   '0021_naive_tempest': m0021,
   '0022_fair_joseph': m0022,
-  '0023_fancy_synch': m0023
+  '0023_fancy_synch': m0023,
+  '0024_empty_night_nurse': m0024
   } as Record<string, string>,
 };
