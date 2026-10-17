@@ -609,7 +609,7 @@ function InteractiveSubagentTimeline() {
 										status="running"
 										title="Review authentication middleware"
 										cwd="/Users/dev/project"
-										backend="opencode"
+										harnessLabel="OpenCode"
 										model="opencode-go/kimi-k2.6"
 										createdAt={Date.now() - 12_000}
 									/>

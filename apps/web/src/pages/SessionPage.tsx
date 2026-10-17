@@ -12,6 +12,7 @@ import { JobTimeline } from '@/components/job-timeline';
 import { SideChatDrawer } from '@/components/side-chat-drawer.tsx';
 import { SubagentHeader } from '@/components/subagent-header';
 import type { TimelinePart } from '@/lib/event-adapter';
+import { useHarnessName } from '@/lib/harnesses';
 import { client, orpc } from '@/lib/orpc';
 import {
 	isCurrentSideChatCreation,
@@ -83,6 +84,7 @@ function SessionConversation(props: {
 	latest: SessionJob;
 }) {
 	const selectedJob = props.latest;
+	const harnessName = useHarnessName();
 	const costQuery = useQuery(
 		orpc.sessions.cost.queryOptions({
 			input: { sessionId: selectedJob.sessionId },
@@ -513,7 +515,8 @@ function SessionConversation(props: {
 										cwd={selectedJob.cwd}
 										worktreePath={selectedJob.worktreePath}
 										worktreeBranch={selectedJob.worktreeBranch}
-										backend={selectedJob.backend}
+										harnessLabel={harnessName(selectedJob.backend)}
+										acpCommand={props.session.acpCommand}
 										model={
 											props.session.supportsModelSwitch
 												? props.session.model
