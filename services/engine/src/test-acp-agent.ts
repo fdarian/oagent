@@ -5,6 +5,8 @@
  * Set `TEST_ACP_NO_STEERING=1` to omit the steering capability.
  * Set `TEST_ACP_MODELS=a,b` to report a model config option (first is the
  * default) and append the session's model to each reply as `<pid>:<model>`.
+ * Set `TEST_ACP_MODEL_CONFIG_ID=x` to name that option `x` instead of `model`;
+ * setting `model` then fails like an adapter rejecting an unknown option.
  * Set `TEST_ACP_FORK=1` to advertise `session/fork` and `session/load`.
  */
 import {
@@ -22,6 +24,7 @@ const output = new WritableStream<Uint8Array>({
 const models = (process.env.TEST_ACP_MODELS ?? '')
 	.split(',')
 	.filter((model) => model !== '');
+const modelConfigId = process.env.TEST_ACP_MODEL_CONFIG_ID ?? 'model';
 const sessionModels = new Map<string, string>();
 
 const configOptionsFor = (sessionId: string) =>
@@ -29,7 +32,7 @@ const configOptionsFor = (sessionId: string) =>
 		? undefined
 		: [
 				{
-					id: 'model',
+					id: modelConfigId,
 					name: 'Model',
 					category: 'model',
 					type: 'select' as const,
@@ -67,8 +70,10 @@ new AgentSideConnection(
 			return { sessionId };
 		},
 		setSessionConfigOption: async (params) => {
-			if (params.configId === 'model') {
+			if (params.configId === modelConfigId) {
 				sessionModels.set(params.sessionId, String(params.value));
+			} else if (params.configId === 'model') {
+				throw new Error('Unknown config option: model');
 			}
 			return { configOptions: configOptionsFor(params.sessionId) ?? [] };
 		},

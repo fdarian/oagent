@@ -34,7 +34,11 @@ const freshCommand = () => ({
 	args: [agentScript, `--test=${commandCounter++}`],
 });
 
-const testEnvKeys = ['TEST_ACP_MODELS', 'TEST_ACP_FORK'];
+const testEnvKeys = [
+	'TEST_ACP_MODELS',
+	'TEST_ACP_MODEL_CONFIG_ID',
+	'TEST_ACP_FORK',
+];
 afterEach(() => {
 	for (const key of testEnvKeys) delete process.env[key];
 });
@@ -344,6 +348,21 @@ describe('model from the adapter', () => {
 		if (result.status !== 'done') throw new Error('expected done');
 		expect(result.text.endsWith(':m2')).toBe(true);
 		expect(jobRow(environment, started.jobId).model).toBe('m2');
+		await environment.close();
+	});
+
+	test('sets the model through the adapter-chosen option id', async () => {
+		process.env.TEST_ACP_MODELS = 'm1,m2';
+		process.env.TEST_ACP_MODEL_CONFIG_ID = 'model-select';
+		const environment = createEnvironment();
+		const started = await startInline(environment, {
+			acp: freshCommand(),
+			model: 'm2',
+		});
+		const result = await finish(environment, started.jobId);
+		expect(result).toMatchObject({ status: 'done' });
+		if (result.status !== 'done') throw new Error('expected done');
+		expect(result.text.endsWith(':m2')).toBe(true);
 		await environment.close();
 	});
 

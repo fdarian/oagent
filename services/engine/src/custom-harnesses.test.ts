@@ -233,6 +233,23 @@ describe('CustomHarnesses instances', () => {
 		await Effect.runPromise(closeServices(services));
 	});
 
+	test('a saved harness sets the model through the adapter-chosen option id', async () => {
+		const services = createServices();
+		await Effect.runPromise(services.customHarnesses.create(input()));
+		services.settings.setHarnessEnv('my-agent', {
+			TEST_ACP_MODELS: 'm1,m2',
+			TEST_ACP_MODEL_CONFIG_ID: 'model-select',
+		});
+		const harness = await Effect.runPromise(
+			services.customHarnesses.resolve('my-agent'),
+		);
+		const result = await Effect.runPromise(
+			harness.runTurn({ prompt: 'hi', cwd: process.cwd(), model: 'm2' }),
+		);
+		expect(result.text.endsWith(':m2')).toBe(true);
+		await Effect.runPromise(closeServices(services));
+	});
+
 	test('steer and fork fail with typed errors when the adapter lacks the capability', async () => {
 		const services = createServices();
 		await Effect.runPromise(services.customHarnesses.create(input()));

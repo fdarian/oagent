@@ -186,6 +186,13 @@ function extractSessionModelIds(
 	return extractModelIds(modelOption.options).map((model) => model.id);
 }
 
+/** The id the adapter gave its model option, which need not be `model`. */
+function extractSessionModelConfigId(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): string | undefined {
+	return findModelSelectOption(configOptions)?.id;
+}
+
 function extractSessionCurrentModel(
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
 ): string | undefined {
@@ -212,6 +219,8 @@ type AcpTurnSessionResult = {
 	readonly sessionId: string;
 	readonly availableModels: ReadonlyArray<string> | undefined;
 	readonly currentModel: string | undefined;
+	/** Undefined when the adapter reports no model option. */
+	readonly modelConfigId: string | undefined;
 	readonly availableModes: ReadonlyArray<AcpModeOption>;
 };
 
@@ -605,6 +614,7 @@ export function runAcpTurn(
 								sessionId: sid,
 								availableModels: extractSessionModelIds(res.configOptions),
 								currentModel: extractSessionCurrentModel(res.configOptions),
+								modelConfigId: extractSessionModelConfigId(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						);
@@ -623,6 +633,7 @@ export function runAcpTurn(
 								sessionId: res.sessionId,
 								availableModels: extractSessionModelIds(res.configOptions),
 								currentModel: extractSessionCurrentModel(res.configOptions),
+								modelConfigId: extractSessionModelConfigId(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						)
@@ -676,6 +687,13 @@ export function runAcpTurn(
 				const requestedMode =
 					configOptions.find((option) => option.configId === 'mode')?.value ??
 					input.mode;
+				// Callers address the model option as `model`; the adapter may have
+				// named it differently.
+				const adapterConfigId = (configOption: AcpConfigOption) =>
+					configOption.configId === 'model' &&
+					sessionResult.modelConfigId !== undefined
+						? sessionResult.modelConfigId
+						: configOption.configId;
 				const setConfigOption = (configOption: AcpConfigOption) =>
 					Effect.tryPromise({
 						try: () =>
@@ -683,7 +701,7 @@ export function runAcpTurn(
 								.currentConnection()
 								.conn.setSessionConfigOption({
 									sessionId: sessionResult.sessionId,
-									configId: configOption.configId,
+									configId: adapterConfigId(configOption),
 									value: configOption.value,
 								}),
 						catch: (cause) => {
@@ -990,7 +1008,8 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						try: () =>
 							env.conn.setSessionConfigOption({
 								sessionId: session.sessionId,
-								configId: 'model',
+								configId:
+									extractSessionModelConfigId(session.configOptions) ?? 'model',
 								value: input.model,
 							}),
 						catch: (cause) => new AcpSessionError({ cause }),
