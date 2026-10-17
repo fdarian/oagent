@@ -49,6 +49,7 @@ function createServices(
 		builtin: () => harness,
 		resolve: () => Effect.succeed(harness),
 		resolveForSession: () => Effect.succeed(harness),
+		supportsModelSwitch: () => harness.supportsModelSwitch,
 		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	} as unknown as HarnessRegistry['Service'];

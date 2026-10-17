@@ -496,14 +496,14 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		const setModel = (sessionId: string, model: string) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(sessionId);
-				const harness = yield* harnessRegistry.resolveForSession(session);
-				if (!harness.supportsModelSwitch) {
+				if (!harnessRegistry.supportsModelSwitch(session.backend)) {
 					return yield* new SessionModelError({
 						sessionId,
 						code: 'UNSUPPORTED_BACKEND',
 						message: `The ${session.backend} backend does not support switching models on a session.`,
 					});
 				}
+				const harness = yield* harnessRegistry.resolveForSession(session);
 				const models = yield* harness.listModels();
 				if (!models.some((entry) => entry.id === model)) {
 					return yield* new SessionModelError({
@@ -750,12 +750,9 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					backend: session.backend,
 					acpCommand: session.acp_command ?? undefined,
 					model: session.model ?? last?.model,
-					supportsModelSwitch: yield* harnessRegistry
-						.resolveForSession(session)
-						.pipe(
-							Effect.map((harness) => harness.supportsModelSwitch),
-							Effect.catchTag('UnknownHarness', () => Effect.succeed(false)),
-						),
+					supportsModelSwitch: harnessRegistry.supportsModelSwitch(
+						session.backend,
+					),
 					status: last?.status,
 					jobs: rootJobs,
 				};

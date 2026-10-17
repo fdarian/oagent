@@ -39,6 +39,7 @@ function createHarnessRegistry(harness: Harness): HarnessRegistry['Service'] {
 		builtin: () => harness,
 		resolve: () => Effect.succeed(harness),
 		resolveForSession: () => Effect.succeed(harness),
+		supportsModelSwitch: () => harness.supportsModelSwitch,
 		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	};

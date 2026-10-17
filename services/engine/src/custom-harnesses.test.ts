@@ -1,16 +1,21 @@
 import { describe, expect, test } from 'bun:test';
+import { chmodSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { Effect, Exit, Schedule, Scope } from 'effect';
+import { Duration, Effect, Exit, Schedule, Scope } from 'effect';
 import { Claude } from './claude.ts';
 import { Codex } from './codex.ts';
 import { Cursor } from './cursor.ts';
 import {
 	CustomHarnessError,
 	CustomHarnesses,
+	makeCustomHarnesses,
 	validateCustomHarnessId,
 } from './custom-harnesses.ts';
 import { Db } from './db/client.ts';
 import { Grok } from './grok.ts';
+import type { Harness } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { OpenCode } from './opencode.ts';
 import { Pi } from './pi.ts';
@@ -21,7 +26,9 @@ const agentScript = fileURLToPath(
 	new URL('./test-acp-agent.ts', import.meta.url),
 );
 
-function createServices() {
+function createServices(
+	inlineIdleTimeToLive: Duration.Input = Duration.minutes(5),
+) {
 	const database = createTestDatabase();
 	const dbService = {
 		db: database.db,
@@ -32,7 +39,7 @@ function createServices() {
 		Settings.make.pipe(Effect.provideService(Db, dbService)),
 	);
 	const customHarnesses = Effect.runSync(
-		CustomHarnesses.make.pipe(
+		makeCustomHarnesses({ inlineIdleTimeToLive }).pipe(
 			Effect.provideService(Scope.Scope, scope),
 			Effect.provideService(Db, dbService),
 			Effect.provideService(Settings, settings),
@@ -267,6 +274,216 @@ describe('CustomHarnesses instances', () => {
 		expect(forkError).toMatchObject({ _tag: 'AcpForkNotSupportedError' });
 		await Effect.runPromise(closeServices(services));
 		await turn;
+	});
+});
+
+const isAlive = (pid: number) => {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+const waitUntil = async (condition: () => boolean) => {
+	for (let attempt = 0; attempt < 100; attempt++) {
+		if (condition()) return;
+		await Bun.sleep(50);
+	}
+	throw new Error('Timed out waiting for condition');
+};
+
+const agentLauncher = () => {
+	const directory = mkdtempSync(join(tmpdir(), 'oagent-launcher-'));
+	const launcher = join(directory, 'agent.sh');
+	writeFileSync(
+		launcher,
+		`#!/bin/sh\nexec "${process.execPath}" "${agentScript}" "$@"\n`,
+	);
+	chmodSync(launcher, 0o755);
+	return launcher;
+};
+
+type TestHarness = Harness;
+
+const pidOf = async (harness: TestHarness) =>
+	Number(
+		(
+			await Effect.runPromise(
+				harness.runTurn({ prompt: 'pid?', cwd: process.cwd() }),
+			)
+		).text,
+	);
+
+/** Starts a turn that stays in flight until `finish` steers it. */
+const startHeldTurn = async (harness: TestHarness) => {
+	const sessionId = Promise.withResolvers<string>();
+	const turn = Effect.runPromise(
+		harness.runTurn({
+			prompt: 'wait-for-steer',
+			cwd: process.cwd(),
+			onSessionId: sessionId.resolve,
+		}),
+	);
+	const id = await sessionId.promise;
+	const steer = harness.steer;
+	if (steer === undefined) throw new Error('harness must expose steer');
+	return {
+		turn,
+		finish: () =>
+			Effect.runPromise(
+				steer({ sessionId: id, text: 'done' }).pipe(
+					Effect.retry({
+						while: (error) => error.code === 'NOT_RUNNING',
+						times: 20,
+						schedule: Schedule.spaced('50 millis'),
+					}),
+				),
+			),
+	};
+};
+
+describe('CustomHarnesses retirement', () => {
+	test('an edit during a running turn lets it finish, then a new turn uses the new binary', async () => {
+		const services = createServices();
+		const customHarnesses = services.customHarnesses;
+		await Effect.runPromise(customHarnesses.create(input()));
+		const oldHarness = await Effect.runPromise(
+			customHarnesses.resolve('my-agent'),
+		);
+		const oldPid = await pidOf(oldHarness);
+		const held = await startHeldTurn(oldHarness);
+
+		const launcher = agentLauncher();
+		await Effect.runPromise(
+			customHarnesses.update({ ...input(), binary: launcher, args: [] }),
+		);
+		expect(isAlive(oldPid)).toBe(true);
+
+		const newHarness = await Effect.runPromise(
+			customHarnesses.resolve('my-agent'),
+		);
+		expect(newHarness).not.toBe(oldHarness);
+		expect(newHarness.resolveBinary()).toBe(launcher);
+		const newPid = await pidOf(newHarness);
+		expect(newPid).not.toBe(oldPid);
+		expect(isAlive(oldPid)).toBe(true);
+
+		await held.finish();
+		const finished = await held.turn;
+		expect(finished.text).toBe('steered:done');
+		await waitUntil(() => !isAlive(oldPid));
+		expect(isAlive(newPid)).toBe(true);
+		await Effect.runPromise(closeServices(services));
+		await waitUntil(() => !isAlive(newPid));
+	});
+
+	test('an edit with no turn in flight stops the old subprocess right away', async () => {
+		const services = createServices();
+		await Effect.runPromise(services.customHarnesses.create(input()));
+		const harness = await Effect.runPromise(
+			services.customHarnesses.resolve('my-agent'),
+		);
+		const pid = await pidOf(harness);
+		await Effect.runPromise(
+			services.customHarnesses.update({ ...input(), name: 'Renamed' }),
+		);
+		await waitUntil(() => !isAlive(pid));
+		await Effect.runPromise(closeServices(services));
+	});
+
+	test('deleting during a running turn lets it finish, then the subprocess exits', async () => {
+		const services = createServices();
+		const customHarnesses = services.customHarnesses;
+		await Effect.runPromise(customHarnesses.create(input()));
+		const harness = await Effect.runPromise(
+			customHarnesses.resolve('my-agent'),
+		);
+		const pid = await pidOf(harness);
+		const held = await startHeldTurn(harness);
+
+		await Effect.runPromise(customHarnesses.remove('my-agent'));
+		expect(isAlive(pid)).toBe(true);
+		const unknown = await Effect.runPromise(
+			customHarnesses.resolve('my-agent').pipe(Effect.flip),
+		);
+		expect(unknown).toMatchObject({ _tag: 'UnknownHarness' });
+
+		await held.finish();
+		expect((await held.turn).text).toBe('steered:done');
+		await waitUntil(() => !isAlive(pid));
+		await Effect.runPromise(closeServices(services));
+	});
+
+	test('a stale harness reference fails with a typed error once its subprocess is closed', async () => {
+		const services = createServices();
+		await Effect.runPromise(services.customHarnesses.create(input()));
+		const stale = await Effect.runPromise(
+			services.customHarnesses.resolve('my-agent'),
+		);
+		await Effect.runPromise(services.customHarnesses.remove('my-agent'));
+		const error = await Effect.runPromise(
+			stale.runTurn({ prompt: 'pid?', cwd: process.cwd() }).pipe(Effect.flip),
+		);
+		expect(error).toMatchObject({ _tag: 'AcpSessionError' });
+		expect(error.message).toContain('changed or removed');
+		await Effect.runPromise(closeServices(services));
+	});
+});
+
+describe('CustomHarnesses inline eviction', () => {
+	const command = { binary: process.execPath, args: [agentScript] };
+
+	test('an idle inline instance is closed and evicted after the TTL', async () => {
+		const services = createServices(Duration.millis(200));
+		const first = await Effect.runPromise(
+			services.customHarnesses.resolveInline(command),
+		);
+		const pid = await pidOf(first);
+		await Bun.sleep(100);
+		expect(isAlive(pid)).toBe(true);
+		await waitUntil(() => !isAlive(pid));
+		const second = await Effect.runPromise(
+			services.customHarnesses.resolveInline(command),
+		);
+		expect(second).not.toBe(first);
+		await Effect.runPromise(closeServices(services));
+	});
+
+	test('a use outlasting the TTL keeps the instance, and the idle window restarts after it', async () => {
+		const services = createServices(Duration.millis(300));
+		const harness = await Effect.runPromise(
+			services.customHarnesses.resolveInline(command),
+		);
+		const pid = await pidOf(harness);
+		const held = await startHeldTurn(harness);
+		await Bun.sleep(700);
+		expect(isAlive(pid)).toBe(true);
+		expect(
+			await Effect.runPromise(services.customHarnesses.resolveInline(command)),
+		).toBe(harness);
+
+		await held.finish();
+		await held.turn;
+		await Bun.sleep(100);
+		expect(isAlive(pid)).toBe(true);
+		await waitUntil(() => !isAlive(pid));
+		await Effect.runPromise(closeServices(services));
+	});
+
+	test('a new use inside the idle window cancels the eviction', async () => {
+		const services = createServices(Duration.millis(400));
+		const harness = await Effect.runPromise(
+			services.customHarnesses.resolveInline(command),
+		);
+		const pid = await pidOf(harness);
+		await Bun.sleep(250);
+		expect(await pidOf(harness)).toBe(pid);
+		await Bun.sleep(250);
+		expect(isAlive(pid)).toBe(true);
+		await waitUntil(() => !isAlive(pid));
+		await Effect.runPromise(closeServices(services));
 	});
 });
 

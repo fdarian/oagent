@@ -53,6 +53,12 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 					? Effect.succeed(byBackend[harnessId])
 					: customHarnesses.resolve(harnessId);
 			/**
+			 * Answered without resolving: custom and inline harnesses never switch
+			 * models, and resolving them would spawn an adapter just to read a flag.
+			 */
+			const supportsModelSwitch = (harnessId: HarnessId): boolean =>
+				isBackend(harnessId) && byBackend[harnessId].supportsModelSwitch;
+			/**
 			 * The one place that turns a session row into its harness: inline
 			 * sessions launch from the definition stored on the row, everything
 			 * else resolves by id.
@@ -77,7 +83,14 @@ export class HarnessRegistry extends Context.Service<HarnessRegistry>()(
 					Effect.flatMap((harness) => harness.listAgentTargets()),
 				);
 
-			return { builtin, resolve, resolveForSession, list, listAgentTargets };
+			return {
+				builtin,
+				resolve,
+				resolveForSession,
+				supportsModelSwitch,
+				list,
+				listAgentTargets,
+			};
 		}),
 	},
 ) {

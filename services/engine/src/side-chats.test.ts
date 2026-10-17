@@ -133,6 +133,7 @@ function createHarnessRegistry(
 		},
 		resolve,
 		resolveForSession: (session) => resolve(session.backend),
+		supportsModelSwitch: () => false,
 		list: () => Effect.succeed([opencode, ...Object.values(others)]),
 		listAgentTargets: (backend) => {
 			if (backend === 'opencode') return opencode.listAgentTargets();
