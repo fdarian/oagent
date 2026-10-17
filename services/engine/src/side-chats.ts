@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Ref, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
+import { parseBackend } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { JobNotFound, JobStartError, Jobs } from './jobs.ts';
 import { Sessions } from './sessions.ts';
@@ -107,10 +108,11 @@ export class SideChats extends Context.Service<SideChats>()(
 			const validateSource = (
 				sourceJob: SourceJob,
 			): Effect.Effect<SourceJob, SideChatError, never> => {
-				if (sourceJob.session.backend !== 'opencode') {
+				const backend = parseBackend(sourceJob.session.backend);
+				if (harnessRegistry.get(backend).forkSession === undefined) {
 					return new SideChatError({
 						code: 'UNSUPPORTED_HARNESS',
-						message: `Side chats are only supported for OpenCode jobs. This job uses the ${sourceJob.session.backend} harness.`,
+						message: `Side chats are not supported for the ${backend} harness.`,
 					});
 				}
 				if (sourceJob.job.side_chat_id !== null) {
@@ -217,12 +219,12 @@ export class SideChats extends Context.Service<SideChats>()(
 					}
 					yield* validateSource(sourceJob);
 
+					const sourceBackend = parseBackend(sourceJob.session.backend);
 					const sourceSessionId = sourceJob.session.harness_session_id;
 					if (sourceSessionId === null) {
 						return yield* new SideChatError({
 							code: 'SESSION_NOT_READY',
-							message:
-								'The source OpenCode session is not ready yet. Wait for the job to create its session, then try again.',
+							message: `The source ${sourceBackend} session is not ready yet. Wait for the job to create its session, then try again.`,
 						});
 					}
 					const sourceModel = sourceJob.job.model;
@@ -270,7 +272,7 @@ export class SideChats extends Context.Service<SideChats>()(
 								.reserve({
 									session,
 									prompt: input.prompt,
-									model: `opencode:${sourceModel}`,
+									model: `${sourceBackend}:${sourceModel}`,
 									sideChatId: sideChat.id,
 								})
 								.pipe(
@@ -323,7 +325,7 @@ export class SideChats extends Context.Service<SideChats>()(
 										catch: (cause) =>
 											new SideChatError({
 												code: 'FORK_FAILED',
-												message: `Could not persist the forked OpenCode session: ${String(cause)}`,
+												message: `Could not persist the forked ${sourceBackend} session: ${String(cause)}`,
 											}),
 									}).pipe(
 										Effect.flatMap((updated) =>
@@ -337,7 +339,8 @@ export class SideChats extends Context.Service<SideChats>()(
 										),
 									);
 
-								const forkSession = harnessRegistry.get('opencode').forkSession;
+								const forkSession =
+									harnessRegistry.get(sourceBackend).forkSession;
 								const forkedSession =
 									sideChat.session_id !== null
 										? Effect.succeed(sideChat.session_id)
@@ -345,8 +348,7 @@ export class SideChats extends Context.Service<SideChats>()(
 											? Effect.fail(
 													new SideChatError({
 														code: 'FORK_NOT_SUPPORTED',
-														message:
-															'The OpenCode harness does not support session forking.',
+														message: `The ${sourceBackend} harness does not support session forking.`,
 													}),
 												)
 											: forkSession({
@@ -362,7 +364,7 @@ export class SideChats extends Context.Service<SideChats>()(
 																	})
 																: new SideChatError({
 																		code: 'FORK_FAILED',
-																		message: `Could not fork the source OpenCode session: ${error.message}`,
+																		message: `Could not fork the source ${sourceBackend} session: ${error.message}`,
 																	}),
 														),
 													)

@@ -136,6 +136,8 @@ export function makeAcpAdapterHarness(options: {
 							}),
 					),
 				),
+			forkSession: (input: { sessionId: string; cwd: string }) =>
+				acpAgent.forkSession(input),
 			listModels: () => models.get(),
 			listModelEfforts,
 			listAgentTargets: () => Effect.succeed([]),
