@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from 'node:path';
 import { Effect, Option } from 'effect';
 import { Argument, Command, Flag } from 'effect/cli';
 import {
@@ -40,7 +41,11 @@ export function rewriteBareWorktreeFlag(
 	return rewritten;
 }
 
-export function parseAcpCommand(commandLine: string) {
+/**
+ * The engine may run in another directory than the shell, so a relative path
+ * binary is resolved here; bare names stay PATH-resolved by the engine.
+ */
+export function parseAcpCommand(commandLine: string, cwd = process.cwd()) {
 	return Effect.try({
 		try: () => {
 			const words = splitShellWords(commandLine);
@@ -48,7 +53,11 @@ export function parseAcpCommand(commandLine: string) {
 			if (binary === undefined) {
 				throw new Error('--acp needs a command to run.');
 			}
-			return { binary, args: words.slice(1) };
+			const resolved =
+				binary.includes('/') && !isAbsolute(binary)
+					? resolve(cwd, binary)
+					: binary;
+			return { binary: resolved, args: words.slice(1) };
 		},
 		catch: (cause) =>
 			new Error(

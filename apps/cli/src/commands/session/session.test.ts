@@ -167,6 +167,29 @@ describe('parseAcpCommand', () => {
 		});
 	});
 
+	test('resolves a relative binary path against the working directory', async () => {
+		expect(
+			await Effect.runPromise(
+				parseAcpCommand('./bin/agent --flag ./keep', '/work/project'),
+			),
+		).toEqual({
+			binary: '/work/project/bin/agent',
+			args: ['--flag', './keep'],
+		});
+		expect(
+			await Effect.runPromise(parseAcpCommand('../agent', '/work/project')),
+		).toEqual({ binary: '/work/agent', args: [] });
+	});
+
+	test('leaves absolute paths and bare names unchanged', async () => {
+		expect(
+			await Effect.runPromise(parseAcpCommand('/opt/agent', '/work/project')),
+		).toEqual({ binary: '/opt/agent', args: [] });
+		expect(
+			await Effect.runPromise(parseAcpCommand('opencode', '/work/project')),
+		).toEqual({ binary: 'opencode', args: [] });
+	});
+
 	test.each(['', '   ', 'agent "unterminated'])('rejects %j', async (input) => {
 		await expect(Effect.runPromise(parseAcpCommand(input))).rejects.toThrow(
 			/--acp/,
