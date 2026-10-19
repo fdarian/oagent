@@ -27,11 +27,6 @@ export function makeAcpAdapterHarness(options: {
 	sessionMeta?: Record<string, unknown>;
 	/** The adapter reports subagents as separate sessions instead of tool calls. */
 	nativeSubagents?: boolean;
-	/**
-	 * Holds a turn open while background shell tasks run. The adapter must be
-	 * asked for raw SDK messages through `sessionMeta`.
-	 */
-	holdForBackgroundTasks?: boolean;
 }) {
 	const getBinary = () =>
 		process.env[options.binaryEnvVar] ?? options.defaultBinary;
@@ -68,105 +63,115 @@ export function makeAcpAdapterHarness(options: {
 			);
 		}),
 	);
-	const make = Effect.gen(function* () {
-		const acpAgent = yield* AcpAgent;
-		const settings = yield* Settings;
-		const config = () =>
-			createConfig(() => settings.getHarnessEnv(options.backend));
-		const versionRef = yield* Ref.make<{
-			loaded: boolean;
-			value: string | undefined;
-		}>({ loaded: false, value: undefined });
-		const semaphore = yield* Semaphore.make(1);
-		const version = () =>
-			semaphore.withPermit(
-				Effect.gen(function* () {
-					const memoized = yield* Ref.get(versionRef);
-					if (memoized.loaded) return memoized.value;
-					const info = yield* probeAcpConnection(config());
-					yield* Ref.set(versionRef, {
-						loaded: true,
-						value: info.agentVersion,
-					});
-					return info.agentVersion;
-				}),
-			);
-		const models = yield* ModelsCache.make(() =>
-			acpAgent
-				.listModels()
-				.pipe(
-					Effect.map((entries) => entries.map((entry) => ({ id: entry.id }))),
-				),
-		);
-		const discoveredEfforts =
-			options.efforts === 'discover'
-				? yield* ModelsCache.makeKeyed((model) =>
-						acpAgent
-							.listModelConfigChoices({
-								model,
-								configId: options.effortConfigId,
-							})
-							.pipe(
-								Effect.map((choices) =>
-									options.omitDefaultEffort === true
-										? [{ value: 'default', label: 'Default' }, ...choices]
-										: choices,
-								),
-							),
-					)
-				: undefined;
-		const listModelEfforts = (model: string) => {
-			if (discoveredEfforts !== undefined) return discoveredEfforts.get(model);
-			return Effect.succeed(options.efforts as ReadonlyArray<ModelEffort>);
-		};
-		return {
-			backend: options.backend,
-			supportsModelSwitch: false,
-			runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) =>
-				acpAgent.runTurn({
-					...input,
-					model: undefined,
-					reasoningEffort: undefined,
-					configOptions: getConfigOptions(input.model, input.reasoningEffort),
-					sessionMeta: options.sessionMeta,
-					...(options.holdForBackgroundTasks === true
-						? { backgroundTasks: {} }
-						: {}),
-				}),
-			steer: (input: { sessionId: string; text: string }) =>
-				acpAgent.steer(input).pipe(
-					Effect.mapError(
-						(error) =>
-							new HarnessSteerError({
-								code: error.code,
-								message: error.message,
-								cause: error,
-							}),
+	/**
+	 * `backgroundHoldMaxMs` holds a turn open for that long while its background
+	 * shells run. The adapter must be asked for raw SDK messages through
+	 * `sessionMeta`.
+	 */
+	const makeWith = (runtime: { backgroundHoldMaxMs?: number }) =>
+		Effect.gen(function* () {
+			const acpAgent = yield* AcpAgent;
+			const settings = yield* Settings;
+			const config = () =>
+				createConfig(() => settings.getHarnessEnv(options.backend));
+			const versionRef = yield* Ref.make<{
+				loaded: boolean;
+				value: string | undefined;
+			}>({ loaded: false, value: undefined });
+			const semaphore = yield* Semaphore.make(1);
+			const version = () =>
+				semaphore.withPermit(
+					Effect.gen(function* () {
+						const memoized = yield* Ref.get(versionRef);
+						if (memoized.loaded) return memoized.value;
+						const info = yield* probeAcpConnection(config());
+						yield* Ref.set(versionRef, {
+							loaded: true,
+							value: info.agentVersion,
+						});
+						return info.agentVersion;
+					}),
+				);
+			const models = yield* ModelsCache.make(() =>
+				acpAgent
+					.listModels()
+					.pipe(
+						Effect.map((entries) => entries.map((entry) => ({ id: entry.id }))),
 					),
-				),
-			forkSession: (input: { sessionId: string; cwd: string }) =>
-				acpAgent.forkSession(input),
-			listModels: () => models.get(),
-			listModelEfforts,
-			listAgentTargets: () => Effect.succeed([]),
-			resolveBinary,
-			version,
-			invalidate: () =>
-				Effect.gen(function* () {
-					yield* models.invalidate();
-					if (discoveredEfforts !== undefined) {
-						yield* discoveredEfforts.invalidate();
-					}
-				}),
-			check: () => checkAcpConnection(options.backend, config()),
-		} satisfies Harness;
-	});
+			);
+			const discoveredEfforts =
+				options.efforts === 'discover'
+					? yield* ModelsCache.makeKeyed((model) =>
+							acpAgent
+								.listModelConfigChoices({
+									model,
+									configId: options.effortConfigId,
+								})
+								.pipe(
+									Effect.map((choices) =>
+										options.omitDefaultEffort === true
+											? [{ value: 'default', label: 'Default' }, ...choices]
+											: choices,
+									),
+								),
+						)
+					: undefined;
+			const listModelEfforts = (model: string) => {
+				if (discoveredEfforts !== undefined)
+					return discoveredEfforts.get(model);
+				return Effect.succeed(options.efforts as ReadonlyArray<ModelEffort>);
+			};
+			return {
+				backend: options.backend,
+				supportsModelSwitch: false,
+				runTurn: (input: Parameters<typeof acpAgent.runTurn>[0]) =>
+					acpAgent.runTurn({
+						...input,
+						model: undefined,
+						reasoningEffort: undefined,
+						configOptions: getConfigOptions(input.model, input.reasoningEffort),
+						sessionMeta: options.sessionMeta,
+						...(runtime.backgroundHoldMaxMs === undefined
+							? {}
+							: {
+									backgroundTasks: { maxHoldMs: runtime.backgroundHoldMaxMs },
+								}),
+					}),
+				steer: (input: { sessionId: string; text: string }) =>
+					acpAgent.steer(input).pipe(
+						Effect.mapError(
+							(error) =>
+								new HarnessSteerError({
+									code: error.code,
+									message: error.message,
+									cause: error,
+								}),
+						),
+					),
+				forkSession: (input: { sessionId: string; cwd: string }) =>
+					acpAgent.forkSession(input),
+				listModels: () => models.get(),
+				listModelEfforts,
+				listAgentTargets: () => Effect.succeed([]),
+				resolveBinary,
+				version,
+				invalidate: () =>
+					Effect.gen(function* () {
+						yield* models.invalidate();
+						if (discoveredEfforts !== undefined) {
+							yield* discoveredEfforts.invalidate();
+						}
+					}),
+				check: () => checkAcpConnection(options.backend, config()),
+			} satisfies Harness;
+		});
 	return {
 		getBinary,
 		resolveBinary,
 		createConfig,
 		getConfigOptions,
-		make,
+		make: makeWith({}),
+		makeWith,
 		acpLayer,
 	};
 }

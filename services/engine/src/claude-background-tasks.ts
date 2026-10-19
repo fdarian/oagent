@@ -1,3 +1,4 @@
+import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import {
 	Deferred,
 	Duration,
@@ -21,23 +22,9 @@ export const claudeRawMessageFilter = [
 	{ type: 'system', subtype: 'session_state_changed' },
 ];
 
-/**
- * Subagents already hold the ACP prompt open, and a Monitor is persistent by
- * design, so only tasks that finish on their own count as work to wait for.
- */
-const HELD_TASK_TYPES: ReadonlySet<string> = new Set([
-	'local_bash',
-	'local_workflow',
-]);
-
 const BackgroundTasksChanged = Schema.Struct({
 	subtype: Schema.Literal('background_tasks_changed'),
-	tasks: Schema.Array(
-		Schema.Struct({
-			task_type: Schema.optional(Schema.String),
-			ambient: Schema.optional(Schema.Boolean),
-		}),
-	),
+	tasks: Schema.Array(Schema.Struct({ task_id: Schema.String })),
 });
 
 const SessionStateChanged = Schema.Struct({
@@ -51,15 +38,50 @@ const SdkMessageNotification = Schema.Struct({
 
 const decodeSdkMessage = Schema.decodeUnknownOption(SdkMessageNotification);
 
+/**
+ * The adapter reports a backgrounded Bash call's task id only in the
+ * PostToolUse `tool_response` it forwards for non-AIR clients. The same id
+ * appears in `background_tasks_changed`; Monitor and other tools never carry
+ * `backgroundTaskId`, so they are not mistaken for shells.
+ */
+const BackgroundShellLaunch = Schema.Struct({
+	sessionUpdate: Schema.Literal('tool_call_update'),
+	_meta: Schema.Struct({
+		claudeCode: Schema.Struct({
+			toolName: Schema.Literal('Bash'),
+			toolResponse: Schema.Struct({ backgroundTaskId: Schema.String }),
+		}),
+	}),
+});
+
+const decodeShellLaunch = Schema.decodeUnknownOption(BackgroundShellLaunch);
+
+type SessionState = 'idle' | 'running' | 'requires_action';
+
 type TrackerState = {
-	liveTasks: number;
-	sessionState: 'idle' | 'running' | 'requires_action';
+	liveTaskIds: ReadonlySet<string>;
+	/** Every shell launched on this session, which outlives the turn that launched it. */
+	shellIds: ReadonlySet<string>;
+	/** The shells launched since the current turn began; only these hold the turn. */
+	turnShellIds: ReadonlySet<string>;
+	sessionState: SessionState;
 };
 
-const initialState: TrackerState = { liveTasks: 0, sessionState: 'idle' };
+const initialState: TrackerState = {
+	liveTaskIds: new Set(),
+	shellIds: new Set(),
+	turnShellIds: new Set(),
+	sessionState: 'idle',
+};
 
-const isSettled = (state: TrackerState): boolean =>
-	state.liveTasks === 0 && state.sessionState === 'idle';
+const anyLive = (ids: ReadonlySet<string>, state: TrackerState): boolean =>
+	[...ids].some((id) => state.liveTaskIds.has(id));
+
+const hasPendingTurnShell = (state: TrackerState): boolean =>
+	anyLive(state.turnShellIds, state);
+
+const hasLiveShell = (state: TrackerState): boolean =>
+	anyLive(state.shellIds, state);
 
 const failWhenProcessExits = (
 	processExited: Promise<number> | undefined,
@@ -78,20 +100,32 @@ const failWhenProcessExits = (
 	);
 };
 
+export type SettleOptions = {
+	/** How long to wait for a follow-up cycle to start once the turn's shells ended. */
+	followUpStartMs: number;
+	/** How long the SDK must stay idle after a follow-up cycle before the hold ends. */
+	settleMs: number;
+};
+
 export type BackgroundTaskTracker = {
-	/** Feeds `_claude/sdkMessage` notifications; every other method is ignored. */
-	observe: (method: string, params: unknown) => void;
+	/** Starts a turn: only shells launched from now on hold it. */
+	beginTurn: () => void;
 	/**
 	 * Extension notifications can be delivered after the prompt response that
 	 * followed them, so the check waits briefly for them to land.
 	 */
-	hasLiveTasksAfterFlush: Effect.Effect<boolean>;
+	hasLiveTurnShellsAfterFlush: Effect.Effect<boolean>;
 	/**
-	 * Completes once no background task is live and the SDK has been idle for
-	 * `settleMs`: the gap between a task ending and its follow-up cycle starting
-	 * must not end a hold.
+	 * Completes once the turn's shells ended and their follow-up cycle (SDK
+	 * `running`, then `idle`) finished. A cycle that never starts ends the wait
+	 * after `followUpStartMs`.
 	 */
-	untilSettled: (settleMs: number) => Effect.Effect<void>;
+	untilSettled: (options: SettleOptions) => Effect.Effect<void>;
+	hasLiveShells: () => boolean;
+	untilNoLiveShells: Effect.Effect<void>;
+	/** Feeds `_claude/sdkMessage` notifications. */
+	observeSdkMessage: (params: unknown) => void;
+	observeShellLaunch: (taskId: string) => void;
 };
 
 const makeTracker: Effect.Effect<BackgroundTaskTracker> = Effect.gen(
@@ -100,36 +134,66 @@ const makeTracker: Effect.Effect<BackgroundTaskTracker> = Effect.gen(
 		const update = (change: (current: TrackerState) => TrackerState): void => {
 			Effect.runSync(SubscriptionRef.update(state, change));
 		};
+		const current = () => SubscriptionRef.getUnsafe(state);
+		const awaitState = (
+			predicate: (value: TrackerState) => boolean,
+		): Effect.Effect<void> =>
+			SubscriptionRef.changes(state).pipe(
+				Stream.filter(predicate),
+				Stream.take(1),
+				Stream.runDrain,
+			);
+		const followUpActivity = (value: TrackerState) =>
+			value.sessionState !== 'idle' || hasPendingTurnShell(value);
 		return {
-			observe: (method, params) => {
-				if (method !== SDK_MESSAGE_METHOD) return;
+			beginTurn: () => {
+				update((value) => ({ ...value, turnShellIds: new Set() }));
+			},
+			hasLiveTurnShellsAfterFlush: Effect.sleep(
+				Duration.millis(NOTIFICATION_FLUSH_MS),
+			).pipe(Effect.map(() => hasPendingTurnShell(current()))),
+			untilSettled: (options) =>
+				Effect.gen(function* () {
+					let followUpSeen = false;
+					for (;;) {
+						if (hasPendingTurnShell(current())) followUpSeen = false;
+						yield* awaitState((value) => !hasPendingTurnShell(value));
+						if (current().sessionState === 'idle') {
+							const window = followUpSeen
+								? options.settleMs
+								: options.followUpStartMs;
+							const activity = yield* awaitState(followUpActivity).pipe(
+								Effect.timeoutOption(Duration.millis(window)),
+							);
+							if (Option.isNone(activity)) return;
+							continue;
+						}
+						followUpSeen = true;
+						yield* awaitState((value) => value.sessionState === 'idle');
+					}
+				}),
+			hasLiveShells: () => hasLiveShell(current()),
+			untilNoLiveShells: awaitState((value) => !hasLiveShell(value)),
+			observeSdkMessage: (params) => {
 				const decoded = decodeSdkMessage(params);
 				if (Option.isNone(decoded)) return;
 				const message = decoded.value.message;
 				if (message.subtype === 'session_state_changed') {
-					update((current) => ({ ...current, sessionState: message.state }));
+					update((value) => ({ ...value, sessionState: message.state }));
 					return;
 				}
-				const liveTasks = message.tasks.filter(
-					(task) =>
-						task.ambient !== true &&
-						task.task_type !== undefined &&
-						HELD_TASK_TYPES.has(task.task_type),
-				).length;
-				update((current) => ({ ...current, liveTasks }));
+				update((value) => ({
+					...value,
+					liveTaskIds: new Set(message.tasks.map((task) => task.task_id)),
+				}));
 			},
-			hasLiveTasksAfterFlush: Effect.sleep(
-				Duration.millis(NOTIFICATION_FLUSH_MS),
-			).pipe(Effect.map(() => SubscriptionRef.getUnsafe(state).liveTasks > 0)),
-			untilSettled: (settleMs) =>
-				SubscriptionRef.changes(state).pipe(
-					Stream.map(isSettled),
-					Stream.changes,
-					Stream.debounce(Duration.millis(settleMs)),
-					Stream.filter((settled) => settled),
-					Stream.take(1),
-					Stream.runDrain,
-				),
+			observeShellLaunch: (taskId) => {
+				update((value) => ({
+					...value,
+					shellIds: new Set(value.shellIds).add(taskId),
+					turnShellIds: new Set(value.turnShellIds).add(taskId),
+				}));
+			},
 		};
 	},
 );
@@ -137,13 +201,18 @@ const makeTracker: Effect.Effect<BackgroundTaskTracker> = Effect.gen(
 export type BackgroundTaskRegistry = {
 	/** Routes a connection-level notification to the tracker of its ACP session. */
 	observe: (sessionId: string, method: string, params: unknown) => void;
+	/** Records the background shell a root-session tool call update launched, if any. */
+	observeUpdate: (sessionId: string, update: SessionUpdate) => void;
 	forSession: (sessionId: string) => BackgroundTaskTracker;
+	/** Whether any session of the connection has a background shell still running. */
+	hasLiveShells: () => boolean;
+	untilNoLiveShells: Effect.Effect<void>;
 };
 
 /**
  * Background task state is per adapter process and outlives any one turn, so
- * it lives with the connection: a shell left running by one turn must still be
- * visible to the next turn on that session.
+ * it lives with the connection: a shell left running by one turn must keep the
+ * process alive after that turn ended.
  */
 export function createBackgroundTaskRegistry(): BackgroundTaskRegistry {
 	const trackers = new Map<string, BackgroundTaskTracker>();
@@ -154,19 +223,43 @@ export function createBackgroundTaskRegistry(): BackgroundTaskRegistry {
 		trackers.set(sessionId, created);
 		return created;
 	};
+	const hasLiveShells = () =>
+		[...trackers.values()].some((tracker) => tracker.hasLiveShells());
 	return {
 		observe: (sessionId, method, params) => {
-			forSession(sessionId).observe(method, params);
+			if (method !== SDK_MESSAGE_METHOD) return;
+			forSession(sessionId).observeSdkMessage(params);
+		},
+		observeUpdate: (sessionId, update) => {
+			const launch = decodeShellLaunch(update);
+			if (Option.isNone(launch)) return;
+			forSession(sessionId).observeShellLaunch(
+				launch.value._meta.claudeCode.toolResponse.backgroundTaskId,
+			);
 		},
 		forSession,
+		hasLiveShells,
+		untilNoLiveShells: Effect.suspend(
+			function waitForTrackers(): Effect.Effect<void> {
+				const live = [...trackers.values()].find((tracker) =>
+					tracker.hasLiveShells(),
+				);
+				if (live === undefined) return Effect.void;
+				return live.untilNoLiveShells.pipe(Effect.andThen(waitForTrackers));
+			},
+		),
 	};
 }
 
 export type BackgroundHold = {
-	/** Keeps the turn open until the tracker settles, the hold is released, or the process dies. */
+	/**
+	 * Keeps the turn open until the turn's shells and their follow-up cycle are
+	 * done, the cap passes, the hold is released, or the process dies.
+	 */
 	hold: (input: {
 		tracker: BackgroundTaskTracker;
-		settleMs: number;
+		settle: SettleOptions;
+		maxHoldMs: number;
 		processExited?: Promise<number>;
 		cancel: Effect.Effect<void>;
 	}) => Effect.Effect<void, AcpTurnFailed>;
@@ -186,8 +279,11 @@ export const makeBackgroundHold: Effect.Effect<BackgroundHold> = Effect.gen(
 					Effect.andThen(
 						Effect.raceFirst(
 							Effect.raceFirst(
-								input.tracker.untilSettled(input.settleMs),
-								Deferred.await(released),
+								Effect.raceFirst(
+									input.tracker.untilSettled(input.settle),
+									Deferred.await(released),
+								),
+								Effect.sleep(Duration.millis(input.maxHoldMs)),
 							),
 							failWhenProcessExits(input.processExited),
 						),

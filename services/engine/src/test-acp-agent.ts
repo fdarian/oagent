@@ -5,9 +5,10 @@
  * Set `TEST_ACP_NO_STEERING=1` to omit the steering capability.
  *
  * A prompt starting with `background-shell` mimics Claude launching a background
- * shell: it reports the task through `_claude/sdkMessage`, answers "waiting" and
- * ends the turn. `background-shell:finish` then ends the shell 100ms later and
- * runs an autonomous follow-up cycle answering "shell finished"; plain
+ * Bash: it reports the task through `_claude/sdkMessage` and the Bash tool
+ * result's `backgroundTaskId`, answers "waiting" and ends the turn.
+ * `background-shell:finish` then ends the shell 100ms later and runs an
+ * autonomous follow-up cycle answering "shell finished"; plain
  * `background-shell` never finishes. A `finish-shell` prompt, sent on a later turn,
  * answers "ok" and ends the still-running shell the same way.
  */
@@ -111,6 +112,19 @@ new AgentSideConnection(
 					type: 'system',
 					subtype: 'background_tasks_changed',
 					tasks: [{ task_id: 'shell-1', task_type: 'local_bash' }],
+				});
+				await conn.sessionUpdate({
+					sessionId: params.sessionId,
+					update: {
+						sessionUpdate: 'tool_call_update',
+						toolCallId: 'bash-1',
+						_meta: {
+							claudeCode: {
+								toolName: 'Bash',
+								toolResponse: { backgroundTaskId: 'shell-1' },
+							},
+						},
+					},
 				});
 				await conn.sessionUpdate({
 					sessionId: params.sessionId,

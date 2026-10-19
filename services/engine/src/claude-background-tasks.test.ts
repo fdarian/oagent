@@ -10,6 +10,7 @@ import { createBackgroundTaskRegistry } from './claude-background-tasks.ts';
 
 const SESSION_ID = 'ses_claude';
 const SETTLE_MS = 50;
+const MAX_HOLD_MS = 5_000;
 
 type PromptResult = Awaited<ReturnType<ClientSideConnection['prompt']>>;
 type NewSessionResult = Awaited<ReturnType<ClientSideConnection['newSession']>>;
@@ -25,7 +26,23 @@ const tasksChanged = (tasks: ReadonlyArray<Record<string, unknown>>) =>
 const sessionState = (state: string) =>
 	sdkMessage({ subtype: 'session_state_changed', state });
 
-const shell = { task_id: 'shell-1', task_type: 'local_bash' };
+const bashLaunch = (taskId: string): SessionUpdate => ({
+	sessionUpdate: 'tool_call_update',
+	toolCallId: `call-${taskId}`,
+	_meta: {
+		claudeCode: {
+			toolName: 'Bash',
+			toolResponse: { backgroundTaskId: taskId },
+		},
+	},
+});
+
+const shellTask = (taskId: string) => ({
+	task_id: taskId,
+	task_type: 'local_bash',
+});
+
+const FOLLOW_UP_START_MS = 500;
 
 function createFakeClaude(
 	prompt: (input: {
@@ -36,6 +53,7 @@ function createFakeClaude(
 	const state = {
 		listener: undefined as ((update: SessionUpdate) => void) | undefined,
 		cancelled: 0,
+		prompts: 0,
 	};
 	const extNotificationHandlers = new Map<
 		string,
@@ -46,8 +64,12 @@ function createFakeClaude(
 		newSession: async (): Promise<NewSessionResult> =>
 			({ sessionId: SESSION_ID }) as NewSessionResult,
 		prompt: async (): Promise<PromptResult> => {
+			state.prompts += 1;
 			await prompt({
-				update: (event) => state.listener?.(event),
+				update: (event) => {
+					backgroundTasks.observeUpdate(SESSION_ID, event);
+					state.listener?.(event);
+				},
 				raw: (params) =>
 					backgroundTasks.observe(SESSION_ID, '_claude/sdkMessage', params),
 			});
@@ -86,14 +108,22 @@ const later = (ms: number, run: () => void) => {
 	setTimeout(run, ms + 100);
 };
 
-const runClaudeTurn = (fake: ReturnType<typeof createFakeClaude>) => {
+const runClaudeTurn = (
+	fake: ReturnType<typeof createFakeClaude>,
+	options: { maxHoldMs?: number; followUpStartMs?: number } = {},
+) => {
 	const events: Array<SessionUpdate> = [];
 	return {
 		events,
 		run: runAcpTurn(fake.env, {
 			prompt: 'go',
 			cwd: '/tmp',
-			backgroundTasks: { settleMs: SETTLE_MS },
+			backgroundTasks: {
+				settleMs: SETTLE_MS,
+				followUpStartMs: FOLLOW_UP_START_MS,
+				maxHoldMs: MAX_HOLD_MS,
+				...options,
+			},
 			onEvent: (event) => events.push(event),
 		}),
 	};
@@ -123,15 +153,21 @@ describe('Claude background task hold', () => {
 		expect(result.text).toBe('all done');
 	});
 
-	test('does not hold for subagents, monitors, or ambient tasks', async () => {
+	test('does not hold for live tasks the turn did not launch from a Bash call', async () => {
 		const fake = createFakeClaude(async (input) => {
 			input.raw(
 				tasksChanged([
-					{ task_id: 'a', task_type: 'local_agent' },
-					{ task_id: 'm', task_type: 'local_monitor' },
-					{ task_id: 'w', task_type: 'local_bash', ambient: true },
+					{ task_id: 'agent', task_type: 'local_agent' },
+					// The CLI registers a Monitor as local_bash, but no Bash result names it.
+					shellTask('monitor'),
+					{ ...shellTask('ambient'), ambient: true },
 				]),
 			);
+			input.update({
+				sessionUpdate: 'tool_call_update',
+				toolCallId: 'call-monitor',
+				_meta: { claudeCode: { toolName: 'Monitor', toolResponse: {} } },
+			});
 			input.update(text('all done'));
 		});
 
@@ -140,12 +176,32 @@ describe('Claude background task hold', () => {
 		expect(result.text).toBe('all done');
 	});
 
-	test('holds until tasks are empty and the SDK is idle, then reports the follow-up text', async () => {
+	test('does not hold for a shell an earlier turn launched', async () => {
 		const fake = createFakeClaude(async (input) => {
-			input.raw(tasksChanged([shell]));
+			if (fake.state.prompts === 1) {
+				input.raw(tasksChanged([shellTask('shell-1')]));
+				input.update(bashLaunch('shell-1'));
+				input.update(text('waiting on the shell'));
+			} else {
+				input.update(text('unrelated'));
+			}
+		});
+
+		const first = await Effect.runPromise(
+			runClaudeTurn(fake, { maxHoldMs: 50 }).run,
+		);
+		const second = await Effect.runPromise(runClaudeTurn(fake).run);
+
+		expect(first.text).toBe('waiting on the shell');
+		expect(second.text).toBe('unrelated');
+	});
+
+	test('holds until the shell ended and its follow-up cycle went idle, then reports the follow-up text', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
 			input.update(text('waiting on the shell'));
 			later(20, () => input.raw(tasksChanged([])));
-			// Idle but not yet running again: the debounce must outlast this gap.
 			later(20 + SETTLE_MS / 2, () => input.raw(sessionState('running')));
 			later(20 + SETTLE_MS / 2 + 10, () =>
 				input.update(text('shell finished')),
@@ -158,21 +214,40 @@ describe('Claude background task hold', () => {
 
 		expect(result.text).toBe('shell finished');
 		expect(result.stopReason).toBe('end_turn');
-		expect(turn.events.map((event) => event.sessionUpdate)).toEqual([
-			'agent_message_chunk',
-			'agent_message_chunk',
-		]);
+		expect(
+			turn.events
+				.filter((event) => event.sessionUpdate === 'agent_message_chunk')
+				.map((event) => event.sessionUpdate),
+		).toEqual(['agent_message_chunk', 'agent_message_chunk']);
 	});
 
-	test('keeps holding while a follow-up cycle starts another background task', async () => {
+	test('waits out a follow-up cycle that began before the shell left the live set', async () => {
 		const fake = createFakeClaude(async (input) => {
-			input.raw(tasksChanged([shell]));
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+			later(10, () => input.raw(sessionState('running')));
+			later(20, () => input.raw(tasksChanged([])));
+			later(30, () => input.update(text('shell finished')));
+			later(40, () => input.raw(sessionState('idle')));
+		});
+
+		const result = await Effect.runPromise(runClaudeTurn(fake).run);
+
+		expect(result.text).toBe('shell finished');
+	});
+
+	test('keeps holding while a follow-up cycle launches another shell', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
 			input.update(text('waiting on the shell'));
 			later(10, () => input.raw(tasksChanged([])));
 			later(20, () => input.raw(sessionState('running')));
-			later(30, () =>
-				input.raw(tasksChanged([{ ...shell, task_id: 'shell-2' }])),
-			);
+			later(30, () => {
+				input.raw(tasksChanged([shellTask('shell-2')]));
+				input.update(bashLaunch('shell-2'));
+			});
 			later(40, () => input.raw(sessionState('idle')));
 			later(40 + SETTLE_MS * 3, () => {
 				input.raw(tasksChanged([]));
@@ -187,9 +262,45 @@ describe('Claude background task hold', () => {
 		expect(result.text).toBe('second shell finished');
 	});
 
+	test('finishes with the pre-hold text when no follow-up cycle starts', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+			later(10, () => input.raw(tasksChanged([])));
+		});
+		const startedAt = Date.now();
+
+		const result = await Effect.runPromise(
+			runClaudeTurn(fake, { followUpStartMs: 200 }).run,
+		);
+
+		expect(result.text).toBe('waiting on the shell');
+		expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
+	});
+
+	test('releases the hold at the cap while the shell is still running', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+		});
+		const startedAt = Date.now();
+
+		const result = await Effect.runPromise(
+			runClaudeTurn(fake, { maxHoldMs: 200 }).run,
+		);
+
+		expect(result.text).toBe('waiting on the shell');
+		expect(result.stopReason).toBe('end_turn');
+		expect(Date.now() - startedAt).toBeGreaterThanOrEqual(200);
+		expect(fake.state.cancelled).toBe(0);
+	});
+
 	test('cancels the session when the held turn is interrupted', async () => {
 		const fake = createFakeClaude(async (input) => {
-			input.raw(tasksChanged([shell]));
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
 			input.update(text('waiting on the shell'));
 		});
 		const turn = runClaudeTurn(fake);
@@ -206,16 +317,57 @@ describe('Claude background task hold', () => {
 	});
 });
 
+describe('Claude background task registry', () => {
+	test('tracks a launched shell until it leaves the live set', async () => {
+		const registry = createBackgroundTaskRegistry();
+		registry.observeUpdate(SESSION_ID, bashLaunch('shell-1'));
+		registry.observe(
+			SESSION_ID,
+			'_claude/sdkMessage',
+			tasksChanged([shellTask('shell-1')]),
+		);
+		expect(registry.hasLiveShells()).toBe(true);
+
+		const ended = Effect.runPromise(registry.untilNoLiveShells);
+		registry.observe(SESSION_ID, '_claude/sdkMessage', tasksChanged([]));
+
+		await ended;
+		expect(registry.hasLiveShells()).toBe(false);
+	});
+
+	test('ignores live tasks no Bash call launched and other notification methods', () => {
+		const registry = createBackgroundTaskRegistry();
+		registry.observe(
+			SESSION_ID,
+			'_claude/sdkMessage',
+			tasksChanged([shellTask('monitor')]),
+		);
+		registry.observe(
+			SESSION_ID,
+			'_other/notification',
+			tasksChanged([shellTask('x')]),
+		);
+
+		expect(registry.hasLiveShells()).toBe(false);
+	});
+});
+
 describe('Claude background task hold through the ACP agent', () => {
 	const agentScript = fileURLToPath(
 		new URL('./test-acp-agent.ts', import.meta.url),
 	);
-	const makeAgent = () =>
+	const makeAgent = (idleTimeToLive?: number) =>
 		makeAcpAgent({
 			binary: process.execPath,
 			args: [agentScript],
 			clientInfoName: 'oagent-test',
+			...(idleTimeToLive === undefined ? {} : { idleTimeToLive }),
 		});
+	const holdOptions = {
+		settleMs: SETTLE_MS,
+		followUpStartMs: FOLLOW_UP_START_MS,
+		maxHoldMs: MAX_HOLD_MS,
+	};
 
 	test('records the autonomous follow-up cycle into the same turn', async () => {
 		const result = await Effect.runPromise(
@@ -226,7 +378,7 @@ describe('Claude background task hold through the ACP agent', () => {
 					const completed = yield* agent.runTurn({
 						prompt: 'background-shell:finish',
 						cwd: process.cwd(),
-						backgroundTasks: { settleMs: SETTLE_MS },
+						backgroundTasks: holdOptions,
 						onEvent: (event) => events.push(event),
 					});
 					return { completed, events };
@@ -237,49 +389,36 @@ describe('Claude background task hold through the ACP agent', () => {
 		expect(result.completed.text).toBe('shell finished');
 		expect(result.completed.stopReason).toBe('end_turn');
 		expect(
-			result.events.map((event) =>
+			result.events.flatMap((event) =>
 				event.sessionUpdate === 'agent_message_chunk' &&
 				event.content.type === 'text'
-					? event.content.text
-					: undefined,
+					? [event.content.text]
+					: [],
 			),
 		).toEqual(['waiting on the shell', 'shell finished']);
 	});
 
-	test('holds the next turn on a session whose shell outlived a released hold', async () => {
+	test('does not hold a later turn for the shell an earlier turn left running', async () => {
 		const result = await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
 					const agent = yield* makeAgent();
 					const sessionId = Promise.withResolvers<string>();
-					const held = Promise.withResolvers<void>();
 					const first = yield* agent
 						.runTurn({
 							prompt: 'background-shell',
 							cwd: process.cwd(),
-							backgroundTasks: { settleMs: SETTLE_MS },
+							backgroundTasks: { ...holdOptions, maxHoldMs: 200 },
 							onSessionId: sessionId.resolve,
-							onEvent: () => held.resolve(),
 						})
 						.pipe(Effect.forkChild);
 					const id = yield* Effect.promise(() => sessionId.promise);
-					yield* Effect.promise(() => held.promise);
-					yield* agent.steer({ sessionId: id, text: 'next' }).pipe(
-						Effect.retry({
-							while: (error) =>
-								!error.message.includes('waiting for background tasks'),
-							times: 20,
-							schedule: Schedule.spaced('50 millis'),
-						}),
-						Effect.flip,
-					);
 					const firstResult = yield* Fiber.join(first);
-					// The shell is still running; this turn never launches it again.
 					const second = yield* agent.runTurn({
 						prompt: 'finish-shell',
 						sessionId: id,
 						cwd: process.cwd(),
-						backgroundTasks: { settleMs: SETTLE_MS },
+						backgroundTasks: holdOptions,
 					});
 					return { firstResult, second };
 				}),
@@ -287,7 +426,36 @@ describe('Claude background task hold through the ACP agent', () => {
 		);
 
 		expect(result.firstResult.text).toBe('waiting on the shell');
-		expect(result.second.text).toBe('shell finished');
+		expect(result.second.text).toBe('ok');
+	});
+
+	test('keeps the adapter process alive while a shell outlives the capped hold', async () => {
+		const result = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent(100);
+					const before = yield* agent.runTurn({
+						prompt: 'pid',
+						cwd: process.cwd(),
+					});
+					const held = yield* agent.runTurn({
+						prompt: 'background-shell',
+						cwd: process.cwd(),
+						backgroundTasks: { ...holdOptions, maxHoldMs: 50 },
+					});
+					// Several idle lifetimes: without the shell the process would be gone.
+					yield* Effect.sleep(500);
+					const after = yield* agent.runTurn({
+						prompt: 'pid',
+						cwd: process.cwd(),
+					});
+					return { before, held, after };
+				}),
+			),
+		);
+
+		expect(result.held.text).toBe('waiting on the shell');
+		expect(result.after.text).toBe(result.before.text);
 	});
 
 	test('ends a held turn as done with its current text when a new message arrives', async () => {
@@ -301,7 +469,7 @@ describe('Claude background task hold through the ACP agent', () => {
 						.runTurn({
 							prompt: 'background-shell',
 							cwd: process.cwd(),
-							backgroundTasks: { settleMs: SETTLE_MS },
+							backgroundTasks: holdOptions,
 							onSessionId: sessionId.resolve,
 							onEvent: () => held.resolve(),
 						})
