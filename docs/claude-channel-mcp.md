@@ -21,7 +21,7 @@ markdown text containing session and job IDs. Background turns return
 immediately; a background waiter listens on the engine's SSE stream and, when the
 turn is terminal, pushes its result into the session as a
 `<channel source="oagent" job_id="…" status="…" session_id="…">` event. The
-`result` and `cancel` tools are available as fallbacks.
+`result`, `history`, and `cancel` tools are available as fallbacks.
 
 ## Prerequisites
 

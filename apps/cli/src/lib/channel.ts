@@ -6,10 +6,12 @@ import {
 	cancelTool,
 	formatAgentTypes,
 	formatCancellation,
+	formatHistory,
 	formatPresets,
 	formatSessionError,
 	formatToolError,
 	formatTurnResult,
+	historyTool,
 	progressMessage,
 	progressReporter,
 	resultTool,
@@ -316,6 +318,24 @@ function registerChannelTools(
 				);
 			} catch (cause) {
 				if (ctx.mcpReq.signal.aborted) throw cause;
+				return textContent(
+					formatSessionError(args.sessionId, errorMessage(cause)),
+				);
+			}
+		},
+	);
+
+	server.registerTool(
+		'history',
+		{
+			description: historyTool.description,
+			inputSchema: historyTool.inputSchema,
+		},
+		async (args) => {
+			try {
+				const history = await client.sessions.history(args);
+				return textContent(formatHistory(history));
+			} catch (cause) {
 				return textContent(
 					formatSessionError(args.sessionId, errorMessage(cause)),
 				);
