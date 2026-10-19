@@ -152,7 +152,7 @@ The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in
 - **session** — drive sessions from the shell with the same operations as the MCP tools; starts a local engine on demand. Every subcommand takes `--engine-url`. The prompt is the argument, or stdin when piped (`cat brief.md | oagent session start --model <model>`).
   - `oagent session start [prompt]` — start (or fork) a session, stream progress to stderr, and print the result. Flags: `--title`, `--cwd`, `--model`, `--agent`, `--fork <sessionId|jobId>`, `--worktree`, `--detach` (print IDs and exit), `--json`.
   - `oagent session send <sessionId> [prompt]` — send a message to a session. Flags: `--detach`, `--json`.
-  - `oagent session read <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
+  - `oagent session result <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
   - `oagent session cancel <sessionId>` — cancel the running turn. Flag: `--json`.
   - `oagent session list` — list recent sessions under the current directory. Flags: `--cwd`, `--all`, `--json`.
 - **models / agents / aliases** — list valid `--model` / `--agent` values for `session start`.
@@ -199,7 +199,7 @@ Status: done
 <final assistant response>
 ```
 
-Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `read` with the session ID. Errors include the error message after `---`.
+Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `result` with the session ID. Errors include the error message after `---`.
 
 Every MCP result is returned as a single text content block; tools do not set `structuredContent`.
 
@@ -214,9 +214,9 @@ Input:
 
 An idle turn returns the same markdown shape as `start`. A steered turn returns `Status: running` and says the message is queued.
 
-#### `read`
+#### `result`
 
-Reads the latest turn in a session immediately, or blocks until completion with `wait: true`.
+Gets the latest turn's result in a session immediately, or blocks until completion with `wait: true`.
 
 Input:
 - `sessionId: string`
