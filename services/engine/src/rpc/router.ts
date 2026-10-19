@@ -15,9 +15,9 @@ import {
 	CUSTOM_HARNESS_ID_PATTERN,
 	HarnessModelError,
 } from '../harness.ts';
-import { HISTORY_MAX_LIMIT, HISTORY_MIN_LIMIT } from '../history/limits.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
+import { HISTORY_MAX_LIMIT, HISTORY_MIN_LIMIT } from '../history/limits.ts';
 import { IdleExit } from '../idle.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
