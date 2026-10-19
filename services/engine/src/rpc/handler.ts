@@ -2,14 +2,17 @@ import { ORPCError, onError } from '@orpc/server';
 import { RPCHandler } from '@orpc/server/fetch';
 import { Effect } from 'effect';
 import { AgentNotMappedForBackend, AgentTypeNotFound } from '../agents.ts';
-import { HarnessModelError } from '../harness.ts';
+import { CustomHarnessError } from '../custom-harnesses.ts';
+import { HarnessModelError, UnknownHarness } from '../harness.ts';
 import { HarnessesError } from '../harnesses.ts';
 import type { IdleExit } from '../idle.ts';
 import { JobNotFound, JobSteerError, ModelResolutionError } from '../jobs.ts';
 import { SessionCostError } from '../session-costs.ts';
 import {
+	InvalidHistoryQuery,
 	SessionBusy,
 	SessionForkError,
+	SessionJobNotFound,
 	SessionModelError,
 	SessionNotFound,
 	SessionNotReady,
@@ -20,10 +23,17 @@ import { WorktreeError } from '../worktree.ts';
 import { type EngineServices, router } from './router.ts';
 
 function toProcedureError(error: unknown) {
-	if (error instanceof JobNotFound) {
+	if (error instanceof JobNotFound || error instanceof UnknownHarness) {
 		return new ORPCError('NOT_FOUND', {
 			message: error.message,
 			cause: error,
+		});
+	}
+	if (error instanceof CustomHarnessError) {
+		return new ORPCError('BAD_REQUEST', {
+			message: error.message,
+			cause: error,
+			data: { code: error.code },
 		});
 	}
 	if (error instanceof JobSteerError) {
@@ -38,7 +48,7 @@ function toProcedureError(error: unknown) {
 			cause: error,
 		});
 	}
-	if (error instanceof SessionNotFound) {
+	if (error instanceof SessionNotFound || error instanceof SessionJobNotFound) {
 		return new ORPCError('NOT_FOUND', {
 			message: error.message,
 			cause: error,
@@ -50,7 +60,8 @@ function toProcedureError(error: unknown) {
 		error instanceof SessionStartError ||
 		error instanceof SessionBusy ||
 		error instanceof SessionModelError ||
-		error instanceof SessionForkError
+		error instanceof SessionForkError ||
+		error instanceof InvalidHistoryQuery
 	) {
 		return new ORPCError('BAD_REQUEST', {
 			message: error.message,

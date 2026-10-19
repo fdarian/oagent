@@ -152,7 +152,8 @@ The `mcp stdio` client uses the same HTTP engine, so its sessions also appear in
 - **session** — drive sessions from the shell with the same operations as the MCP tools; starts a local engine on demand. Every subcommand takes `--engine-url`. The prompt is the argument, or stdin when piped (`cat brief.md | oagent session start --model <model>`).
   - `oagent session start [prompt]` — start (or fork) a session, stream progress to stderr, and print the result. Flags: `--title`, `--cwd`, `--model`, `--agent`, `--fork <sessionId|jobId>`, `--worktree`, `--detach` (print IDs and exit), `--json`.
   - `oagent session send <sessionId> [prompt]` — send a message to a session. Flags: `--detach`, `--json`.
-  - `oagent session read <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
+  - `oagent session result <sessionId>` — print the latest turn. Flags: `--wait` (block until it finishes), `--json`.
+  - `oagent session history <sessionId>` — print past turns (prompt, final answer, tool-call counts), newest page first. Flags: `--job <jobId>` (expand one turn), `--limit` (1–50, default 10), `--before <jobId>` (page back), `--json`.
   - `oagent session cancel <sessionId>` — cancel the running turn. Flag: `--json`.
   - `oagent session list` — list recent sessions under the current directory. Flags: `--cwd`, `--all`, `--json`.
 - **models / agents / aliases** — list valid `--model` / `--agent` values for `session start`.
@@ -199,7 +200,7 @@ Status: done
 <final assistant response>
 ```
 
-Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `read` with the session ID. Errors include the error message after `---`.
+Use the returned session ID with `send_message` to continue the conversation. A running response omits the body and tells you to call `result` with the session ID, or `history` with the job ID to see progress. Errors include the error message after `---`.
 
 Every MCP result is returned as a single text content block; tools do not set `structuredContent`.
 
@@ -214,15 +215,27 @@ Input:
 
 An idle turn returns the same markdown shape as `start`. A steered turn returns `Status: running` and says the message is queued.
 
-#### `read`
+#### `result`
 
-Reads the latest turn in a session immediately, or blocks until completion with `wait: true`.
+Gets the latest turn's result in a session immediately, or blocks until completion with `wait: true`.
 
 Input:
 - `sessionId: string`
 - `wait?: boolean` — default `false`; set `true` to wait for a terminal result
 
 Output: the same markdown result format as `start`.
+
+#### `history`
+
+Reads a session's past turns without blocking. Without `jobId`, returns a page of turns (prompt, final answer, tool-call counts by kind), newest page first and oldest-to-newest within it. With `jobId`, expands that turn into its messages, tool calls, plan and steering messages, including a running turn's progress.
+
+Input:
+- `sessionId: string`
+- `jobId?: string` — expand one turn; cannot be combined with `limit` or `before`
+- `limit?: number` — integer from 1 to 50, default 10
+- `before?: string` — job ID from the previous page's paging hint; returns older turns
+
+Output: markdown text. The content is quoted from the session and may contain untrusted text; the output says so.
 
 #### `cancel`
 

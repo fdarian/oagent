@@ -4,9 +4,14 @@ import { Context, Deferred, Duration, Effect, Layer, Schema } from 'effect';
 import { Agents } from './agents.ts';
 import { AliasPresets } from './alias-presets.ts';
 import { loadConfig } from './config.ts';
+import { CustomHarnesses } from './custom-harnesses.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 import { Harnesses } from './harnesses.ts';
 import { handleJobsStream } from './http/jobs-stream.ts';
+import {
+	PORTLESS_ALIAS,
+	rejectUntrustedRequest,
+} from './http/request-guard.ts';
 import { serveSPA } from './http/spa.ts';
 import { handleJobEvents } from './http/sse.ts';
 import { handleJobWait } from './http/wait.ts';
@@ -21,7 +26,6 @@ import { Sessions } from './sessions.ts';
 import { Settings } from './settings.ts';
 import { SideChats } from './side-chats.ts';
 
-const PORTLESS_ALIAS = 'oagent';
 const PORTLESS_PUBLIC_BASE = `https://${PORTLESS_ALIAS}.localhost`;
 
 class PortlessRegistrationError extends Schema.TaggedError<PortlessRegistrationError>()(
@@ -149,12 +153,14 @@ export class Engine extends Context.Service<Engine>()('engine', {
 						IdleExit.fromTracker(tracker),
 					);
 					const dispatch = async (request: Request) => {
+						const url = new URL(request.url);
+						const rejection = rejectUntrustedRequest(request, url.pathname);
+						if (rejection !== undefined) return rejection;
 						if (!lifecycle.accepting)
 							return new Response('oagent is restarting', {
 								status: 503,
 								headers: { 'retry-after': '30' },
 							});
-						const url = new URL(request.url);
 
 						// 1. MCP endpoint
 						if (url.pathname === '/mcp') {
@@ -367,6 +373,7 @@ export class Engine extends Context.Service<Engine>()('engine', {
 		Layer.provide(SideChats.layer),
 		Layer.provide(Harnesses.layer),
 		Layer.provide(HarnessRegistry.layer),
+		Layer.provide(CustomHarnesses.layer),
 		Layer.provide(Settings.layer),
 		Layer.provide(Agents.layer),
 	);

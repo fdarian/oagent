@@ -1,5 +1,10 @@
 import { Effect, Schema } from 'effect';
-import { BACKENDS, isBackend } from './harness.ts';
+import {
+	BACKENDS,
+	isBackend,
+	isCustomHarnessIdFormat,
+	isReservedHarnessId,
+} from './harness.ts';
 
 export class ModelResolutionError extends Schema.TaggedError<ModelResolutionError>()(
 	'ModelResolutionError',
@@ -27,10 +32,14 @@ export function parseModelInput(model: string) {
 		const colon = name.indexOf(':');
 		if (colon === -1) return { name, suffixEffort, explicit: undefined };
 		const backend = name.slice(0, colon);
-		if (!isBackend(backend))
+		// Whether a slug-shaped prefix names a saved harness is `Jobs`' call.
+		if (
+			!isBackend(backend) &&
+			(isReservedHarnessId(backend) || !isCustomHarnessIdFormat(backend))
+		)
 			return yield* new ModelResolutionError({
 				code: 'UNKNOWN_BACKEND',
-				message: `Unknown backend "${backend}". Valid backends: ${BACKENDS.join(', ')}.`,
+				message: `Unknown backend "${backend}". Valid backends: ${BACKENDS.join(', ')}, or a saved custom harness id.`,
 			});
 		return {
 			name,

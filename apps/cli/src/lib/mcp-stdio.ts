@@ -5,12 +5,14 @@ import {
 	type AliasPreset,
 	cancelTool,
 	formatCancellation,
+	formatHistory,
 	formatMcpInstructions,
 	formatSessions,
 	formatToolError,
 	formatTurnResult,
+	historyTool,
 	listTool,
-	readTool,
+	resultTool,
 	sendMessageTool,
 	startDescription,
 	startInputSchema,
@@ -146,8 +148,8 @@ export function runMcpStdio(params: {
 				}),
 			);
 		});
-		register('read', readTool, async (args, ctx) => {
-			const result = await rpc(() => client.sessions.read(args));
+		register('result', resultTool, async (args, ctx) => {
+			const result = await rpc(() => client.sessions.result(args));
 			return text(
 				formatTurnResult({
 					sessionId: args.sessionId,
@@ -159,6 +161,9 @@ export function runMcpStdio(params: {
 				}),
 			);
 		});
+		register('history', historyTool, async (args) =>
+			text(formatHistory(await rpc(() => client.sessions.history(args)))),
+		);
 		register('cancel', cancelTool, async (args) => {
 			const result = await rpc(() => client.sessions.cancel(args));
 			return text(

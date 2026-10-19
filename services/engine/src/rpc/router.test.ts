@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 import { createProcedureClient } from '@orpc/server';
 import { Effect } from 'effect';
 import type { Settings } from '../settings.ts';
-import { createHarnessEnvProcedures } from './router.ts';
+import { createHarnessEnvProcedures, router } from './router.ts';
 
 describe('settings.setHarnessEnv', () => {
 	test('accepts the Pi backend', async () => {
@@ -67,5 +67,18 @@ describe('settings.setHarnessEnv', () => {
 			}),
 		).rejects.toMatchObject({ code: 'BAD_REQUEST' });
 		expect(writes).toBe(0);
+	});
+});
+
+describe('sessions.history', () => {
+	test('rejects limits outside 1-50 instead of clamping', async () => {
+		const history = createProcedureClient(router.sessions.history, {
+			context: {} as never,
+		});
+		for (const limit of [0, 51, -1, 1.5]) {
+			await expect(
+				history({ sessionId: 'session-1', limit }),
+			).rejects.toMatchObject({ code: 'BAD_REQUEST' });
+		}
 	});
 });

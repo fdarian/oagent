@@ -26,7 +26,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { type Backend, HARNESS_NAMES } from '@/lib/harnesses';
+import { harnessCatalogQueryOptions, useHarnessName } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 
 type Agent = Awaited<ReturnType<typeof orpc.agents.list.call>>[number];
@@ -35,6 +35,13 @@ type AgentTargetOption = Awaited<
 	ReturnType<typeof orpc.agents.targets.call>
 >[number];
 
+const EDITABLE_TARGET_BACKENDS: ReadonlyArray<string> = [
+	'opencode',
+	'cursor',
+	'grok',
+	'codex',
+];
+
 type AgentFormValues = {
 	name: string;
 	description: string;
@@ -42,6 +49,8 @@ type AgentFormValues = {
 	cursorTarget: string;
 	grokTarget: string;
 	codexTarget: string;
+	/** Targets for harnesses without an editor here (saved ACP harnesses); kept as-is on save. */
+	otherTargets: Array<AgentTarget>;
 };
 
 type AgentFormProps = {
@@ -56,14 +65,22 @@ type OpenCodeTargetSelectProps = {
 };
 
 type UnsupportedTargetFieldProps = {
-	backend: Exclude<Backend, 'opencode'>;
+	backend: string;
+	label: string;
 	value: string;
 };
 
-function getTarget(agent: Agent | undefined, backend: Backend): string {
-	if (agent === undefined) return '';
-	const target = agent.targets.find((entry) => entry.backend === backend);
+function getOtherTarget(
+	targets: ReadonlyArray<AgentTarget>,
+	backend: string,
+): string {
+	const target = targets.find((entry) => entry.backend === backend);
 	return target === undefined ? '' : target.target;
+}
+
+function getTarget(agent: Agent | undefined, backend: string): string {
+	if (agent === undefined) return '';
+	return getOtherTarget(agent.targets, backend);
 }
 
 function useOpenCodeTargets() {
@@ -77,7 +94,7 @@ function useOpenCodeTargets() {
 
 function addTarget(
 	targets: Array<AgentTarget>,
-	backend: Backend,
+	backend: string,
 	value: string,
 ) {
 	const target = value.trim();
@@ -91,6 +108,7 @@ function getFormTargets(values: AgentFormValues): Array<AgentTarget> {
 	addTarget(targets, 'cursor', values.cursorTarget);
 	addTarget(targets, 'grok', values.grokTarget);
 	addTarget(targets, 'codex', values.codexTarget);
+	targets.push(...values.otherTargets);
 	return targets;
 }
 
@@ -245,7 +263,7 @@ function UnsupportedTargetField(props: UnsupportedTargetFieldProps) {
 	const hasExistingTarget = props.value !== '';
 	return (
 		<Field>
-			<FieldLabel htmlFor={inputId}>{HARNESS_NAMES[props.backend]}</FieldLabel>
+			<FieldLabel htmlFor={inputId}>{props.label}</FieldLabel>
 			<Input
 				id={inputId}
 				value={props.value}
@@ -297,6 +315,9 @@ function AgentForm(props: AgentFormProps) {
 			cursorTarget: getTarget(props.editingAgent, 'cursor'),
 			grokTarget: getTarget(props.editingAgent, 'grok'),
 			codexTarget: getTarget(props.editingAgent, 'codex'),
+			otherTargets: (props.editingAgent?.targets ?? []).filter(
+				(target) => !EDITABLE_TARGET_BACKENDS.includes(target.backend),
+			),
 		},
 		onSubmit: (submission) => {
 			const values: AgentFormValues = submission.value;
@@ -316,6 +337,15 @@ function AgentForm(props: AgentFormProps) {
 		(state) => state.values.opencodeTarget,
 	);
 	const openCodeTargetsQuery = useOpenCodeTargets();
+	const harnessName = useHarnessName();
+	const otherTargets = useStore(
+		form.store,
+		(state) => state.values.otherTargets,
+	);
+	const catalogQuery = useQuery(harnessCatalogQueryOptions());
+	const customHarnesses = (catalogQuery.data ?? []).filter(
+		(entry) => !entry.builtin,
+	);
 	const nativeDescription = openCodeTargetsQuery.data?.find(
 		(target) => target.id === opencodeTarget,
 	)?.description;
@@ -430,6 +460,7 @@ function AgentForm(props: AgentFormProps) {
 						{(field) => (
 							<UnsupportedTargetField
 								backend="cursor"
+								label={harnessName('cursor')}
 								value={field.state.value}
 							/>
 						)}
@@ -438,6 +469,7 @@ function AgentForm(props: AgentFormProps) {
 						{(field) => (
 							<UnsupportedTargetField
 								backend="grok"
+								label={harnessName('grok')}
 								value={field.state.value}
 							/>
 						)}
@@ -446,10 +478,19 @@ function AgentForm(props: AgentFormProps) {
 						{(field) => (
 							<UnsupportedTargetField
 								backend="codex"
+								label={harnessName('codex')}
 								value={field.state.value}
 							/>
 						)}
 					</form.Field>
+					{customHarnesses.map((entry) => (
+						<UnsupportedTargetField
+							key={entry.id}
+							backend={entry.id}
+							label={entry.name}
+							value={getOtherTarget(otherTargets, entry.id)}
+						/>
+					))}
 				</div>
 			</div>
 
@@ -476,6 +517,7 @@ function AgentForm(props: AgentFormProps) {
 }
 
 function AgentTargets(props: { agent: Agent }) {
+	const harnessName = useHarnessName();
 	if (props.agent.targets.length === 0) {
 		return <span className="text-muted-foreground">Not mapped</span>;
 	}
@@ -485,7 +527,7 @@ function AgentTargets(props: { agent: Agent }) {
 			{props.agent.targets.map((target) => (
 				<div key={target.backend} className="flex items-baseline gap-2">
 					<span className="text-muted-foreground">
-						{HARNESS_NAMES[target.backend]}
+						{harnessName(target.backend)}
 					</span>
 					<code className="font-mono text-foreground">{target.target}</code>
 				</div>

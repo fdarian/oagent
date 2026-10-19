@@ -7,12 +7,14 @@ import type {
 	HarnessAuthStatus,
 	HarnessCancelLoginResult,
 	HarnessCheckResult,
+	HarnessId,
 	HarnessLoginResult,
+	UnknownHarness,
 } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
 
 export type HarnessRecord = {
-	backend: Backend;
+	backend: HarnessId;
 	binaryPath: string;
 	version: string | undefined;
 	detectedAt: Date;
@@ -41,40 +43,45 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const dbService = yield* Db;
 			const harnessRegistry = yield* HarnessRegistry;
 
-			const readList = (): ReadonlyArray<HarnessRecord> => {
-				const rows = dbService.db.select().from(schema.harnesses).all();
-				const rowsByBackend = new Map(rows.map((row) => [row.backend, row]));
-				return harnessRegistry.all.flatMap((harness) => {
-					const row = rowsByBackend.get(harness.backend);
-					if (row === undefined) return [];
-					return [
-						{
-							backend: harness.backend,
-							binaryPath: row.binary_path,
-							version: row.version === null ? undefined : row.version,
-							detectedAt: row.detected_at,
+			const readList = (
+				operation: string,
+			): Effect.Effect<ReadonlyArray<HarnessRecord>, HarnessesError> =>
+				Effect.gen(function* () {
+					const harnesses = yield* harnessRegistry.list();
+					return yield* Effect.try({
+						try: () => {
+							const rows = dbService.db.select().from(schema.harnesses).all();
+							const rowsByBackend = new Map(
+								rows.map((row) => [row.backend, row]),
+							);
+							return harnesses.flatMap((harness) => {
+								const row = rowsByBackend.get(harness.backend);
+								if (row === undefined) return [];
+								return [
+									{
+										backend: harness.backend,
+										binaryPath: row.binary_path,
+										version: row.version === null ? undefined : row.version,
+										detectedAt: row.detected_at,
+									},
+								];
+							});
 						},
-					];
+						catch: (cause) => new HarnessesError({ operation, cause }),
+					});
 				});
-			};
 
-			const list = (): Effect.Effect<
-				ReadonlyArray<HarnessRecord>,
-				HarnessesError
-			> =>
-				Effect.try({
-					try: readList,
-					catch: (cause) => new HarnessesError({ operation: 'list', cause }),
-				});
+			const list = () => readList('list');
 
 			const refresh = (): Effect.Effect<
 				ReadonlyArray<HarnessRecord>,
 				HarnessesError
 			> =>
 				Effect.gen(function* () {
+					const allHarnesses = yield* harnessRegistry.list();
 					const detected = yield* Effect.try({
 						try: () =>
-							harnessRegistry.all.flatMap((harness) => {
+							allHarnesses.flatMap((harness) => {
 								const binaryPath = harness.resolveBinary();
 								if (binaryPath === undefined) return [];
 								return [{ harness, binaryPath }];
@@ -85,7 +92,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 					const detectedBackends = new Set(
 						detected.map((entry) => entry.harness.backend),
 					);
-					const versions = new Map<Backend, string | undefined>();
+					const versions = new Map<HarnessId, string | undefined>();
 					for (const entry of detected) {
 						yield* entry.harness.invalidate();
 						const version = yield* entry.harness.version().pipe(
@@ -125,7 +132,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 										.run();
 								}
 
-								for (const harness of harnessRegistry.all) {
+								for (const harness of allHarnesses) {
 									if (detectedBackends.has(harness.backend)) continue;
 									tx.delete(schema.harnesses)
 										.where(eq(schema.harnesses.backend, harness.backend))
@@ -137,17 +144,14 @@ export class Harnesses extends Context.Service<Harnesses>()(
 							new HarnessesError({ operation: 'refresh', cause }),
 					});
 
-					return yield* Effect.try({
-						try: readList,
-						catch: (cause) =>
-							new HarnessesError({ operation: 'refresh', cause }),
-					});
+					return yield* readList('refresh');
 				});
 
 			const check = (
-				backend: Backend,
-			): Effect.Effect<HarnessCheckResult, HarnessesError> =>
+				backend: HarnessId,
+			): Effect.Effect<HarnessCheckResult, HarnessesError | UnknownHarness> =>
 				Effect.gen(function* () {
+					const behavior = yield* harnessRegistry.resolve(backend);
 					const detected = yield* list();
 					const harness = detected.find((entry) => entry.backend === backend);
 					if (harness === undefined) {
@@ -158,8 +162,6 @@ export class Harnesses extends Context.Service<Harnesses>()(
 								'Harness is not detected. Refresh detection and try again.',
 						};
 					}
-
-					const behavior = harnessRegistry.get(backend);
 
 					return yield* behavior.check().pipe(
 						Effect.tap((result) =>
@@ -187,7 +189,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const authStatus = (
 				backend: Backend,
 			): Effect.Effect<HarnessAuthStatus, HarnessesError> => {
-				const auth = harnessRegistry.get(backend).auth;
+				const auth = harnessRegistry.builtin(backend).auth;
 				if (auth === undefined) {
 					return Effect.succeed({ backend, status: 'unsupported' });
 				}
@@ -203,7 +205,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const login = (
 				backend: Backend,
 			): Effect.Effect<HarnessLoginResult, HarnessesError> => {
-				const auth = harnessRegistry.get(backend).auth;
+				const auth = harnessRegistry.builtin(backend).auth;
 				if (auth === undefined) {
 					return Effect.succeed({ backend, status: 'unsupported' });
 				}
@@ -219,7 +221,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const cancelLogin = (
 				backend: Backend,
 			): Effect.Effect<HarnessCancelLoginResult, HarnessesError> => {
-				const auth = harnessRegistry.get(backend).auth;
+				const auth = harnessRegistry.builtin(backend).auth;
 				if (auth === undefined) {
 					return Effect.succeed({ backend, cancelled: false });
 				}
@@ -236,7 +238,7 @@ export class Harnesses extends Context.Service<Harnesses>()(
 			const logout = (
 				backend: Backend,
 			): Effect.Effect<HarnessAuthStatus, HarnessesError> => {
-				const auth = harnessRegistry.get(backend).auth;
+				const auth = harnessRegistry.builtin(backend).auth;
 				if (auth === undefined) {
 					return Effect.succeed({ backend, status: 'unsupported' });
 				}

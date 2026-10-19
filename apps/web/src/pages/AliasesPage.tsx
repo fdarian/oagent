@@ -40,7 +40,7 @@ import {
 	SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { BACKENDS, type Backend, isBackend } from '@/lib/harnesses';
+import { harnessCatalogQueryOptions, useHarnessName } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 
@@ -81,13 +81,13 @@ function isCodexReasoningEffort(value: string): value is CodexReasoningEffort {
 	);
 }
 
-function backendDiscoversEfforts(backend: Backend): boolean {
+function backendDiscoversEfforts(backend: string): boolean {
 	return backend === 'opencode' || backend === 'claude' || backend === 'pi';
 }
 
 type Alias = {
 	name: string;
-	backend: Backend;
+	backend: string;
 	model_id: string;
 	reasoning_effort?: string;
 	description?: string;
@@ -99,7 +99,7 @@ type ModelEntry = {
 };
 
 type ModelComboboxProps = {
-	backend: Backend;
+	backend: string;
 	value: string;
 	onChange: (modelId: string) => void;
 	invalid: boolean;
@@ -284,6 +284,9 @@ function AliasForm(props: AliasFormProps) {
 		},
 	});
 	const backend = useStore(form.store, (state) => state.values.backend);
+	const catalogQuery = useQuery(harnessCatalogQueryOptions());
+	const harnessName = useHarnessName();
+	const backendOptions = catalogQuery.data ?? [];
 	const canSubmit = useStore(form.store, (state) => state.canSubmit);
 	const isSubmitting = useStore(form.store, (state) => state.isSubmitting);
 	const modelId = useStore(form.store, (state) => state.values.model_id);
@@ -349,7 +352,7 @@ function AliasForm(props: AliasFormProps) {
 						<Select
 							value={field.state.value}
 							onValueChange={(value) => {
-								field.handleChange(value as Backend);
+								field.handleChange(value);
 								// Changing backend invalidates the model selection.
 								form.setFieldValue('model_id', '');
 								form.setFieldValue('reasoning_effort', 'default');
@@ -357,14 +360,23 @@ function AliasForm(props: AliasFormProps) {
 							}}
 						>
 							<SelectTrigger id={field.name}>
-								<SelectValue placeholder="Select backend" />
+								<SelectValue placeholder="Select backend">
+									{harnessName(field.state.value)}
+								</SelectValue>
 							</SelectTrigger>
 							<SelectContent>
-								{BACKENDS.map((entry) => (
-									<SelectItem key={entry} value={entry}>
-										{entry}
+								{backendOptions.map((entry) => (
+									<SelectItem key={entry.id} value={entry.id}>
+										{entry.name}
 									</SelectItem>
 								))}
+								{backendOptions.every(
+									(entry) => entry.id !== field.state.value,
+								) ? (
+									<SelectItem value={field.state.value}>
+										{field.state.value}
+									</SelectItem>
+								) : null}
 							</SelectContent>
 						</Select>
 					</Field>
@@ -621,9 +633,8 @@ export function AliasesPage() {
 		deleteMutation.mutate({ name: deleteTarget.name });
 	}
 
-	const aliases = (listQuery.data ?? []).filter((alias): alias is Alias =>
-		isBackend(alias.backend),
-	);
+	const aliases = listQuery.data ?? [];
+	const harnessName = useHarnessName();
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
@@ -746,7 +757,7 @@ export function AliasesPage() {
 											{alias.name}
 										</td>
 										<td className="py-3 pr-4 text-foreground">
-											{alias.backend}
+											{harnessName(alias.backend)}
 										</td>
 										<td className="py-3 pr-4 font-mono text-muted-foreground">
 											{alias.model_id}

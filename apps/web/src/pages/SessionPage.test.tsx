@@ -50,6 +50,9 @@ const sideChatCreateRequests: SideChatCreateRequest[] = [];
 const sideChatListRequests: string[] = [];
 
 const fakeClient = {
+	harnesses: {
+		catalog: async () => [],
+	},
 	models: {
 		list: async () => [],
 	},

@@ -29,7 +29,7 @@ describe('turn result markdown', () => {
 				worktreeBranch: 'oagent/1234abcd',
 			}),
 		).toBe(
-			'Session ID: session-2\nJob ID: job-2\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `read` with session ID `session-2`.',
+			'Session ID: session-2\nJob ID: job-2\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `result` with session ID `session-2`, or `history` with that session ID and job ID `job-2` to see its progress.',
 		);
 		expect(
 			formatTurnResult({

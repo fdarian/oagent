@@ -6,6 +6,7 @@ import {
 } from '@tanstack/react-router';
 import { App } from './App.tsx';
 import { sessionSearchSchema } from './lib/session-route.ts';
+import { AddAcpHarnessPage } from './pages/AddAcpHarnessPage.tsx';
 import { AgentsPage } from './pages/AgentsPage.tsx';
 import { AliasesPage } from './pages/AliasesPage.tsx';
 import { ConsoleIndexPage } from './pages/ConsoleIndexPage.tsx';
@@ -82,6 +83,12 @@ const settingsHarnessRoute = createRoute({
 	component: HarnessSettingsPage,
 });
 
+const settingsAddAcpHarnessRoute = createRoute({
+	getParentRoute: () => settingsLayoutRoute,
+	path: 'acp-harnesses/new',
+	component: AddAcpHarnessPage,
+});
+
 const routeTree = rootRoute.addChildren([
 	consoleLayoutRoute.addChildren([
 		consoleIndexRoute,
@@ -94,6 +101,7 @@ const routeTree = rootRoute.addChildren([
 		settingsAgentsRoute,
 		settingsWorktreeRoute,
 		settingsHarnessRoute,
+		settingsAddAcpHarnessRoute,
 	]),
 ]);
 

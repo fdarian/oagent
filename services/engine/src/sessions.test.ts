@@ -50,8 +50,11 @@ function createServices(
 		sqlite: database.sqlite,
 	} as unknown as Db['Service'];
 	const registry = {
-		all: [harness],
-		get: () => harness,
+		builtin: () => harness,
+		resolve: () => Effect.succeed(harness),
+		resolveForSession: () => Effect.succeed(harness),
+		supportsModelSwitch: () => harness.supportsModelSwitch,
+		list: () => Effect.succeed([harness]),
 		listAgentTargets: () => Effect.succeed([]),
 	} as unknown as HarnessRegistry['Service'];
 	const settings = {
@@ -731,11 +734,11 @@ describe('session turns', () => {
 		});
 		await turnStarted.promise;
 		const blockingRead = Effect.runPromise(
-			services.sessions.read({ sessionId: started.sessionId, wait: true }),
+			services.sessions.result({ sessionId: started.sessionId, wait: true }),
 		);
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({ status: 'running', jobId: started.jobId });
 		releaseTurn.resolve();
@@ -766,7 +769,7 @@ describe('session turns', () => {
 		).toMatchObject({ status: 'done', text: 'Final: second prompt' });
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({
 			status: 'done',
@@ -1334,7 +1337,7 @@ describe('session turns', () => {
 		await turnStarted.promise;
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({
+				services.sessions.result({
 					sessionId: started.sessionId,
 				}),
 			),
@@ -1346,7 +1349,7 @@ describe('session turns', () => {
 		).toEqual({ ok: true, status: 'cancelled' });
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({ status: 'cancelled', jobId: started.jobId });
 		expect(
@@ -1684,5 +1687,348 @@ describe('Claude background hold through jobs and sessions', () => {
 			text: 'waiting on the shell',
 		});
 		await claude.close();
+	});
+});
+
+describe('session history', () => {
+	async function setup() {
+		const database = createTestDatabase();
+		const services = await createServices(database, 'opencode', () =>
+			Effect.succeed({
+				sessionId: 'harness',
+				text: 'x',
+				stopReason: 'end_turn',
+			}),
+		);
+		const session = insertSession(database, {
+			uuid: 'history-session',
+			title: 'History',
+			backend: 'opencode',
+			harnessSessionId: 'harness',
+			cwd: '/repo',
+		});
+		let created = 0;
+		const addJob = (
+			uuid: string,
+			input: Partial<typeof schema.jobs.$inferInsert> = {},
+		) => {
+			created += 1;
+			const job = database.db
+				.insert(schema.jobs)
+				.values({
+					uuid,
+					session_id: session.id,
+					status: 'done',
+					prompt: `prompt ${uuid}`,
+					text: `text ${uuid}`,
+					created_at: new Date(1_000 + created),
+					...input,
+				})
+				.returning()
+				.get();
+			if (job === undefined) throw new Error('Expected inserted job');
+			return job;
+		};
+		const addEvent = (
+			job: typeof schema.jobs.$inferSelect,
+			type: 'agent_message_chunk' | 'tool_call' | 'tool_call_update',
+			variant:
+				| { text: string }
+				| {
+						toolCallId: string;
+						title?: string;
+						kind?: 'read' | 'edit' | 'execute';
+				  },
+		) => {
+			const event = database.db
+				.insert(schema.events)
+				.values({ job_id: job.id, type })
+				.returning()
+				.get();
+			if (event === undefined) throw new Error('Expected inserted event');
+			if ('text' in variant) {
+				database.db
+					.insert(schema.chunkEvents)
+					.values({
+						event_id: event.id,
+						content: { type: 'text', text: variant.text },
+					})
+					.run();
+				return;
+			}
+			database.db
+				.insert(schema.toolCallEvents)
+				.values({
+					event_id: event.id,
+					tool_call_id: variant.toolCallId,
+					title: variant.title,
+					kind: variant.kind,
+				})
+				.run();
+		};
+		const history = (input: Parameters<typeof services.sessions.history>[0]) =>
+			Effect.runPromise(services.sessions.history(input));
+		const fail = (input: Parameters<typeof services.sessions.history>[0]) =>
+			Effect.runPromise(Effect.flip(services.sessions.history(input)));
+		return { database, services, session, addJob, addEvent, history, fail };
+	}
+
+	test('pages turns newest-first with before and reports numbering', async () => {
+		const t = await setup();
+		for (let index = 1; index <= 12; index++) t.addJob(`job-${index}`);
+
+		const first = await t.history({ sessionId: 'history-session' });
+		if (first.view !== 'turns') throw new Error('Expected turns view');
+		expect(first.total).toBe(12);
+		expect(first.firstNumber).toBe(3);
+		expect(first.turns.map((turn) => turn.jobId)).toEqual(
+			Array.from({ length: 10 }, (_, index) => `job-${index + 3}`),
+		);
+		expect(first.turns[0]).toMatchObject({
+			number: 3,
+			status: 'done',
+			prompt: 'prompt job-3',
+			text: 'text job-3',
+			errorMessage: null,
+			toolCalls: {},
+		});
+		expect(first.before).toBe('job-3');
+		expect(first.session).toEqual({
+			id: 'history-session',
+			title: 'History',
+			status: 'idle',
+		});
+		expect(first.forkedFromJobId).toBeNull();
+
+		const second = await t.history({
+			sessionId: 'history-session',
+			before: 'job-3',
+		});
+		if (second.view !== 'turns') throw new Error('Expected turns view');
+		expect(second.turns.map((turn) => turn.jobId)).toEqual(['job-1', 'job-2']);
+		expect(second.firstNumber).toBe(1);
+		expect(second.before).toBeNull();
+
+		const empty = await t.history({
+			sessionId: 'history-session',
+			before: 'job-1',
+		});
+		if (empty.view !== 'turns') throw new Error('Expected turns view');
+		expect(empty.turns).toEqual([]);
+		expect(empty.before).toBeNull();
+		t.database.sqlite.close();
+	});
+
+	test('defaults to the newest 10 turns and honors an explicit limit', async () => {
+		const t = await setup();
+		for (let index = 1; index <= 60; index++) t.addJob(`job-${index}`);
+
+		const defaulted = await t.history({ sessionId: 'history-session' });
+		if (defaulted.view !== 'turns') throw new Error('Expected turns view');
+		expect(defaulted.turns).toHaveLength(10);
+		expect(defaulted.firstNumber).toBe(51);
+
+		const small = await t.history({ sessionId: 'history-session', limit: 2 });
+		if (small.view !== 'turns') throw new Error('Expected turns view');
+		expect(small.turns.map((turn) => turn.jobId)).toEqual(['job-59', 'job-60']);
+		expect(small.before).toBe('job-59');
+
+		const max = await t.history({ sessionId: 'history-session', limit: 50 });
+		if (max.view !== 'turns') throw new Error('Expected turns view');
+		expect(max.turns).toHaveLength(50);
+		expect(max.firstNumber).toBe(11);
+		t.database.sqlite.close();
+	});
+
+	test('excludes side-chat jobs from turns, numbering and totals', async () => {
+		const t = await setup();
+		const first = t.addJob('root-1');
+		const sideChat = t.database.db
+			.insert(schema.sideChats)
+			.values({ uuid: 'side', source_job_id: first.id, session_id: 'x' })
+			.returning()
+			.get();
+		if (sideChat === undefined) throw new Error('Expected side chat');
+		const side = t.addJob('side-job', { side_chat_id: sideChat.id });
+		t.addEvent(side, 'agent_message_chunk', { text: 'side text' });
+		t.addJob('root-2');
+
+		const turns = await t.history({ sessionId: 'history-session' });
+		if (turns.view !== 'turns') throw new Error('Expected turns view');
+		expect(turns.total).toBe(2);
+		expect(turns.turns.map((turn) => [turn.number, turn.jobId])).toEqual([
+			[1, 'root-1'],
+			[2, 'root-2'],
+		]);
+		expect(
+			await t.fail({ sessionId: 'history-session', jobId: 'side-job' }),
+		).toMatchObject({ _tag: 'SessionJobNotFound', jobId: 'side-job' });
+		expect(
+			await t.fail({ sessionId: 'history-session', before: 'side-job' }),
+		).toMatchObject({ _tag: 'SessionJobNotFound' });
+		t.database.sqlite.close();
+	});
+
+	test('reports a running session and expands a running turn', async () => {
+		const t = await setup();
+		t.addJob('done-1');
+		const running = t.addJob('running-2', { status: 'running', text: null });
+		t.addEvent(running, 'agent_message_chunk', { text: 'working' });
+		t.addEvent(running, 'agent_message_chunk', { text: ' on it' });
+		t.addEvent(running, 'tool_call', {
+			toolCallId: 'c1',
+			title: 'ls',
+			kind: 'execute',
+		});
+
+		const turns = await t.history({ sessionId: 'history-session' });
+		expect(turns.session.status).toBe('running');
+		if (turns.view !== 'turns') throw new Error('Expected turns view');
+		expect(turns.turns[1]).toMatchObject({
+			status: 'running',
+			text: null,
+			toolCalls: { execute: 1 },
+		});
+
+		const turn = await t.history({
+			sessionId: 'history-session',
+			jobId: 'running-2',
+		});
+		if (turn.view !== 'turn') throw new Error('Expected turn view');
+		expect(turn.total).toBe(2);
+		expect(turn.turn.number).toBe(2);
+		expect(turn.turn.entries).toEqual([
+			{ type: 'assistant', text: 'working on it' },
+			{
+				type: 'tool',
+				title: 'ls',
+				kind: 'execute',
+				status: null,
+				target: null,
+			},
+		]);
+		t.database.sqlite.close();
+	});
+
+	test('counts distinct tool calls by kind with null kind as other', async () => {
+		const t = await setup();
+		const job = t.addJob('counted');
+		t.addEvent(job, 'tool_call', { toolCallId: 'a', kind: 'execute' });
+		t.addEvent(job, 'tool_call', { toolCallId: 'b', kind: 'execute' });
+		t.addEvent(job, 'tool_call', { toolCallId: 'c', kind: 'edit' });
+		t.addEvent(job, 'tool_call', { toolCallId: 'd' });
+		t.addEvent(job, 'tool_call_update', { toolCallId: 'a', kind: 'read' });
+		t.addEvent(job, 'tool_call', { toolCallId: 'a', kind: 'execute' });
+
+		const turns = await t.history({ sessionId: 'history-session' });
+		if (turns.view !== 'turns') throw new Error('Expected turns view');
+		expect(turns.turns[0]?.toolCalls).toEqual({
+			execute: 2,
+			edit: 1,
+			other: 1,
+		});
+		t.database.sqlite.close();
+	});
+
+	test('pages events by id even when created_at runs backwards', async () => {
+		const t = await setup();
+		const job = t.addJob('skewed');
+		for (let index = 0; index < 5; index++) {
+			const event = t.database.db
+				.insert(schema.events)
+				.values({
+					job_id: job.id,
+					type: 'agent_message_chunk',
+					created_at: new Date(10_000 - index),
+				})
+				.returning()
+				.get();
+			if (event === undefined) throw new Error('Expected inserted event');
+			t.database.db
+				.insert(schema.chunkEvents)
+				.values({
+					event_id: event.id,
+					content: { type: 'text', text: String(index) },
+				})
+				.run();
+		}
+
+		const texts: string[] = [];
+		let cursor = 0;
+		for (;;) {
+			const page = t.services.jobs.readEventsPage('skewed', cursor, 2);
+			for (const entry of page.events) {
+				if (entry.event.sessionUpdate !== 'agent_message_chunk') continue;
+				if (entry.event.content.type !== 'text') continue;
+				texts.push(entry.event.content.text);
+			}
+			if (page.nextCursor === null) break;
+			cursor = page.nextCursor;
+		}
+		expect(texts).toEqual(['0', '1', '2', '3', '4']);
+		t.database.sqlite.close();
+	});
+
+	test('rejects unknown session, job and before ids', async () => {
+		const t = await setup();
+		t.addJob('only');
+		expect(await t.fail({ sessionId: 'missing' })).toMatchObject({
+			_tag: 'SessionNotFound',
+		});
+		expect(
+			await t.fail({ sessionId: 'history-session', jobId: 'nope' }),
+		).toMatchObject({ _tag: 'SessionJobNotFound', jobId: 'nope' });
+		expect(
+			await t.fail({ sessionId: 'history-session', before: 'nope' }),
+		).toMatchObject({ _tag: 'SessionJobNotFound', jobId: 'nope' });
+		t.database.sqlite.close();
+	});
+
+	test('rejects jobId combined with limit or before', async () => {
+		const t = await setup();
+		t.addJob('only');
+		expect(
+			await t.fail({ sessionId: 'history-session', jobId: 'only', limit: 3 }),
+		).toMatchObject({ _tag: 'InvalidHistoryQuery' });
+		expect(
+			await t.fail({
+				sessionId: 'history-session',
+				jobId: 'only',
+				before: 'only',
+			}),
+		).toMatchObject({ _tag: 'InvalidHistoryQuery' });
+		t.database.sqlite.close();
+	});
+
+	test('resolves the fork source to the job uuid', async () => {
+		const t = await setup();
+		const source = t.addJob('source-job');
+		const fork = insertSession(t.database, {
+			uuid: 'fork-session',
+			title: 'Fork',
+			backend: 'opencode',
+			harnessSessionId: 'fork-harness',
+			cwd: '/repo',
+		});
+		t.database.db
+			.update(schema.sessions)
+			.set({ forked_from_job_id: source.id })
+			.where(eq(schema.sessions.id, fork.id))
+			.run();
+		t.database.db
+			.insert(schema.jobs)
+			.values({
+				uuid: 'fork-job',
+				session_id: fork.id,
+				status: 'done',
+				prompt: 'p',
+				text: 't',
+			})
+			.run();
+
+		const result = await t.history({ sessionId: 'fork-session' });
+		expect(result.forkedFromJobId).toBe('source-job');
+		expect(result.session.id).toBe('fork-session');
+		t.database.sqlite.close();
 	});
 });

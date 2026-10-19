@@ -3,6 +3,11 @@
  * A prompt with the text `wait-for-steer` stays in flight until a
  * `_session/steering` request arrives, then answers the steered text.
  * Set `TEST_ACP_NO_STEERING=1` to omit the steering capability.
+ * Set `TEST_ACP_MODELS=a,b` to report a model config option (first is the
+ * default) and append the session's model to each reply as `<pid>:<model>`.
+ * Set `TEST_ACP_MODEL_CONFIG_ID=x` to name that option `x` instead of `model`;
+ * setting `model` then fails like an adapter rejecting an unknown option.
+ * Set `TEST_ACP_FORK=1` to advertise `session/fork` and `session/load`.
  *
  * A prompt starting with `background-shell` mimics Claude launching a background
  * Bash: it reports the task through `_claude/sdkMessage` and the Bash tool
@@ -27,6 +32,26 @@ const output = new WritableStream<Uint8Array>({
 		process.stdout.write(chunk);
 	},
 });
+
+const models = (process.env.TEST_ACP_MODELS ?? '')
+	.split(',')
+	.filter((model) => model !== '');
+const modelConfigId = process.env.TEST_ACP_MODEL_CONFIG_ID ?? 'model';
+const sessionModels = new Map<string, string>();
+
+const configOptionsFor = (sessionId: string) =>
+	models.length === 0
+		? undefined
+		: [
+				{
+					id: modelConfigId,
+					name: 'Model',
+					category: 'model',
+					type: 'select' as const,
+					currentValue: sessionModels.get(sessionId) ?? models[0] ?? '',
+					options: models.map((model) => ({ value: model, name: model })),
+				},
+			];
 
 const sdkMessage = (
 	conn: AgentSideConnection,
@@ -72,13 +97,35 @@ new AgentSideConnection(
 	(conn) => ({
 		initialize: async () => ({
 			protocolVersion: PROTOCOL_VERSION,
-			agentCapabilities: {},
+			agentCapabilities:
+				process.env.TEST_ACP_FORK === '1'
+					? { loadSession: true, sessionCapabilities: { fork: {} } }
+					: {},
 			...(process.env.TEST_ACP_NO_STEERING === '1'
 				? {}
 				: { _meta: { steering: { supported: true } } }),
 		}),
-		newSession: async () => ({ sessionId: crypto.randomUUID() }),
-		loadSession: async () => ({}),
+		newSession: async () => {
+			const sessionId = crypto.randomUUID();
+			return { sessionId, configOptions: configOptionsFor(sessionId) };
+		},
+		loadSession: async (params) => ({
+			configOptions: configOptionsFor(params.sessionId),
+		}),
+		unstable_forkSession: async (params) => {
+			const sessionId = crypto.randomUUID();
+			const model = sessionModels.get(params.sessionId);
+			if (model !== undefined) sessionModels.set(sessionId, model);
+			return { sessionId };
+		},
+		setSessionConfigOption: async (params) => {
+			if (params.configId === modelConfigId) {
+				sessionModels.set(params.sessionId, String(params.value));
+			} else if (params.configId === 'model') {
+				throw new Error('Unknown config option: model');
+			}
+			return { configOptions: configOptionsFor(params.sessionId) ?? [] };
+		},
 		authenticate: async () => ({}),
 		cancel: async (params) => {
 			cancelInFlight.get(params.sessionId)?.();
@@ -178,7 +225,13 @@ new AgentSideConnection(
 				sessionId: params.sessionId,
 				update: {
 					sessionUpdate: 'agent_message_chunk',
-					content: { type: 'text', text: String(process.pid) },
+					content: {
+						type: 'text',
+						text:
+							models.length === 0
+								? String(process.pid)
+								: `${process.pid}:${sessionModels.get(params.sessionId) ?? models[0]}`,
+					},
 				},
 			});
 			return { stopReason: 'end_turn' };

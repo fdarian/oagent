@@ -33,8 +33,19 @@ test('aliases parse, expand and allow effort overrides', async () => {
 	);
 	await expect(Effect.runPromise(parseAliases(['bad']))).rejects.toThrow();
 	await expect(
-		Effect.runPromise(parseAliases(['x=wrong:model'])),
+		Effect.runPromise(parseAliases(['x=acp:model'])),
 	).rejects.toThrow();
+	await expect(
+		Effect.runPromise(parseAliases(['x=Bad_Id:model'])),
+	).rejects.toThrow();
+	expect(await Effect.runPromise(parseAliases(['x=my-agent:model']))).toEqual([
+		{
+			name: 'x',
+			backend: 'my-agent',
+			model_id: 'model',
+			reasoning_effort: undefined,
+		},
+	]);
 });
 
 test('flags win and inline agents resolve without persistence', async () => {

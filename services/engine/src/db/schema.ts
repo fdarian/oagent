@@ -24,6 +24,10 @@ export const sessions = sqliteTable(
 		uuid: text().notNull(),
 		title: text().notNull(),
 		backend: text().notNull(),
+		acp_command: text({ mode: 'json' }).$type<{
+			binary: string;
+			args: string[];
+		}>(),
 		model: text(),
 		reasoning_effort: text(),
 		harness_session_id: text(),
@@ -478,6 +482,19 @@ export const harnesses = sqliteTable('harnesses', {
 	binary_path: text().notNull(),
 	version: text(),
 	detected_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+});
+
+export const customHarnesses = sqliteTable('custom_harnesses', {
+	id: text().primaryKey(),
+	name: text().notNull(),
+	binary: text().notNull(),
+	args: text({ mode: 'json' }).$type<string[]>().notNull(),
+	created_at: integer({ mode: 'timestamp_ms' })
+		.notNull()
+		.$defaultFn(() => new Date()),
+	updated_at: integer({ mode: 'timestamp_ms' })
 		.notNull()
 		.$defaultFn(() => new Date()),
 });

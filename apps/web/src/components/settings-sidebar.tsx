@@ -1,13 +1,12 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { RefreshCw } from 'lucide-react';
+import { Plus, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import {
-	HARNESS_NAMES,
+	harnessCatalogQueryOptions,
 	harnessesQueryOptions,
-	isBackend,
+	useRefreshHarnesses,
 } from '@/lib/harnesses';
-import { orpc } from '@/lib/orpc';
 import { cn } from '@/lib/utils';
 
 const NAV = [
@@ -23,19 +22,20 @@ const inactiveNavItemClass =
 	'border-l-transparent text-muted-foreground hover:bg-[color-mix(in_srgb,var(--color-ink)_1%,var(--color-canvas))] hover:text-foreground dark:hover:bg-[color-mix(in_srgb,var(--color-ink)_5%,var(--color-canvas))]';
 
 export function SettingsSidebar() {
-	const queryClient = useQueryClient();
 	const harnessesQuery = useQuery(harnessesQueryOptions());
-	const refreshMutation = useMutation(
-		orpc.harnesses.refresh.mutationOptions({
-			onSuccess: (harnesses) => {
-				queryClient.setQueryData(orpc.harnesses.list.queryKey(), harnesses);
-			},
-		}),
-	);
+	const catalogQuery = useQuery(harnessCatalogQueryOptions());
+	const refreshMutation = useRefreshHarnesses();
 
-	const detectedHarnesses = (harnessesQuery.data ?? []).filter((harness) =>
-		isBackend(harness.backend),
+	const catalog = catalogQuery.data ?? [];
+	const detectedBackends = new Set(
+		(harnessesQuery.data ?? []).map((harness) => harness.backend),
 	);
+	// Saved harnesses stay listed even when their binary is missing so they can be fixed.
+	const listedHarnesses = catalog.filter(
+		(entry) => !entry.builtin || detectedBackends.has(entry.id),
+	);
+	const isLoading = harnessesQuery.isLoading || catalogQuery.isLoading;
+	const isError = harnessesQuery.isError || catalogQuery.isError;
 
 	return (
 		<nav className="flex min-h-0 flex-1 flex-col border-t border-border">
@@ -74,32 +74,42 @@ export function SettingsSidebar() {
 				</Button>
 			</div>
 
-			{harnessesQuery.isLoading ? (
+			{isLoading ? (
 				<p className="px-22 pb-15 text-caption text-muted-foreground">
 					Loading harnesses…
 				</p>
-			) : harnessesQuery.isError ? (
+			) : isError ? (
 				<p className="px-22 pb-15 text-caption text-destructive">
 					Failed to load harnesses
 				</p>
-			) : detectedHarnesses.length === 0 ? (
+			) : listedHarnesses.length === 0 ? (
 				<p className="px-22 pb-15 text-caption text-muted-foreground">
 					No harnesses detected.
 				</p>
 			) : (
-				detectedHarnesses.map((harness) => (
+				listedHarnesses.map((harness) => (
 					<Link
-						key={harness.backend}
+						key={harness.id}
 						to="/settings/harnesses/$backend"
-						params={{ backend: harness.backend }}
+						params={{ backend: harness.id }}
 						activeProps={{ className: activeNavItemClass }}
 						inactiveProps={{ className: inactiveNavItemClass }}
 						className={cn(navItemClass)}
 					>
-						{HARNESS_NAMES[harness.backend]}
+						{harness.name}
 					</Link>
 				))
 			)}
+
+			<Link
+				to="/settings/acp-harnesses/new"
+				activeProps={{ className: activeNavItemClass }}
+				inactiveProps={{ className: inactiveNavItemClass }}
+				className={cn(navItemClass, 'flex items-center gap-2')}
+			>
+				<Plus className="size-3.5" />
+				Add ACP harness
+			</Link>
 		</nav>
 	);
 }

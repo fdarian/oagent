@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { Effect } from 'effect';
 import type { Sessions } from '../../sessions.ts';
-import { listTool } from './list.ts';
+import { formatSessions, listTool } from './list.ts';
 
 describe('list tool', () => {
 	test('renders recent sessions filtered by cwd', async () => {
@@ -85,5 +85,23 @@ describe('list tool', () => {
 			),
 		);
 		expect(response.content[0]?.text).toBe('No sessions found.');
+	});
+
+	test('marks inline ACP sessions with their command', () => {
+		const text = formatSessions([
+			{
+				id: 'session-1',
+				title: 'Inline',
+				jobId: 'job-1',
+				status: 'done',
+				prompt: 'hi',
+				cwd: '/repo',
+				originCwd: '/repo',
+				backend: 'acp',
+				acpCommand: { binary: 'my-agent', args: ['--acp', 'two words'] },
+				createdAt: Date.parse('2026-09-23T12:00:00.000Z'),
+			},
+		]);
+		expect(text).toContain('  backend: `acp` · `my-agent --acp two words`');
 	});
 });

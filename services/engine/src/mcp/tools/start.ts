@@ -10,7 +10,7 @@ import { waitWithProgress } from '../progress.ts';
 
 const BASE_DESCRIPTION = `\
 Start a coding-agent session or fork an existing session/job. Pass its returned \
-session ID to \`send_message\` to continue. Use \`read\` to check a background turn. \
+session ID to \`send_message\` to continue. Use \`result\` to check a background turn. \
 Model accepts \`<backend>:<modelId>[#effort]\` or \`<alias>[#effort]\`.`;
 
 export type AliasPreset = {

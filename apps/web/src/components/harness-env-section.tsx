@@ -13,7 +13,6 @@ import {
 	validateDuplicateEnvironmentKeys,
 	validateEnvironmentKeyAtIndex,
 } from '@/lib/harness-env-validation';
-import type { Backend } from '@/lib/harnesses';
 import { orpc } from '@/lib/orpc';
 
 type HarnessEnvFormEntry = HarnessEnvEntry & {
@@ -149,7 +148,7 @@ function HarnessEnvFields(props: { form: EnvForm }) {
 }
 
 type HarnessEnvSectionProps = {
-	backend: Backend;
+	backend: string;
 };
 
 export function HarnessEnvSection(props: HarnessEnvSectionProps) {
@@ -191,12 +190,12 @@ export function HarnessEnvSection(props: HarnessEnvSectionProps) {
 }
 
 type HarnessEnvFormProps = {
-	backend: Backend;
+	backend: string;
 	entries: ReadonlyArray<HarnessEnvEntry>;
 };
 
 function useHarnessEnvForm(props: {
-	backend: Backend;
+	backend: string;
 	entries: ReadonlyArray<HarnessEnvEntry>;
 }) {
 	const queryClient = useQueryClient();

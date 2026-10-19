@@ -36,7 +36,7 @@ import {
 	createBackgroundTaskRegistry,
 	makeBackgroundHold,
 } from './claude-background-tasks.ts';
-import type { Backend, HarnessCheckResult } from './harness.ts';
+import type { HarnessCheckResult, HarnessId } from './harness.ts';
 
 type AcpEnv =
 	| Record<string, string | undefined>
@@ -185,16 +185,36 @@ export function extractSelectOptions(
 	return choices;
 }
 
-function extractSessionModelIds(
+function findModelSelectOption(
 	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
-): ReadonlyArray<string> | undefined {
+) {
 	const modelOption =
 		configOptions?.find((option) => option.category === 'model') ??
 		configOptions?.find((option) => option.id === 'model');
-	if (modelOption === undefined || modelOption.type !== 'select') {
-		return undefined;
-	}
+	return modelOption === undefined || modelOption.type !== 'select'
+		? undefined
+		: modelOption;
+}
+
+function extractSessionModelIds(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): ReadonlyArray<string> | undefined {
+	const modelOption = findModelSelectOption(configOptions);
+	if (modelOption === undefined) return undefined;
 	return extractModelIds(modelOption.options).map((model) => model.id);
+}
+
+/** The id the adapter gave its model option, which need not be `model`. */
+function extractSessionModelConfigId(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): string | undefined {
+	return findModelSelectOption(configOptions)?.id;
+}
+
+function extractSessionCurrentModel(
+	configOptions: ReadonlyArray<SessionConfigOption> | null | undefined,
+): string | undefined {
+	return findModelSelectOption(configOptions)?.currentValue;
 }
 
 export type AcpModeOption = {
@@ -216,6 +236,9 @@ export type AcpConfigOption = {
 type AcpTurnSessionResult = {
 	readonly sessionId: string;
 	readonly availableModels: ReadonlyArray<string> | undefined;
+	readonly currentModel: string | undefined;
+	/** Undefined when the adapter reports no model option. */
+	readonly modelConfigId: string | undefined;
 	readonly availableModes: ReadonlyArray<AcpModeOption>;
 };
 
@@ -516,7 +539,7 @@ export function probeAcpConnection(
 }
 
 export function checkAcpConnection(
-	backend: Backend,
+	backend: HarnessId,
 	config: AcpAgentConfig,
 ): Effect.Effect<HarnessCheckResult, never, never> {
 	return probeAcpConnection(config).pipe(
@@ -597,6 +620,8 @@ export function runAcpTurn(
 		sessionId?: string;
 		cwd: string;
 		onSessionId?: (sessionId: string) => void;
+		/** Reports the model the adapter's `session/new` or `session/load` says is current, when it reports one. */
+		onSessionModel?: (model: string) => void;
 		onEvent?: (event: SessionUpdate) => void;
 		onExtensionEvent?: (method: string, params: unknown) => void;
 		onPromptDispatch?: () => void;
@@ -659,6 +684,8 @@ export function runAcpTurn(
 							Effect.map((res) => ({
 								sessionId: sid,
 								availableModels: extractSessionModelIds(res.configOptions),
+								currentModel: extractSessionCurrentModel(res.configOptions),
+								modelConfigId: extractSessionModelConfigId(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						);
@@ -676,6 +703,8 @@ export function runAcpTurn(
 							Effect.map((res) => ({
 								sessionId: res.sessionId,
 								availableModels: extractSessionModelIds(res.configOptions),
+								currentModel: extractSessionCurrentModel(res.configOptions),
+								modelConfigId: extractSessionModelConfigId(res.configOptions),
 								availableModes: extractModeOptions(res.configOptions),
 							})),
 						)
@@ -689,6 +718,12 @@ export function runAcpTurn(
 				const onSessionId = input.onSessionId;
 				if (onSessionId !== undefined) {
 					yield* Effect.sync(() => onSessionId(sessionResult.sessionId));
+				}
+				if (
+					input.onSessionModel !== undefined &&
+					sessionResult.currentModel !== undefined
+				) {
+					input.onSessionModel(sessionResult.currentModel);
 				}
 				const onTurnActive = input.onTurnActive;
 				if (onTurnActive !== undefined) {
@@ -724,6 +759,13 @@ export function runAcpTurn(
 				const requestedMode =
 					configOptions.find((option) => option.configId === 'mode')?.value ??
 					input.mode;
+				// Callers address the model option as `model`; the adapter may have
+				// named it differently.
+				const adapterConfigId = (configOption: AcpConfigOption) =>
+					configOption.configId === 'model' &&
+					sessionResult.modelConfigId !== undefined
+						? sessionResult.modelConfigId
+						: configOption.configId;
 				const setConfigOption = (configOption: AcpConfigOption) =>
 					Effect.tryPromise({
 						try: () =>
@@ -731,7 +773,7 @@ export function runAcpTurn(
 								.currentConnection()
 								.conn.setSessionConfigOption({
 									sessionId: sessionResult.sessionId,
-									configId: configOption.configId,
+									configId: adapterConfigId(configOption),
 									value: configOption.value,
 								}),
 						catch: (cause) => {
@@ -954,6 +996,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			sessionId?: string;
 			cwd: string;
 			onSessionId?: (sessionId: string) => void;
+			onSessionModel?: (model: string) => void;
 			onEvent?: (event: SessionUpdate) => void;
 			onExtensionEvent?: (method: string, params: unknown) => void;
 			onPromptDispatch?: () => void;
@@ -1157,7 +1200,8 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						try: () =>
 							env.conn.setSessionConfigOption({
 								sessionId: session.sessionId,
-								configId: 'model',
+								configId:
+									extractSessionModelConfigId(session.configOptions) ?? 'model',
 								value: input.model,
 							}),
 						catch: (cause) => new AcpSessionError({ cause }),

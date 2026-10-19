@@ -1,6 +1,11 @@
 import { describe, expect, test } from 'bun:test';
 import { fileURLToPath } from 'node:url';
-import { DEFAULT_WORKTREE_SENTINEL, rewriteBareWorktreeFlag } from './start.ts';
+import { Effect } from 'effect';
+import {
+	DEFAULT_WORKTREE_SENTINEL,
+	parseAcpCommand,
+	rewriteBareWorktreeFlag,
+} from './start.ts';
 
 async function runCli(args: ReadonlyArray<string>) {
 	const child = Bun.spawn(
@@ -22,7 +27,7 @@ async function runCli(args: ReadonlyArray<string>) {
 test('session --help lists every subcommand', async () => {
 	const result = await runCli(['session', '--help']);
 	expect(result.exitCode).toBe(0);
-	for (const name of ['start', 'send', 'read', 'cancel', 'list']) {
+	for (const name of ['start', 'send', 'result', 'history', 'cancel', 'list']) {
 		expect(result.stdout).toContain(name);
 	}
 });
@@ -36,6 +41,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 			'--model',
 			'--agent',
 			'--fork',
+			'--acp',
 			'--worktree',
 			'--worktree-base-branch',
 			'--detach',
@@ -44,7 +50,8 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 		],
 	],
 	['send', ['--detach', '--json', '--engine-url']],
-	['read', ['--wait', '--json', '--engine-url']],
+	['result', ['--wait', '--json', '--engine-url']],
+	['history', ['--job', '--limit', '--before', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
 	['list', ['--cwd', '--all', '--json', '--engine-url']],
 ];
@@ -146,4 +153,63 @@ describe('rewriteBareWorktreeFlag', () => {
 		expect(rewriteBareWorktreeFlag(send)).toEqual(send);
 		expect(rewriteBareWorktreeFlag(jobs)).toEqual(jobs);
 	});
+});
+
+describe('parseAcpCommand', () => {
+	test('splits the command line into a binary and arguments', async () => {
+		expect(
+			await Effect.runPromise(
+				parseAcpCommand('bunx my-agent --name "two words"'),
+			),
+		).toEqual({ binary: 'bunx', args: ['my-agent', '--name', 'two words'] });
+		expect(await Effect.runPromise(parseAcpCommand('my-agent'))).toEqual({
+			binary: 'my-agent',
+			args: [],
+		});
+	});
+
+	test('resolves a relative binary path against the working directory', async () => {
+		expect(
+			await Effect.runPromise(
+				parseAcpCommand('./bin/agent --flag ./keep', '/work/project'),
+			),
+		).toEqual({
+			binary: '/work/project/bin/agent',
+			args: ['--flag', './keep'],
+		});
+		expect(
+			await Effect.runPromise(parseAcpCommand('../agent', '/work/project')),
+		).toEqual({ binary: '/work/agent', args: [] });
+	});
+
+	test('leaves absolute paths and bare names unchanged', async () => {
+		expect(
+			await Effect.runPromise(parseAcpCommand('/opt/agent', '/work/project')),
+		).toEqual({ binary: '/opt/agent', args: [] });
+		expect(
+			await Effect.runPromise(parseAcpCommand('opencode', '/work/project')),
+		).toEqual({ binary: 'opencode', args: [] });
+	});
+
+	test.each(['', '   ', 'agent "unterminated'])('rejects %j', async (input) => {
+		await expect(Effect.runPromise(parseAcpCommand(input))).rejects.toThrow(
+			/--acp/,
+		);
+	});
+});
+
+test('session history rejects an out-of-range --limit before contacting the engine', async () => {
+	for (const limit of ['0', '51', '1.5']) {
+		const result = await runCli([
+			'session',
+			'history',
+			'session-1',
+			'--limit',
+			limit,
+			'--engine-url',
+			'http://127.0.0.1:9',
+		]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain('--limit');
+	}
 });

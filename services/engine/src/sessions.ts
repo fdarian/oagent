@@ -1,14 +1,31 @@
 /// <reference types="bun" />
 
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, getTableColumns, isNull, or, sql } from 'drizzle-orm';
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	getTableColumns,
+	inArray,
+	isNull,
+	or,
+	sql,
+} from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
-import { type Backend, parseBackend } from './harness.ts';
+import {
+	type AcpCommand,
+	type HarnessId,
+	INLINE_ACP_HARNESS_ID,
+	sessionModelInput,
+} from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import { HISTORY_DEFAULT_LIMIT } from './history/limits.ts';
+import { foldTimeline, type TimelineEntry } from './history/timeline.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import { type WorktreeRequest, Worktrees } from './worktree.ts';
 
@@ -32,7 +49,13 @@ export class SessionNotReady extends Schema.TaggedError<SessionNotReady>()(
 export class SessionStartError extends Schema.TaggedError<SessionStartError>()(
 	'SessionStartError',
 	{
-		code: Schema.Literals(['MISSING_CWD', 'CONFLICTING_AGENT']),
+		code: Schema.Literals([
+			'MISSING_CWD',
+			'CONFLICTING_AGENT',
+			'ACP_WITH_FORK',
+			'ACP_WITH_MODEL_REFERENCE',
+			'INVALID_ACP',
+		]),
 		message: Schema.String,
 	},
 ) {}
@@ -76,6 +99,51 @@ export class SessionModelError extends Schema.TaggedError<SessionModelError>()(
 	},
 ) {}
 
+export class SessionJobNotFound extends Schema.TaggedError<SessionJobNotFound>()(
+	'SessionJobNotFound',
+	{ sessionId: Schema.String, jobId: Schema.String },
+) {
+	override get message() {
+		return `Job ${this.jobId} is not a turn of session ${this.sessionId}`;
+	}
+}
+
+export class InvalidHistoryQuery extends Schema.TaggedError<InvalidHistoryQuery>()(
+	'InvalidHistoryQuery',
+	{ message: Schema.String },
+) {}
+
+export type HistoryTurn = {
+	jobId: string;
+	/** 1-based position among the session's root jobs. */
+	number: number;
+	status: JobRow['status'];
+	prompt: string;
+	text: string | null;
+	errorMessage: string | null;
+	toolCalls: Record<string, number>;
+	createdAt: number;
+};
+
+type HistoryBase = {
+	session: { id: string; title: string; status: 'running' | 'idle' };
+	forkedFromJobId: string | null;
+	total: number;
+};
+
+export type SessionHistory =
+	| (HistoryBase & {
+			view: 'turns';
+			firstNumber: number;
+			turns: HistoryTurn[];
+			/** Pass as `before` to fetch the next older page; null when none. */
+			before: string | null;
+	  })
+	| (HistoryBase & {
+			view: 'turn';
+			turn: HistoryTurn & { entries: TimelineEntry[] };
+	  });
+
 const withinDirectory = (column: AnySQLiteColumn, directory: string) =>
 	sql`(${column} = ${directory} OR substr(${column}, 1, length(${directory}) + 1) = ${`${directory}/`})`;
 
@@ -98,6 +166,7 @@ type StartInput = {
 	agentType?: string;
 	agent?: import('./agents.ts').AgentDefinition;
 	forkId?: string;
+	acp?: AcpCommand;
 	worktree?: WorktreeRequest;
 };
 
@@ -111,7 +180,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 		const insertSession = (input: {
 			title: string;
-			backend: Backend;
+			backend: HarnessId;
+			acpCommand?: AcpCommand;
 			harnessSessionId?: string;
 			cwd: string;
 			originCwd: string;
@@ -127,6 +197,13 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 							uuid: randomUUIDv7(),
 							title: input.title,
 							backend: input.backend,
+							acp_command:
+								input.acpCommand === undefined
+									? undefined
+									: {
+											binary: input.acpCommand.binary,
+											args: [...input.acpCommand.args],
+										},
 							harness_session_id: input.harnessSessionId,
 							cwd: input.cwd,
 							origin_cwd: input.originCwd,
@@ -245,8 +322,10 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					});
 				}
 
-				const backend = parseBackend(source.session.backend);
-				const harness = harnessRegistry.get(backend);
+				const backend = source.session.backend;
+				const harness = yield* harnessRegistry.resolveForSession(
+					source.session,
+				);
 				const isLatest = source.job.id === source.latestJob.id;
 				const forked = isLatest
 					? (() => {
@@ -340,6 +419,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					reasoningEffort: selectedJob.reasoning_effort ?? undefined,
 					agentType: selectedJob.agent_type ?? undefined,
 					backend,
+					acpCommand: source.session.acp_command ?? undefined,
 					harnessSessionId: forkedSession.sessionId,
 				};
 			});
@@ -352,17 +432,44 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						message: 'agent and agent_type are mutually exclusive',
 					});
 				}
+				if (input.acp !== undefined) {
+					if (input.forkId !== undefined) {
+						return yield* new SessionStartError({
+							code: 'ACP_WITH_FORK',
+							message:
+								'acp and forkId are mutually exclusive: forking an inline ACP session reuses its stored command.',
+						});
+					}
+					if (input.acp.binary.trim().length === 0) {
+						return yield* new SessionStartError({
+							code: 'INVALID_ACP',
+							message: 'acp.binary must not be empty.',
+						});
+					}
+				}
 				if (input.worktree !== undefined) yield* worktrees.ensureEnabled();
 				const source =
 					input.forkId === undefined ? undefined : findForkSource(input.forkId);
+				const inlineSource = source?.session.backend === INLINE_ACP_HARNESS_ID;
+				if (
+					input.model !== undefined &&
+					(input.acp !== undefined || inlineSource) &&
+					(yield* jobs.hasHarnessPrefix(input.model))
+				) {
+					return yield* new SessionStartError({
+						code: 'ACP_WITH_MODEL_REFERENCE',
+						message: `Inline ACP sessions take the adapter's bare model id, but "${input.model}" starts with a harness prefix.`,
+					});
+				}
 				const forkAgentTarget =
 					source?.job !== undefined &&
+					!inlineSource &&
 					(input.model !== undefined || source.job.model !== null)
 						? yield* jobs.validateStart({
 								model:
 									input.model ??
-									`${parseBackend(source.session.backend)}:${source.job.model}`,
-								backend: parseBackend(source.session.backend),
+									`${source.session.backend}:${source.job.model}`,
+								backend: source.session.backend,
 								agentType:
 									input.agent === undefined
 										? (input.agentType ?? source.job.agent_type ?? undefined)
@@ -379,9 +486,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						? undefined
 						: yield* forkHarnessSession(input.forkId, input.model);
 				const backend =
-					fork === undefined
-						? yield* jobs.resolveBackend(input.model)
-						: fork.backend;
+					fork !== undefined
+						? fork.backend
+						: input.acp !== undefined
+							? INLINE_ACP_HARNESS_ID
+							: yield* jobs.resolveBackend(input.model);
+				const acpCommand = input.acp ?? fork?.acpCommand;
 				const cwd = input.cwd ?? fork?.sourceSession.cwd;
 				if (cwd === undefined) {
 					return yield* new SessionStartError({
@@ -393,13 +503,15 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					input.model ??
 					(fork === undefined || fork.model === null
 						? undefined
-						: `${fork.backend}:${fork.model}`);
+						: sessionModelInput(fork.backend, fork.model));
 				const agentType =
 					input.agent === undefined
 						? (input.agentType ?? fork?.agentType)
 						: undefined;
 				const agentTarget =
-					fork === undefined && model !== undefined
+					fork === undefined &&
+					model !== undefined &&
+					backend !== INLINE_ACP_HARNESS_ID
 						? yield* jobs.validateStart({
 								model,
 								backend,
@@ -410,6 +522,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				const session = yield* insertSession({
 					title: input.title,
 					backend,
+					acpCommand,
 					harnessSessionId: fork?.harnessSessionId,
 					cwd,
 					originCwd:
@@ -440,14 +553,14 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 		const setModel = (sessionId: string, model: string) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(sessionId);
-				const harness = harnessRegistry.get(parseBackend(session.backend));
-				if (!harness.supportsModelSwitch) {
+				if (!harnessRegistry.supportsModelSwitch(session.backend)) {
 					return yield* new SessionModelError({
 						sessionId,
 						code: 'UNSUPPORTED_BACKEND',
 						message: `The ${session.backend} backend does not support switching models on a session.`,
 					});
 				}
+				const harness = yield* harnessRegistry.resolveForSession(session);
 				const models = yield* harness.listModels();
 				if (!models.some((entry) => entry.id === model)) {
 					return yield* new SessionModelError({
@@ -531,7 +644,11 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 
 				const latest = latestJob(session);
 				const model = session.model ?? latest?.model;
-				if (model === undefined || model === null) {
+				// An inline session that never learned its model leaves the choice to the adapter.
+				if (
+					(model === undefined || model === null) &&
+					session.backend !== INLINE_ACP_HARNESS_ID
+				) {
 					return yield* new SessionNotReady({
 						sessionId: session.uuid,
 						message: `Session ${session.uuid} has no prior turn from which to inherit a model.`,
@@ -541,7 +658,10 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					.start({
 						session,
 						prompt: input.prompt,
-						model: `${parseBackend(session.backend)}:${model}`,
+						model:
+							model === undefined || model === null
+								? undefined
+								: sessionModelInput(session.backend, model),
 						reasoningEffort:
 							(session.model !== null
 								? session.reasoning_effort
@@ -568,21 +688,160 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				};
 			});
 
-		const read = (input: { sessionId: string; wait?: boolean }) =>
+		const result = (input: { sessionId: string; wait?: boolean }) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(input.sessionId);
 				const job = latestJob(session);
 				if (job === undefined) {
 					return yield* new SessionNotReady({
 						sessionId: session.uuid,
-						message: `Session ${session.uuid} has no jobs to read.`,
+						message: `Session ${session.uuid} has no jobs to get a result from.`,
 					});
 				}
-				const result = yield* jobs.wait({
+				const turn = yield* jobs.wait({
 					jobId: job.uuid,
 					timeoutMs: input.wait === true ? undefined : 0,
 				});
-				return { ...result, jobId: job.uuid };
+				return { ...turn, jobId: job.uuid };
+			});
+
+		const history = (input: {
+			sessionId: string;
+			jobId?: string;
+			limit?: number;
+			before?: string;
+		}) =>
+			Effect.gen(function* () {
+				if (
+					input.jobId !== undefined &&
+					(input.limit !== undefined || input.before !== undefined)
+				) {
+					return yield* new InvalidHistoryQuery({
+						message: 'jobId cannot be combined with limit or before.',
+					});
+				}
+				const session = yield* findSession(input.sessionId);
+				const rootJobs = db
+					.select({
+						id: schema.jobs.id,
+						uuid: schema.jobs.uuid,
+						status: schema.jobs.status,
+					})
+					.from(schema.jobs)
+					.where(
+						and(
+							eq(schema.jobs.session_id, session.id),
+							isNull(schema.jobs.side_chat_id),
+						),
+					)
+					.orderBy(asc(schema.jobs.created_at), asc(schema.jobs.id))
+					.all();
+				const indexOfJob = (jobId: string) =>
+					rootJobs.findIndex((job) => job.uuid === jobId);
+
+				const forkSource =
+					session.forked_from_job_id === null
+						? undefined
+						: db
+								.select({ uuid: schema.jobs.uuid })
+								.from(schema.jobs)
+								.where(eq(schema.jobs.id, session.forked_from_job_id))
+								.get();
+				if (session.forked_from_job_id !== null && forkSource === undefined) {
+					return yield* Effect.die(
+						new Error(
+							`Invariant violated: session ${session.uuid} forks missing job ${session.forked_from_job_id}`,
+						),
+					);
+				}
+				const base: HistoryBase = {
+					session: {
+						id: session.uuid,
+						title: session.title,
+						status:
+							rootJobs[rootJobs.length - 1]?.status === 'running'
+								? 'running'
+								: 'idle',
+					},
+					forkedFromJobId: forkSource?.uuid ?? null,
+					total: rootJobs.length,
+				};
+
+				const loadTurns = (
+					firstPosition: number,
+					selected: typeof rootJobs,
+				): HistoryTurn[] => {
+					const uuids = selected.map((job) => job.uuid);
+					const rows = new Map(
+						db
+							.select()
+							.from(schema.jobs)
+							.where(inArray(schema.jobs.uuid, uuids))
+							.all()
+							.map((row) => [row.uuid, row]),
+					);
+					const counts = jobs.toolCallCountsByKind(uuids);
+					return selected.map((job, index) => {
+						const row = rows.get(job.uuid);
+						const toolCalls = counts.get(job.uuid);
+						if (row === undefined || toolCalls === undefined) {
+							throw new Error(`Invariant violated: job ${job.uuid} unreadable`);
+						}
+						return {
+							jobId: row.uuid,
+							number: firstPosition + index + 1,
+							status: row.status,
+							prompt: row.prompt,
+							text: row.text,
+							errorMessage: row.error_message,
+							toolCalls,
+							createdAt: row.created_at.getTime(),
+						};
+					});
+				};
+
+				if (input.jobId !== undefined) {
+					const position = indexOfJob(input.jobId);
+					const job = rootJobs[position];
+					const turn =
+						job === undefined ? undefined : loadTurns(position, [job])[0];
+					if (turn === undefined) {
+						return yield* new SessionJobNotFound({
+							sessionId: session.uuid,
+							jobId: input.jobId,
+						});
+					}
+					return {
+						...base,
+						view: 'turn' as const,
+						turn: {
+							...turn,
+							entries: foldTimeline(jobs.readAllEvents(input.jobId)),
+						},
+					};
+				}
+
+				const end =
+					input.before === undefined
+						? rootJobs.length
+						: indexOfJob(input.before);
+				if (input.before !== undefined && end === -1) {
+					return yield* new SessionJobNotFound({
+						sessionId: session.uuid,
+						jobId: input.before,
+					});
+				}
+				const limit = input.limit ?? HISTORY_DEFAULT_LIMIT;
+				const start = Math.max(0, end - limit);
+				const selected = rootJobs.slice(start, end);
+				const oldest = selected[0];
+				return {
+					...base,
+					view: 'turns' as const,
+					firstNumber: start + 1,
+					turns: loadTurns(start, selected),
+					before: start > 0 && oldest !== undefined ? oldest.uuid : null,
+				};
 			});
 
 		const cancel = (input: { sessionId: string }) =>
@@ -647,7 +906,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					originCwd: string;
 					worktreePath?: string;
 					worktreeBranch?: string;
-					backend: Backend;
+					backend: HarnessId;
+					acpCommand?: AcpCommand;
 					model?: string;
 					agentType?: string;
 					createdAt: number;
@@ -666,7 +926,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						originCwd: session.origin_cwd,
 						worktreePath: session.worktree_path ?? undefined,
 						worktreeBranch: session.worktree_branch ?? undefined,
-						backend: parseBackend(session.backend),
+						backend: session.backend,
+						acpCommand: session.acp_command ?? undefined,
 						model: job.model ?? undefined,
 						agentType: job.agent_type ?? undefined,
 						createdAt: session.created_at.getTime(),
@@ -686,11 +947,12 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 					title: session.title,
 					cwd: session.cwd,
 					createdAt: session.created_at.getTime(),
-					backend: parseBackend(session.backend),
+					backend: session.backend,
+					acpCommand: session.acp_command ?? undefined,
 					model: session.model ?? last?.model,
-					supportsModelSwitch: harnessRegistry.get(
-						parseBackend(session.backend),
-					).supportsModelSwitch,
+					supportsModelSwitch: harnessRegistry.supportsModelSwitch(
+						session.backend,
+					),
 					status: last?.status,
 					jobs: rootJobs,
 				};
@@ -726,7 +988,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				}
 				return yield* insertSession({
 					title: sourceSession.title,
-					backend: parseBackend(sourceSession.backend),
+					backend: sourceSession.backend,
+					acpCommand: sourceSession.acp_command ?? undefined,
 					cwd: sourceSession.cwd,
 					originCwd: sourceSession.origin_cwd,
 					worktreePath: sourceSession.worktree_path ?? undefined,
@@ -749,7 +1012,8 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			start,
 			setModel,
 			sendMessage,
-			read,
+			result,
+			history,
 			cancel,
 			list,
 			get,

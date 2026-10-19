@@ -1,5 +1,6 @@
 import { Effect } from 'effect';
 import { z } from 'zod';
+import { INLINE_ACP_HARNESS_ID } from '../../harness.ts';
 import type { Sessions } from '../../sessions.ts';
 
 const description = `\
@@ -25,6 +26,8 @@ type SessionSummary = {
 	originCwd: string;
 	worktreePath?: string;
 	worktreeBranch?: string;
+	backend?: string;
+	acpCommand?: { binary: string; args: ReadonlyArray<string> };
 	createdAt: number;
 };
 type SessionList = Pick<Sessions['Service'], 'list'>;
@@ -54,6 +57,15 @@ export function formatSessions(
 				...(session.worktreeBranch === undefined
 					? []
 					: [`  branch: \`${session.worktreeBranch}\``]),
+				...(session.backend !== INLINE_ACP_HARNESS_ID
+					? []
+					: [
+							`  backend: \`acp\`${
+								session.acpCommand === undefined
+									? ''
+									: ` · \`${[session.acpCommand.binary, ...session.acpCommand.args].join(' ')}\``
+							}`,
+						]),
 			];
 			return `- **${session.title}** (\`${session.id}\`) [${session.status}] ${created} · latest job \`${session.jobId}\`\n${details.join('\n')}`;
 		}),

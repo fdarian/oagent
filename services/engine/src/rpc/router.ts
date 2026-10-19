@@ -5,9 +5,19 @@ import { os } from '@orpc/server';
 import { Effect, Schema } from 'effect';
 import { Agents } from '../agents.ts';
 import { AliasPresets } from '../alias-presets.ts';
-import { BACKENDS, HarnessModelError } from '../harness.ts';
+import {
+	type CustomHarnessDefinition,
+	CustomHarnesses,
+} from '../custom-harnesses.ts';
+import {
+	BACKENDS,
+	BUILTIN_HARNESS_NAMES,
+	CUSTOM_HARNESS_ID_PATTERN,
+	HarnessModelError,
+} from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
+import { HISTORY_MAX_LIMIT, HISTORY_MIN_LIMIT } from '../history/limits.ts';
 import { IdleExit } from '../idle.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
@@ -26,6 +36,7 @@ export type EngineServices =
 	| Harnesses
 	| Settings
 	| HarnessRegistry
+	| CustomHarnesses
 	| Agents
 	| IdleExit;
 export type EngineContext = WithEffectContext<EngineServices>;
@@ -38,12 +49,22 @@ function normalizeReasoningEffort(value: string | null): string | undefined {
 }
 
 const backendSchema = Schema.Literals(BACKENDS);
+/** Any harness a request may address; unknown ids fail at resolution. */
+const harnessIdSchema = Schema.String.check(Schema.isMinLength(1));
+const customHarnessIdSchema = Schema.String.check(
+	Schema.isPattern(CUSTOM_HARNESS_ID_PATTERN),
+);
+const customHarnessFieldsSchema = {
+	name: Schema.String.check(Schema.isMinLength(1)),
+	binary: Schema.String.check(Schema.isMinLength(1)),
+	args: Schema.Array(Schema.String),
+};
 const reasoningEffortSchema = Schema.optional(
 	Schema.String.check(Schema.isMinLength(1)),
 );
 const agentNameSchema = Schema.String.check(Schema.isMinLength(1));
 const agentTargetSchema = Schema.Struct({
-	backend: backendSchema,
+	backend: harnessIdSchema,
 	target: Schema.String.check(Schema.isMinLength(1)),
 });
 
@@ -68,6 +89,15 @@ const toHarnessDto = (harness: HarnessRecord) => ({
 	binaryPath: harness.binaryPath,
 	version: harness.version,
 	detectedAt: harness.detectedAt.getTime(),
+});
+
+const toCustomHarnessDto = (definition: CustomHarnessDefinition) => ({
+	id: definition.id,
+	name: definition.name,
+	binary: definition.binary,
+	args: [...definition.args],
+	createdAt: definition.createdAt.getTime(),
+	updatedAt: definition.updatedAt.getTime(),
 });
 
 const toHarnessEnvOutput = (env: Readonly<Record<string, string>>) => ({
@@ -96,7 +126,7 @@ export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
 	Effect.succeed({
 		getHarnessEnv: os
 			.input(
-				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: harnessIdSchema })),
 			)
 			.effect(function* (options) {
 				return yield* Effect.sync(() =>
@@ -107,7 +137,7 @@ export const createHarnessEnvProcedures = (settings: HarnessEnvSettings) =>
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
-						backend: backendSchema,
+						backend: harnessIdSchema,
 						env: harnessEnvEntriesSchema,
 					}),
 				),
@@ -321,6 +351,12 @@ const router = procedure.router({
 						model: Schema.optional(Schema.String),
 						agent_type: Schema.optional(Schema.String),
 						forkId: Schema.optional(Schema.String),
+						acp: Schema.optional(
+							Schema.Struct({
+								binary: Schema.String,
+								args: Schema.Array(Schema.String),
+							}),
+						),
 						worktree: Schema.optional(
 							Schema.Struct({
 								branch: Schema.optional(Schema.String),
@@ -333,6 +369,7 @@ const router = procedure.router({
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
 				return yield* sessions.start({
+					acp: options.input.acp,
 					title: options.input.title,
 					prompt: options.input.prompt,
 					cwd: options.input.cwd,
@@ -369,7 +406,7 @@ const router = procedure.router({
 					options.input.model,
 				);
 			}),
-		read: procedure
+		result: procedure
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
@@ -380,7 +417,29 @@ const router = procedure.router({
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				return yield* sessions.read(options.input);
+				return yield* sessions.result(options.input);
+			}),
+		history: procedure
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sessionId: Schema.String,
+						jobId: Schema.optional(Schema.String),
+						limit: Schema.optional(
+							Schema.Int.check(
+								Schema.isBetween({
+									minimum: HISTORY_MIN_LIMIT,
+									maximum: HISTORY_MAX_LIMIT,
+								}),
+							),
+						),
+						before: Schema.optional(Schema.String),
+					}),
+				),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.history(options.input);
 			}),
 		cancel: procedure
 			.input(
@@ -499,7 +558,7 @@ const router = procedure.router({
 							Schema.isMinLength(1),
 							Schema.isPattern(/^[a-z0-9-]+$/),
 						),
-						backend: backendSchema,
+						backend: harnessIdSchema,
 						model_id: Schema.String.check(Schema.isMinLength(1)),
 						reasoning_effort: reasoningEffortSchema,
 						description: Schema.optional(Schema.String),
@@ -556,19 +615,20 @@ const router = procedure.router({
 			}),
 		targets: procedure
 			.input(
-				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: harnessIdSchema })),
 			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
 				return yield* harnessRegistry
 					.listAgentTargets(options.input.backend)
 					.pipe(
-						Effect.mapError(
-							(cause) =>
-								new HarnessModelError({
-									backend: options.input.backend,
-									message: `Failed to list agent targets for ${options.input.backend}: ${String(cause)}`,
-								}),
+						Effect.mapError((cause) =>
+							cause._tag === 'UnknownHarness'
+								? cause
+								: new HarnessModelError({
+										backend: options.input.backend,
+										message: `Failed to list agent targets for ${options.input.backend}: ${String(cause)}`,
+									}),
 						),
 					);
 			}),
@@ -625,15 +685,16 @@ const router = procedure.router({
 				const harnessRegistry = yield* HarnessRegistry;
 				yield* harnesses.cancelLogin('codex');
 				settings.setCodexHome(options.input.home);
-				yield* harnessRegistry.get('codex').invalidate();
+				yield* harnessRegistry.builtin('codex').invalidate();
 				return { home: settings.getCodexHome() };
 			}),
 		getHarnessEnv: procedure
 			.input(
-				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: harnessIdSchema })),
 			)
 			.effect(function* (options) {
 				const settings = yield* Settings;
+				yield* (yield* HarnessRegistry).resolve(options.input.backend);
 				return toHarnessEnvOutput(
 					settings.getHarnessEnv(options.input.backend),
 				);
@@ -642,13 +703,14 @@ const router = procedure.router({
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
-						backend: backendSchema,
+						backend: harnessIdSchema,
 						env: harnessEnvEntriesSchema,
 					}),
 				),
 			)
 			.effect(function* (options) {
 				const settings = yield* Settings;
+				yield* (yield* HarnessRegistry).resolve(options.input.backend);
 				const env = toHarnessEnvRecord(options.input.env);
 				settings.setHarnessEnv(options.input.backend, env);
 				return toHarnessEnvOutput(env);
@@ -661,6 +723,23 @@ const router = procedure.router({
 				const harnesses = yield* Harnesses;
 				return (yield* harnesses.list()).map(toHarnessDto);
 			}),
+		catalog: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const customHarnesses = yield* CustomHarnesses;
+				return [
+					...BACKENDS.map((id) => ({
+						id,
+						name: BUILTIN_HARNESS_NAMES[id],
+						builtin: true,
+					})),
+					...customHarnesses.list().map((definition) => ({
+						id: definition.id,
+						name: definition.name,
+						builtin: false,
+					})),
+				];
+			}),
 		refresh: procedure
 			.input(Schema.toStandardSchemaV1(Schema.Void))
 			.effect(function* () {
@@ -669,7 +748,7 @@ const router = procedure.router({
 			}),
 		check: procedure
 			.input(
-				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: harnessIdSchema })),
 			)
 			.effect(function* (options) {
 				const harnesses = yield* Harnesses;
@@ -708,40 +787,81 @@ const router = procedure.router({
 				return yield* harnesses.logout(options.input.backend);
 			}),
 	},
+	customHarnesses: {
+		list: procedure
+			.input(Schema.toStandardSchemaV1(Schema.Void))
+			.effect(function* () {
+				const customHarnesses = yield* CustomHarnesses;
+				return customHarnesses.list().map(toCustomHarnessDto);
+			}),
+		create: procedure
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						id: customHarnessIdSchema,
+						...customHarnessFieldsSchema,
+					}),
+				),
+			)
+			.effect(function* (options) {
+				const customHarnesses = yield* CustomHarnesses;
+				return toCustomHarnessDto(yield* customHarnesses.create(options.input));
+			}),
+		update: procedure
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						id: customHarnessIdSchema,
+						...customHarnessFieldsSchema,
+					}),
+				),
+			)
+			.effect(function* (options) {
+				const customHarnesses = yield* CustomHarnesses;
+				return toCustomHarnessDto(yield* customHarnesses.update(options.input));
+			}),
+		delete: procedure
+			.input(
+				Schema.toStandardSchemaV1(Schema.Struct({ id: customHarnessIdSchema })),
+			)
+			.effect(function* (options) {
+				const customHarnesses = yield* CustomHarnesses;
+				yield* customHarnesses.remove(options.input.id);
+				return { ok: true };
+			}),
+	},
 	models: {
 		list: procedure
 			.input(
-				Schema.toStandardSchemaV1(Schema.Struct({ backend: backendSchema })),
+				Schema.toStandardSchemaV1(Schema.Struct({ backend: harnessIdSchema })),
 			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
-				const models = yield* harnessRegistry
-					.get(options.input.backend)
-					.listModels()
-					.pipe(
-						Effect.mapError(
-							(cause) =>
-								new HarnessModelError({
-									backend: options.input.backend,
-									message: `Failed to list models for ${options.input.backend}: ${String(cause)}`,
-								}),
-						),
-					);
+				const harness = yield* harnessRegistry.resolve(options.input.backend);
+				const models = yield* harness.listModels().pipe(
+					Effect.mapError(
+						(cause) =>
+							new HarnessModelError({
+								backend: options.input.backend,
+								message: `Failed to list models for ${options.input.backend}: ${String(cause)}`,
+							}),
+					),
+				);
 				return models.map((entry) => ({ id: entry.id, label: entry.label }));
 			}),
 		efforts: procedure
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
-						backend: backendSchema,
+						backend: harnessIdSchema,
 						model_id: Schema.String.check(Schema.isMinLength(1)),
 					}),
 				),
 			)
 			.effect(function* (options) {
 				const harnessRegistry = yield* HarnessRegistry;
-				const efforts = yield* harnessRegistry
-					.get(options.input.backend)
+				const harness = yield* harnessRegistry.resolve(options.input.backend);
+				const efforts = yield* harness
 					.listModelEfforts(options.input.model_id)
 					.pipe(
 						Effect.mapError(
