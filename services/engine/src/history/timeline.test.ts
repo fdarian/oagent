@@ -24,7 +24,7 @@ describe('foldTimeline', () => {
 			]),
 		).toEqual([
 			{ type: 'assistant', text: 'Hello' },
-			{ type: 'tool', title: 'Run', kind: null, status: null },
+			{ type: 'tool', title: 'Run', kind: null, status: null, target: null },
 			{ type: 'assistant', text: 'Bye' },
 		]);
 	});
@@ -98,9 +98,15 @@ describe('foldTimeline', () => {
 				},
 			]),
 		).toEqual([
-			{ type: 'tool', title: 'Read file', kind: 'read', status: 'completed' },
+			{
+				type: 'tool',
+				title: 'Read file',
+				kind: 'read',
+				status: 'completed',
+				target: null,
+			},
 			{ type: 'assistant', text: 'between' },
-			{ type: 'tool', title: 'Edit', kind: 'edit', status: null },
+			{ type: 'tool', title: 'Edit', kind: 'edit', status: null, target: null },
 		]);
 	});
 
@@ -113,7 +119,54 @@ describe('foldTimeline', () => {
 					status: 'failed',
 				},
 			]),
-		).toEqual([{ type: 'tool', title: null, kind: null, status: 'failed' }]);
+		).toEqual([
+			{ type: 'tool', title: null, kind: null, status: 'failed', target: null },
+		]);
+	});
+
+	test('takes the target from the latest location, falling back to rawInput', () => {
+		const target = (events: SessionUpdate[]) => {
+			const entry = foldTimeline(events)[0];
+			if (entry?.type !== 'tool') throw new Error('expected a tool entry');
+			return entry.target;
+		};
+		const call = (
+			update: Partial<
+				Extract<SessionUpdate, { sessionUpdate: 'tool_call_update' }>
+			>,
+		): SessionUpdate => ({
+			sessionUpdate: 'tool_call_update',
+			toolCallId: 'r',
+			...update,
+		});
+
+		expect(
+			target([
+				call({
+					title: 'read',
+					locations: [{ path: '/a.ts' }, { path: '/b.ts' }],
+				}),
+				call({ status: 'completed', locations: null }),
+				call({ locations: [{ path: '/c.ts' }] }),
+			]),
+		).toBe('/c.ts');
+		expect(
+			target([
+				call({
+					rawInput: { path: 'services/engine/scripts/dev.ts', limit: 160 },
+				}),
+			]),
+		).toBe('services/engine/scripts/dev.ts');
+		expect(target([call({ rawInput: { file_path: 'a.ts' } })])).toBe('a.ts');
+		expect(target([call({ rawInput: { filePath: 'b.ts' } })])).toBe('b.ts');
+		expect(target([call({ rawInput: { path: 3 } })])).toBeNull();
+		expect(target([call({ rawInput: 'a.ts' })])).toBeNull();
+		expect(
+			target([
+				call({ locations: [{ path: '/loc.ts' }] }),
+				call({ rawInput: { path: 'raw.ts' } }),
+			]),
+		).toBe('/loc.ts');
 	});
 
 	test('a plan directly after a plan replaces it', () => {

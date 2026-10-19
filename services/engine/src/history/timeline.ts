@@ -13,6 +13,8 @@ export type ToolEntry = {
 	title: string | null;
 	kind: ToolKind | null;
 	status: ToolCallStatus | null;
+	/** File the call acts on, for tools whose title doesn't name it. */
+	target: string | null;
 };
 
 export type TimelineEntry =
@@ -26,6 +28,18 @@ const STEER_META_KEY = 'oagent/steer';
 
 function blockText(block: ContentBlock): string {
 	return block.type === 'text' ? block.text : `[${block.type}]`;
+}
+
+const RAW_INPUT_PATH_KEYS = ['path', 'file_path', 'filePath'];
+
+function rawInputPath(rawInput: unknown): string | null {
+	if (typeof rawInput !== 'object' || rawInput === null) return null;
+	const input = rawInput as Record<string, unknown>;
+	for (const key of RAW_INPUT_PATH_KEYS) {
+		const value = input[key];
+		if (typeof value === 'string' && value !== '') return value;
+	}
+	return null;
 }
 
 function isSteer(event: {
@@ -44,6 +58,9 @@ export function foldTimeline(
 ): TimelineEntry[] {
 	const entries: TimelineEntry[] = [];
 	const toolEntries = new Map<string, ToolEntry>();
+	// A location-derived target is more reliable than rawInput, so rawInput
+	// never replaces one.
+	const locationTargets = new Set<string>();
 
 	const appendText = (type: 'assistant' | 'user', text: string) => {
 		if (text === '') return;
@@ -71,10 +88,18 @@ export function foldTimeline(
 					title: null,
 					kind: null,
 					status: null,
+					target: null,
 				};
 				entry.title = event.title ?? entry.title;
 				entry.kind = event.kind ?? entry.kind;
 				entry.status = event.status ?? entry.status;
+				const location = event.locations?.[0]?.path;
+				if (location !== undefined) {
+					entry.target = location;
+					locationTargets.add(event.toolCallId);
+				} else if (!locationTargets.has(event.toolCallId)) {
+					entry.target = rawInputPath(event.rawInput) ?? entry.target;
+				}
 				if (existing === undefined) {
 					toolEntries.set(event.toolCallId, entry);
 					entries.push(entry);

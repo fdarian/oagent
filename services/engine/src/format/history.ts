@@ -1,4 +1,4 @@
-import type { TimelineEntry } from '../history/timeline.ts';
+import type { TimelineEntry, ToolEntry } from '../history/timeline.ts';
 import type { HistoryTurn, SessionHistory } from '../sessions.ts';
 
 const UNTRUSTED_BANNER =
@@ -12,6 +12,23 @@ const PLAN_MARKS = {
 
 function singleLine(text: string): string {
 	return text.replace(/\s+/g, ' ').trim();
+}
+
+const MAX_TOOL_LABEL_LENGTH = 160;
+
+function toolLabel(entry: ToolEntry): string {
+	const title = entry.title ?? entry.kind ?? 'tool';
+	const lines = title.split('\n').filter((line) => line.trim() !== '');
+	let label = singleLine(lines[0] ?? title);
+	let cut = lines.length > 1;
+	if (entry.target !== null && !label.includes(entry.target)) {
+		label = `${label} ${singleLine(entry.target)}`;
+	}
+	if (label.length > MAX_TOOL_LABEL_LENGTH) {
+		label = label.slice(0, MAX_TOOL_LABEL_LENGTH - 1).trimEnd();
+		cut = true;
+	}
+	return cut ? `${label}…` : label;
 }
 
 function quote(text: string): string {
@@ -67,7 +84,7 @@ function formatEntry(entry: TimelineEntry): string {
 		case 'user':
 			return `[user] ${entry.text}`;
 		case 'tool': {
-			const name = singleLine(entry.title ?? entry.kind ?? 'tool');
+			const name = toolLabel(entry);
 			const status = entry.status === null ? '' : ` → ${entry.status}`;
 			return `(called ${name})${status}`;
 		}

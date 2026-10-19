@@ -1742,7 +1742,13 @@ describe('session history', () => {
 		expect(turn.turn.number).toBe(2);
 		expect(turn.turn.entries).toEqual([
 			{ type: 'assistant', text: 'working on it' },
-			{ type: 'tool', title: 'ls', kind: 'execute', status: null },
+			{
+				type: 'tool',
+				title: 'ls',
+				kind: 'execute',
+				status: null,
+				target: null,
+			},
 		]);
 		t.database.sqlite.close();
 	});
