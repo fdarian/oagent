@@ -1386,9 +1386,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				if (row.job.status !== 'running' || closingJobs.has(jobId)) {
 					return false;
 				}
-				const releaseHold = harnessRegistry.get(
-					parseBackend(row.session.backend),
-				).releaseHold;
+				const harness = yield* harnessRegistry
+					.resolveForSession(row.session)
+					.pipe(Effect.orDie);
+				const releaseHold = harness.releaseHold;
 				if (
 					releaseHold === undefined ||
 					row.session.harness_session_id === null
