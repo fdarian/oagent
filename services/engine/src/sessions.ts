@@ -24,6 +24,7 @@ import {
 	sessionModelInput,
 } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import { HISTORY_DEFAULT_LIMIT } from './history/limits.ts';
 import { foldTimeline, type TimelineEntry } from './history/timeline.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import { type WorktreeRequest, Worktrees } from './worktree.ts';
@@ -111,9 +112,6 @@ export class InvalidHistoryQuery extends Schema.TaggedError<InvalidHistoryQuery>
 	'InvalidHistoryQuery',
 	{ message: Schema.String },
 ) {}
-
-const HISTORY_DEFAULT_LIMIT = 10;
-const HISTORY_MAX_LIMIT = 50;
 
 export type HistoryTurn = {
 	jobId: string;
@@ -829,10 +827,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 						jobId: input.before,
 					});
 				}
-				const limit = Math.min(
-					Math.max(input.limit ?? HISTORY_DEFAULT_LIMIT, 1),
-					HISTORY_MAX_LIMIT,
-				);
+				const limit = input.limit ?? HISTORY_DEFAULT_LIMIT;
 				const start = Math.max(0, end - limit);
 				const selected = rootJobs.slice(start, end);
 				const oldest = selected[0];

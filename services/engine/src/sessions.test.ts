@@ -1662,22 +1662,24 @@ describe('session history', () => {
 		t.database.sqlite.close();
 	});
 
-	test('applies the limit default and maximum', async () => {
+	test('defaults to the newest 10 turns and honors an explicit limit', async () => {
 		const t = await setup();
 		for (let index = 1; index <= 60; index++) t.addJob(`job-${index}`);
+
+		const defaulted = await t.history({ sessionId: 'history-session' });
+		if (defaulted.view !== 'turns') throw new Error('Expected turns view');
+		expect(defaulted.turns).toHaveLength(10);
+		expect(defaulted.firstNumber).toBe(51);
 
 		const small = await t.history({ sessionId: 'history-session', limit: 2 });
 		if (small.view !== 'turns') throw new Error('Expected turns view');
 		expect(small.turns.map((turn) => turn.jobId)).toEqual(['job-59', 'job-60']);
 		expect(small.before).toBe('job-59');
 
-		const capped = await t.history({
-			sessionId: 'history-session',
-			limit: 500,
-		});
-		if (capped.view !== 'turns') throw new Error('Expected turns view');
-		expect(capped.turns).toHaveLength(50);
-		expect(capped.firstNumber).toBe(11);
+		const max = await t.history({ sessionId: 'history-session', limit: 50 });
+		if (max.view !== 'turns') throw new Error('Expected turns view');
+		expect(max.turns).toHaveLength(50);
+		expect(max.firstNumber).toBe(11);
 		t.database.sqlite.close();
 	});
 

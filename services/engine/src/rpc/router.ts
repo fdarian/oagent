@@ -15,6 +15,7 @@ import {
 	CUSTOM_HARNESS_ID_PATTERN,
 	HarnessModelError,
 } from '../harness.ts';
+import { HISTORY_MAX_LIMIT, HISTORY_MIN_LIMIT } from '../history/limits.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
 import { IdleExit } from '../idle.ts';
@@ -424,7 +425,14 @@ const router = procedure.router({
 					Schema.Struct({
 						sessionId: Schema.String,
 						jobId: Schema.optional(Schema.String),
-						limit: Schema.optional(Schema.Int),
+						limit: Schema.optional(
+							Schema.Int.check(
+								Schema.isBetween({
+									minimum: HISTORY_MIN_LIMIT,
+									maximum: HISTORY_MAX_LIMIT,
+								}),
+							),
+						),
 						before: Schema.optional(Schema.String),
 					}),
 				),
