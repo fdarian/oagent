@@ -14,6 +14,7 @@ export {
 export { Claude } from './claude.ts';
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
+export { formatHistory } from './format/history.ts';
 export {
 	formatCancellation,
 	formatSessionError,
@@ -28,6 +29,11 @@ export {
 } from './harness.ts';
 export { HarnessRegistry } from './harness-registry.ts';
 export { Harnesses } from './harnesses.ts';
+export {
+	HISTORY_DEFAULT_LIMIT,
+	HISTORY_MAX_LIMIT,
+	HISTORY_MIN_LIMIT,
+} from './history/limits.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
@@ -36,8 +42,9 @@ export { Jobs } from './jobs.ts';
 export { progressMessage, progressReporter } from './mcp/progress.ts';
 export { registerTools } from './mcp/register-tools.ts';
 export { cancelTool } from './mcp/tools/cancel.ts';
+export { historyTool } from './mcp/tools/history.ts';
 export { formatSessions, listTool } from './mcp/tools/list.ts';
-export { readTool } from './mcp/tools/read.ts';
+export { resultTool } from './mcp/tools/result.ts';
 export { sendMessageTool } from './mcp/tools/send-message.ts';
 export {
 	type AgentTypePreset,

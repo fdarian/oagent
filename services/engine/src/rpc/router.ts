@@ -17,6 +17,7 @@ import {
 } from '../harness.ts';
 import { HarnessRegistry } from '../harness-registry.ts';
 import { Harnesses, type HarnessRecord } from '../harnesses.ts';
+import { HISTORY_MAX_LIMIT, HISTORY_MIN_LIMIT } from '../history/limits.ts';
 import { IdleExit } from '../idle.ts';
 import { Jobs } from '../jobs.ts';
 import { requestLogFields } from '../request-log.ts';
@@ -405,7 +406,7 @@ const router = procedure.router({
 					options.input.model,
 				);
 			}),
-		read: procedure
+		result: procedure
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
@@ -416,7 +417,29 @@ const router = procedure.router({
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				return yield* sessions.read(options.input);
+				return yield* sessions.result(options.input);
+			}),
+		history: procedure
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sessionId: Schema.String,
+						jobId: Schema.optional(Schema.String),
+						limit: Schema.optional(
+							Schema.Int.check(
+								Schema.isBetween({
+									minimum: HISTORY_MIN_LIMIT,
+									maximum: HISTORY_MAX_LIMIT,
+								}),
+							),
+						),
+						before: Schema.optional(Schema.String),
+					}),
+				),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.history(options.input);
 			}),
 		cancel: procedure
 			.input(

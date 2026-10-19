@@ -3,13 +3,13 @@ import type { ServerContext } from '@modelcontextprotocol/server';
 import { Effect } from 'effect';
 import type { Jobs } from '../../jobs.ts';
 import type { Sessions } from '../../sessions.ts';
-import { readTool } from './read.ts';
+import { resultTool } from './result.ts';
 
-describe('read tool', () => {
+describe('result tool', () => {
 	test('returns the latest status immediately by default', async () => {
 		let wait: boolean | undefined;
 		const response = await Effect.runPromise(
-			readTool.handle(
+			resultTool.handle(
 				{ sessionId: 'session-1' },
 				{
 					mcp: {
@@ -17,7 +17,7 @@ describe('read tool', () => {
 					} as ServerContext,
 					jobs: {} as Jobs['Service'],
 					sessions: {
-						read: (input) => {
+						result: (input) => {
 							wait = input.wait;
 							return Effect.succeed({
 								status: 'done' as const,
@@ -27,7 +27,7 @@ describe('read tool', () => {
 								stopReason: 'end_turn',
 							});
 						},
-					} as Pick<Sessions['Service'], 'read'>,
+					} as Pick<Sessions['Service'], 'result'>,
 				},
 			),
 		);
@@ -42,5 +42,11 @@ describe('read tool', () => {
 			],
 		});
 		expect(response).not.toHaveProperty('structuredContent');
+	});
+
+	test('points to history for earlier turns', () => {
+		expect(resultTool.description).toContain(
+			'For earlier turns or what the agent did, use history.',
+		);
 	});
 });

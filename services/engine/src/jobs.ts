@@ -3,7 +3,7 @@
 import { EventEmitter } from 'node:events';
 import type { SessionUpdate } from '@agentclientprotocol/sdk';
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNull, sql } from 'drizzle-orm';
 import { Context, Effect, Exit, Fiber, Layer, Option, Schema } from 'effect';
 import {
 	type AgentNotMappedForBackend,
@@ -654,7 +654,7 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				.where(
 					and(eq(schema.events.job_id, jobId), gt(schema.events.id, sinceId)),
 				)
-				.orderBy(schema.events.created_at, schema.events.id)
+				.orderBy(schema.events.id)
 				.limit(limit + 1)
 				.all();
 
@@ -1759,6 +1759,67 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 			listAliases,
 			saveAlias,
 			deleteAlias,
+			readAllEvents: (jobId: string): SessionUpdate[] => {
+				const job = db
+					.select({ id: schema.jobs.id })
+					.from(schema.jobs)
+					.where(eq(schema.jobs.uuid, jobId))
+					.limit(1)
+					.get();
+				if (job === undefined) return [];
+				const events: SessionUpdate[] = [];
+				let cursor = 0;
+				for (;;) {
+					const page = readEventsPage(job.id, cursor, 500);
+					for (const entry of page.events) events.push(entry.event);
+					if (page.nextCursor === null) return events;
+					cursor = page.nextCursor;
+				}
+			},
+			toolCallCountsByKind: (
+				jobIds: readonly string[],
+			): Map<string, Record<string, number>> => {
+				const counts = new Map<string, Record<string, number>>();
+				if (jobIds.length === 0) return counts;
+				const rows = db
+					.select({
+						jobId: schema.jobs.uuid,
+						toolCallId: schema.toolCallEvents.tool_call_id,
+						kind: schema.toolCallEvents.kind,
+					})
+					.from(schema.events)
+					.innerJoin(schema.jobs, eq(schema.events.job_id, schema.jobs.id))
+					.innerJoin(
+						schema.toolCallEvents,
+						eq(schema.events.id, schema.toolCallEvents.event_id),
+					)
+					.where(
+						and(
+							inArray(schema.jobs.uuid, [...jobIds]),
+							eq(schema.events.type, 'tool_call'),
+						),
+					)
+					.orderBy(schema.events.id)
+					.all();
+				const kindsByJob = new Map<string, Map<string, string | null>>();
+				for (const row of rows) {
+					const kinds = kindsByJob.get(row.jobId) ?? new Map();
+					kinds.set(
+						row.toolCallId,
+						row.kind ?? kinds.get(row.toolCallId) ?? null,
+					);
+					kindsByJob.set(row.jobId, kinds);
+				}
+				for (const jobId of jobIds) {
+					const jobCounts: Record<string, number> = {};
+					for (const kind of kindsByJob.get(jobId)?.values() ?? []) {
+						const name = kind ?? 'other';
+						jobCounts[name] = (jobCounts[name] ?? 0) + 1;
+					}
+					counts.set(jobId, jobCounts);
+				}
+				return counts;
+			},
 			readEventsPage: (jobId: string, sinceId: number, limit: number) => {
 				const job = db
 					.select()
