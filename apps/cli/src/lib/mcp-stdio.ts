@@ -5,10 +5,12 @@ import {
 	type AliasPreset,
 	cancelTool,
 	formatCancellation,
+	formatHistory,
 	formatMcpInstructions,
 	formatSessions,
 	formatToolError,
 	formatTurnResult,
+	historyTool,
 	listTool,
 	resultTool,
 	sendMessageTool,
@@ -159,6 +161,9 @@ export function runMcpStdio(params: {
 				}),
 			);
 		});
+		register('history', historyTool, async (args) =>
+			text(formatHistory(await rpc(() => client.sessions.history(args)))),
+		);
 		register('cancel', cancelTool, async (args) => {
 			const result = await rpc(() => client.sessions.cancel(args));
 			return text(

@@ -28,7 +28,9 @@ export function formatTurnResult(input: {
 		return lines.join('\n');
 	}
 	if (input.result.status === 'running') {
-		lines.push(`Call \`result\` with session ID \`${input.sessionId}\`.`);
+		lines.push(
+			`Call \`result\` with session ID \`${input.sessionId}\`, or \`history\` with that session ID and job ID \`${input.jobId}\` to see its progress.`,
+		);
 		return lines.join('\n');
 	}
 	if (input.result.status === 'restarting') {

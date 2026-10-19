@@ -11,6 +11,7 @@ import type { Jobs } from '../jobs.ts';
 import type { Sessions } from '../sessions.ts';
 import type { Settings } from '../settings.ts';
 import { cancelTool } from './tools/cancel.ts';
+import { historyTool } from './tools/history.ts';
 import { listTool } from './tools/list.ts';
 import { resultTool } from './tools/result.ts';
 import { sendMessageTool } from './tools/send-message.ts';
@@ -66,6 +67,15 @@ export function registerTools(
 		},
 		(args, ctx) =>
 			runHandler(resultTool.handle(args, { jobs, sessions, mcp: ctx })),
+	);
+
+	server.registerTool(
+		'history',
+		{
+			description: historyTool.description,
+			inputSchema: historyTool.inputSchema,
+		},
+		(args) => runHandler(historyTool.handle(args, { sessions })),
 	);
 
 	server.registerTool(

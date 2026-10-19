@@ -43,4 +43,10 @@ describe('result tool', () => {
 		});
 		expect(response).not.toHaveProperty('structuredContent');
 	});
+
+	test('points to history for earlier turns', () => {
+		expect(resultTool.description).toContain(
+			'For earlier turns or what the agent did, use history.',
+		);
+	});
 });

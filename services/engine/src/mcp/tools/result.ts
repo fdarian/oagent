@@ -10,7 +10,7 @@ import type { Sessions } from '../../sessions.ts';
 import { waitWithProgress } from '../progress.ts';
 
 const description = `\
-Get the latest turn's result in a session. Set wait to block until it finishes.`;
+Get the latest turn's result in a session. Set wait to block until it finishes. For earlier turns or what the agent did, use history.`;
 
 export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),

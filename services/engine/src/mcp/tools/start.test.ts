@@ -187,7 +187,7 @@ Configured agent types (use as \`agent_type\`):
 			content: [
 				{
 					type: 'text',
-					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `result` with session ID `session-1`.',
+					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `result` with session ID `session-1`, or `history` with that session ID and job ID `job-1` to see its progress.',
 				},
 			],
 		});

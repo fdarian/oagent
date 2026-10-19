@@ -14,6 +14,7 @@ export {
 export { Claude } from './claude.ts';
 export { Codex } from './codex.ts';
 export { Cursor } from './cursor.ts';
+export { formatHistory } from './format/history.ts';
 export {
 	formatCancellation,
 	formatSessionError,
@@ -36,6 +37,7 @@ export { Jobs } from './jobs.ts';
 export { progressMessage, progressReporter } from './mcp/progress.ts';
 export { registerTools } from './mcp/register-tools.ts';
 export { cancelTool } from './mcp/tools/cancel.ts';
+export { historyTool } from './mcp/tools/history.ts';
 export { formatSessions, listTool } from './mcp/tools/list.ts';
 export { resultTool } from './mcp/tools/result.ts';
 export { sendMessageTool } from './mcp/tools/send-message.ts';
