@@ -545,10 +545,14 @@ function isSubagentUpdate(update: SessionUpdate): boolean {
 }
 
 /** What a turn exposes so a caller can end its background hold. */
-type ActiveBackgroundHold = Pick<BackgroundHold, 'holdable' | 'release'>;
+type ActiveBackgroundHold = Pick<
+	BackgroundHold,
+	'holdable' | 'holdableAt' | 'release'
+>;
 
 const NO_BACKGROUND_HOLD: ActiveBackgroundHold = {
 	holdable: () => false,
+	holdableAt: () => undefined,
 	release: Effect.succeed(false),
 };
 
@@ -907,18 +911,21 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			});
 
 		// Killing the process group would kill a background shell that outlived its
-		// turn, so the connection stays referenced until the shells end. The cap,
-		// measured from the turn's end, keeps a shell that never ends from pinning
-		// the process forever.
+		// turn, so the connection stays referenced until the shells end. The deadline
+		// is the hold's cap counted from when the prompt returned, so the hold and
+		// the keep-alive together never exceed one cap, and a shell that never ends
+		// cannot pin the process forever.
 		const keepConnectionWhileShellsRun = (
 			backgroundTasks: BackgroundTaskRegistry,
 			connectionScope: Scope.Closeable,
-			maxKeepAliveMs: number | undefined,
+			deadline: number | undefined,
 		) =>
 			Effect.suspend(() =>
-				maxKeepAliveMs !== undefined && backgroundTasks.hasLiveShells()
+				deadline !== undefined && backgroundTasks.hasLiveShells()
 					? backgroundTasks.untilNoLiveShells.pipe(
-							Effect.timeoutOption(Duration.millis(maxKeepAliveMs)),
+							Effect.timeoutOption(
+								Duration.millis(Math.max(0, deadline - Date.now())),
+							),
 							Effect.ensuring(Scope.close(connectionScope, Exit.void)),
 							Effect.forkIn(agentScope),
 							Effect.asVoid,
@@ -960,6 +967,9 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 					// The turn's connection reference lives in its own scope so a
 					// background shell can keep the process alive after the turn.
 					const connectionScope = yield* Scope.make();
+					const turnHold = {
+						current: undefined as ActiveBackgroundHold | undefined,
+					};
 					const env = yield* restore(
 						RcRef.get(connectionRef).pipe(Scope.provide(connectionScope)),
 					).pipe(Effect.onError(() => Scope.close(connectionScope, Exit.void)));
@@ -977,6 +987,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 									currentConnection,
 									backgroundHold,
 								) => {
+									turnHold.current = backgroundHold;
 									const active = { currentConnection, backgroundHold };
 									activeTurns.set(sessionId, active);
 									return () => {
@@ -990,11 +1001,16 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 						),
 					).pipe(
 						Effect.ensuring(
-							keepConnectionWhileShellsRun(
-								env.backgroundTasks,
-								connectionScope,
-								input.backgroundTasks?.maxHoldMs,
-							),
+							Effect.suspend(() => {
+								const maxHoldMs = input.backgroundTasks?.maxHoldMs;
+								// A turn that never reached end_turn counts from its end.
+								const startedAt = turnHold.current?.holdableAt() ?? Date.now();
+								return keepConnectionWhileShellsRun(
+									env.backgroundTasks,
+									connectionScope,
+									maxHoldMs === undefined ? undefined : startedAt + maxHoldMs,
+								);
+							}),
 						),
 					);
 				}),

@@ -255,6 +255,8 @@ export type BackgroundHold = {
 	markHoldable: (tracker: BackgroundTaskTracker) => void;
 	/** Whether the prompt has returned and the turn can only be released, not steered. */
 	holdable: () => boolean;
+	/** When the turn became holdable, which is when the hold's cap starts counting. */
+	holdableAt: () => number | undefined;
 	/**
 	 * Keeps the turn open until the turn's shells and their follow-up cycle are
 	 * done, the cap passes, the hold is released, or the process exits.
@@ -281,13 +283,16 @@ export const makeBackgroundHold: Effect.Effect<BackgroundHold> = Effect.gen(
 		const closed = yield* Deferred.make<void>();
 		const state = {
 			tracker: undefined as BackgroundTaskTracker | undefined,
+			holdableAt: undefined as number | undefined,
 			closed: false,
 		};
 		return {
 			markHoldable: (tracker) => {
 				state.tracker = tracker;
+				state.holdableAt = Date.now();
 			},
 			holdable: () => state.tracker !== undefined && !state.closed,
+			holdableAt: () => state.holdableAt,
 			hold: (input) =>
 				Effect.suspend(() => {
 					if (state.tracker === undefined) {

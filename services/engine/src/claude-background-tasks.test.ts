@@ -544,8 +544,12 @@ describe('Claude background task hold through the ACP agent', () => {
 		expect(result.second.text).toBe('ok');
 	});
 
-	test('keeps the adapter process alive while a shell outlives the capped hold', async () => {
-		const result = await Effect.runPromise(
+	/**
+	 * Holds a never-ending shell, releases the hold 200ms in, and reports whether
+	 * the adapter process is still the same `checkAfterMs` after the hold began.
+	 */
+	const processSurvives = (maxHoldMs: number, checkAfterMs: number) =>
+		Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
 					const agent = yield* makeAgent(100);
@@ -553,52 +557,42 @@ describe('Claude background task hold through the ACP agent', () => {
 						prompt: 'pid',
 						cwd: process.cwd(),
 					});
-					const held = yield* agent.runTurn({
-						prompt: 'background-shell',
-						cwd: process.cwd(),
-						backgroundTasks: { ...holdOptions, maxHoldMs: 400 },
-					});
-					// Past several idle lifetimes, inside the keep-alive cap.
-					yield* Effect.sleep(250);
+					const sessionId = Promise.withResolvers<string>();
+					const startedAt = Date.now();
+					const held = yield* agent
+						.runTurn({
+							prompt: 'background-shell',
+							cwd: process.cwd(),
+							backgroundTasks: { ...holdOptions, maxHoldMs },
+							onSessionId: sessionId.resolve,
+						})
+						.pipe(Effect.forkChild);
+					const id = yield* Effect.promise(() => sessionId.promise);
+					yield* Effect.sleep(200);
+					yield* agent.releaseHold({ sessionId: id });
+					yield* Fiber.join(held);
+					yield* Effect.sleep(
+						Math.max(0, startedAt + checkAfterMs - Date.now()),
+					);
 					const after = yield* agent.runTurn({
 						prompt: 'pid',
 						cwd: process.cwd(),
 					});
-					return { before, held, after };
+					return after.text === before.text;
 				}),
 			),
 		);
 
-		expect(result.held.text).toBe('waiting on the shell');
-		expect(result.after.text).toBe(result.before.text);
+	test('keeps the adapter process alive while a shell runs inside the cap', async () => {
+		// Several idle lifetimes past the turn's end, still within the cap.
+		expect(await processSurvives(1_000, 450)).toBe(true);
 	});
 
-	test('releases the process to its idle lifetime once the keep-alive cap passes', async () => {
-		const result = await Effect.runPromise(
-			Effect.scoped(
-				Effect.gen(function* () {
-					const agent = yield* makeAgent(100);
-					const before = yield* agent.runTurn({
-						prompt: 'pid',
-						cwd: process.cwd(),
-					});
-					yield* agent.runTurn({
-						prompt: 'background-shell',
-						cwd: process.cwd(),
-						backgroundTasks: { ...holdOptions, maxHoldMs: 100 },
-					});
-					// The cap counts from the turn's end, then the idle lifetime runs.
-					yield* Effect.sleep(600);
-					const after = yield* agent.runTurn({
-						prompt: 'pid',
-						cwd: process.cwd(),
-					});
-					return { before, after };
-				}),
-			),
-		);
-
-		expect(result.after.text).not.toBe(result.before.text);
+	test('releases the process to its idle lifetime once the cap passes, counted from the hold start', async () => {
+		// The hold ended at 200ms, so a keep-alive counted from there would run
+		// until 700ms plus the idle lifetime; counted from the hold start it ends
+		// at 500ms, so the process is gone by 650ms.
+		expect(await processSurvives(500, 680)).toBe(false);
 	});
 
 	test('does not end a held turn when a message is steered at it', async () => {
