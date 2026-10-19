@@ -49,6 +49,7 @@ function createFakeClaude(
 		update: (event: SessionUpdate) => void;
 		raw: (params: unknown) => void;
 	}) => Promise<void>,
+	options: { processExited?: Promise<number> } = {},
 ) {
 	const state = {
 		listener: undefined as ((update: SessionUpdate) => void) | undefined,
@@ -94,6 +95,7 @@ function createFakeClaude(
 			},
 			extNotificationHandlers,
 			backgroundTasks,
+			processExited: options.processExited,
 		},
 	};
 }
@@ -110,7 +112,11 @@ const later = (ms: number, run: () => void) => {
 
 const runClaudeTurn = (
 	fake: ReturnType<typeof createFakeClaude>,
-	options: { maxHoldMs?: number; followUpStartMs?: number } = {},
+	options: {
+		maxHoldMs?: number;
+		followUpStartMs?: number;
+		onTurnActive?: Parameters<typeof runAcpTurn>[1]['onTurnActive'];
+	} = {},
 ) => {
 	const events: Array<SessionUpdate> = [];
 	return {
@@ -118,11 +124,14 @@ const runClaudeTurn = (
 		run: runAcpTurn(fake.env, {
 			prompt: 'go',
 			cwd: '/tmp',
+			onTurnActive: options.onTurnActive,
 			backgroundTasks: {
 				settleMs: SETTLE_MS,
 				followUpStartMs: FOLLOW_UP_START_MS,
-				maxHoldMs: MAX_HOLD_MS,
-				...options,
+				maxHoldMs: options.maxHoldMs ?? MAX_HOLD_MS,
+				...(options.followUpStartMs === undefined
+					? {}
+					: { followUpStartMs: options.followUpStartMs }),
 			},
 			onEvent: (event) => events.push(event),
 		}),
@@ -297,6 +306,112 @@ describe('Claude background task hold', () => {
 		expect(fake.state.cancelled).toBe(0);
 	});
 
+	test('keeps the pre-hold text when the cap cuts a follow-up cycle short', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+			later(10, () => input.raw(tasksChanged([])));
+			later(20, () => input.raw(sessionState('running')));
+			later(30, () => input.update(text('half of the follow-up')));
+		});
+
+		const result = await Effect.runPromise(
+			runClaudeTurn(fake, { maxHoldMs: 400 }).run,
+		);
+
+		expect(result.text).toBe('waiting on the shell');
+	});
+
+	test('finishes with the pre-hold text when the process exits during the hold', async () => {
+		const exited = Promise.withResolvers<number>();
+		const fake = createFakeClaude(
+			async (input) => {
+				input.raw(tasksChanged([shellTask('shell-1')]));
+				input.update(bashLaunch('shell-1'));
+				input.update(text('waiting on the shell'));
+				later(0, () => exited.resolve(1));
+			},
+			{ processExited: exited.promise },
+		);
+
+		const result = await Effect.runPromise(runClaudeTurn(fake).run);
+
+		expect(result.text).toBe('waiting on the shell');
+		expect(result.stopReason).toBe('end_turn');
+	});
+
+	test('a release ends the hold with the pre-hold text', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+		});
+		const active = Promise.withResolvers<{
+			release: Effect.Effect<boolean>;
+			holdable: () => boolean;
+		}>();
+		const turn = runClaudeTurn(fake, {
+			onTurnActive: (_sessionId, _connection, hold) => {
+				active.resolve(hold);
+				return () => {};
+			},
+		});
+
+		const released = await Effect.runPromise(
+			Effect.gen(function* () {
+				const fiber = yield* turn.run.pipe(Effect.forkChild);
+				const hold = yield* Effect.promise(() => active.promise);
+				yield* Effect.sleep(SETTLE_MS * 2);
+				const holdableWhileHeld = hold.holdable();
+				const releasedHold = yield* hold.release;
+				const result = yield* Fiber.join(fiber);
+				return { holdableWhileHeld, releasedHold, result };
+			}),
+		);
+
+		expect(released.holdableWhileHeld).toBe(true);
+		expect(released.releasedHold).toBe(true);
+		expect(released.result.text).toBe('waiting on the shell');
+	});
+
+	test('a release during a follow-up cycle waits for it and keeps its answer', async () => {
+		const fake = createFakeClaude(async (input) => {
+			input.raw(tasksChanged([shellTask('shell-1')]));
+			input.update(bashLaunch('shell-1'));
+			input.update(text('waiting on the shell'));
+			later(10, () => input.raw(tasksChanged([])));
+			later(20, () => input.raw(sessionState('running')));
+			later(30, () => input.update(text('shell finished')));
+			later(300, () => input.raw(sessionState('idle')));
+		});
+		const active = Promise.withResolvers<{ release: Effect.Effect<boolean> }>();
+		const turn = runClaudeTurn(fake, {
+			onTurnActive: (_sessionId, _connection, hold) => {
+				active.resolve(hold);
+				return () => {};
+			},
+		});
+
+		const outcome = await Effect.runPromise(
+			Effect.gen(function* () {
+				const fiber = yield* turn.run.pipe(Effect.forkChild);
+				const hold = yield* Effect.promise(() => active.promise);
+				// Past the start of the follow-up cycle, before it goes idle.
+				yield* Effect.sleep(250);
+				const startedAt = Date.now();
+				const releasedHold = yield* hold.release;
+				const waitedMs = Date.now() - startedAt;
+				const result = yield* Fiber.join(fiber);
+				return { releasedHold, waitedMs, result };
+			}),
+		);
+
+		expect(outcome.releasedHold).toBe(true);
+		expect(outcome.waitedMs).toBeGreaterThanOrEqual(100);
+		expect(outcome.result.text).toBe('shell finished');
+	});
+
 	test('cancels the session when the held turn is interrupted', async () => {
 		const fake = createFakeClaude(async (input) => {
 			input.raw(tasksChanged([shellTask('shell-1')]));
@@ -441,10 +556,10 @@ describe('Claude background task hold through the ACP agent', () => {
 					const held = yield* agent.runTurn({
 						prompt: 'background-shell',
 						cwd: process.cwd(),
-						backgroundTasks: { ...holdOptions, maxHoldMs: 50 },
+						backgroundTasks: { ...holdOptions, maxHoldMs: 400 },
 					});
-					// Several idle lifetimes: without the shell the process would be gone.
-					yield* Effect.sleep(500);
+					// Past several idle lifetimes, inside the keep-alive cap.
+					yield* Effect.sleep(250);
 					const after = yield* agent.runTurn({
 						prompt: 'pid',
 						cwd: process.cwd(),
@@ -458,7 +573,35 @@ describe('Claude background task hold through the ACP agent', () => {
 		expect(result.after.text).toBe(result.before.text);
 	});
 
-	test('ends a held turn as done with its current text when a new message arrives', async () => {
+	test('releases the process to its idle lifetime once the keep-alive cap passes', async () => {
+		const result = await Effect.runPromise(
+			Effect.scoped(
+				Effect.gen(function* () {
+					const agent = yield* makeAgent(100);
+					const before = yield* agent.runTurn({
+						prompt: 'pid',
+						cwd: process.cwd(),
+					});
+					yield* agent.runTurn({
+						prompt: 'background-shell',
+						cwd: process.cwd(),
+						backgroundTasks: { ...holdOptions, maxHoldMs: 100 },
+					});
+					// The cap counts from the turn's end, then the idle lifetime runs.
+					yield* Effect.sleep(600);
+					const after = yield* agent.runTurn({
+						prompt: 'pid',
+						cwd: process.cwd(),
+					});
+					return { before, after };
+				}),
+			),
+		);
+
+		expect(result.after.text).not.toBe(result.before.text);
+	});
+
+	test('does not end a held turn when a message is steered at it', async () => {
 		const result = await Effect.runPromise(
 			Effect.scoped(
 				Effect.gen(function* () {
@@ -488,8 +631,12 @@ describe('Claude background task hold through the ACP agent', () => {
 							}),
 							Effect.flip,
 						);
+					yield* Effect.sleep(200);
+					const stillHeld = turn.pollUnsafe() === undefined;
+					const released = yield* agent.releaseHold({ sessionId: id });
 					const completed = yield* Fiber.join(turn);
-					return { steerError, completed };
+					const releasedAgain = yield* agent.releaseHold({ sessionId: id });
+					return { steerError, stillHeld, released, releasedAgain, completed };
 				}),
 			),
 		);
@@ -498,6 +645,9 @@ describe('Claude background task hold through the ACP agent', () => {
 			_tag: 'AcpSteerError',
 			code: 'NOT_RUNNING',
 		});
+		expect(result.stillHeld).toBe(true);
+		expect(result.released).toBe(true);
+		expect(result.releasedAgain).toBe(false);
 		expect(result.completed.text).toBe('waiting on the shell');
 		expect(result.completed.stopReason).toBe('end_turn');
 	});

@@ -148,6 +148,7 @@ export function makeAcpAdapterHarness(options: {
 								}),
 						),
 					),
+				releaseHold: acpAgent.releaseHold,
 				forkSession: (input: { sessionId: string; cwd: string }) =>
 					acpAgent.forkSession(input),
 				listModels: () => models.get(),

@@ -31,6 +31,7 @@ import {
 	createAcpTurnRecovery,
 } from './acp-turn-recovery.ts';
 import {
+	type BackgroundHold,
 	type BackgroundTaskRegistry,
 	createBackgroundTaskRegistry,
 	makeBackgroundHold,
@@ -543,6 +544,32 @@ function isSubagentUpdate(update: SessionUpdate): boolean {
 	return !('toolCallId' in update) || update.toolCallId !== parentToolUseId;
 }
 
+/** What a turn exposes so a caller can end its background hold. */
+type ActiveBackgroundHold = Pick<BackgroundHold, 'holdable' | 'release'>;
+
+const NO_BACKGROUND_HOLD: ActiveBackgroundHold = {
+	holdable: () => false,
+	release: Effect.succeed(false),
+};
+
+type TextCapture = { buffer: string; afterToolCall: boolean };
+
+function captureText(capture: TextCapture, update: SessionUpdate): void {
+	if (update.sessionUpdate === 'tool_call') {
+		capture.afterToolCall = true;
+	}
+	if (
+		update.sessionUpdate === 'agent_message_chunk' &&
+		update.content.type === 'text'
+	) {
+		if (capture.afterToolCall) {
+			capture.buffer = '';
+			capture.afterToolCall = false;
+		}
+		capture.buffer += update.content.text;
+	}
+}
+
 export type BackgroundTaskHoldOptions = {
 	maxHoldMs: number;
 	/** How long to wait for the follow-up cycle to start before giving up on it. */
@@ -576,7 +603,7 @@ export function runAcpTurn(
 		onTurnActive?: (
 			sessionId: string,
 			currentConnection: () => AcpTurnEnvironment,
-			releaseBackgroundHold: () => boolean,
+			backgroundHold: ActiveBackgroundHold,
 		) => () => void;
 		/**
 		 * Keeps the turn open after `end_turn` while background shell tasks run,
@@ -593,11 +620,18 @@ export function runAcpTurn(
 ) {
 	return Effect.scoped(
 		Effect.gen(function* () {
-			const turnState = { buffer: '', afterToolCall: false };
+			const turnState = {
+				main: { buffer: '', afterToolCall: false } as TextCapture,
+				/** Text of the turn's follow-up cycles; it replaces the pre-hold answer only once complete. */
+				followUp: undefined as TextCapture | undefined,
+			};
 			const backgroundHold =
 				input.backgroundTasks === undefined
 					? undefined
 					: yield* makeBackgroundHold;
+			if (backgroundHold !== undefined) {
+				yield* Effect.addFinalizer(() => Effect.sync(backgroundHold.close));
+			}
 			const recoveryController = yield* createAcpTurnRecovery({
 				env,
 				cwd: input.cwd,
@@ -608,19 +642,7 @@ export function runAcpTurn(
 					if (input.onEvent !== undefined) input.onEvent(update);
 					// Subagent output must not become the turn's result text.
 					if (isSubagentUpdate(update)) return;
-					if (update.sessionUpdate === 'tool_call') {
-						turnState.afterToolCall = true;
-					}
-					if (
-						update.sessionUpdate === 'agent_message_chunk' &&
-						update.content.type === 'text'
-					) {
-						if (turnState.afterToolCall) {
-							turnState.buffer = '';
-							turnState.afterToolCall = false;
-						}
-						turnState.buffer += update.content.text;
-					}
+					captureText(turnState.followUp ?? turnState.main, update);
 				},
 				onExtensionEvent: input.onExtensionEvent,
 			});
@@ -669,7 +691,7 @@ export function runAcpTurn(
 					const unregister = onTurnActive(
 						sessionResult.sessionId,
 						recoveryController.currentConnection,
-						backgroundHold === undefined ? () => false : backgroundHold.release,
+						backgroundHold === undefined ? NO_BACKGROUND_HOLD : backgroundHold,
 					);
 					yield* Effect.addFinalizer(() => Effect.sync(unregister));
 				}
@@ -774,11 +796,11 @@ export function runAcpTurn(
 					const tracker = connection.backgroundTasks.forSession(
 						sessionResult.sessionId,
 					);
+					backgroundHold.markHoldable(tracker);
 					if (yield* tracker.hasLiveTurnShellsAfterFlush) {
-						// The follow-up cycle's answer replaces the pre-hold "waiting" text.
-						turnState.afterToolCall = true;
+						const followUp: TextCapture = { buffer: '', afterToolCall: false };
+						turnState.followUp = followUp;
 						yield* backgroundHold.hold({
-							tracker,
 							settle: {
 								followUpStartMs:
 									input.backgroundTasks.followUpStartMs ??
@@ -790,6 +812,10 @@ export function runAcpTurn(
 							processExited: connection.processExited,
 							cancel: recoveryController.cancel,
 						});
+						// A cycle cut off mid-run would leave a partial answer.
+						if (!tracker.isCycleRunning() && followUp.buffer !== '') {
+							turnState.main.buffer = followUp.buffer;
+						}
 					}
 				}
 				return { sessionResult, response };
@@ -798,7 +824,7 @@ export function runAcpTurn(
 			const completed = yield* turn;
 			return {
 				sessionId: completed.sessionResult.sessionId,
-				text: turnState.buffer,
+				text: turnState.main.buffer,
 				stopReason: completed.response.stopReason,
 			};
 		}),
@@ -881,14 +907,18 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			});
 
 		// Killing the process group would kill a background shell that outlived its
-		// turn, so the connection stays referenced until the shells end.
+		// turn, so the connection stays referenced until the shells end. The cap,
+		// measured from the turn's end, keeps a shell that never ends from pinning
+		// the process forever.
 		const keepConnectionWhileShellsRun = (
 			backgroundTasks: BackgroundTaskRegistry,
 			connectionScope: Scope.Closeable,
+			maxKeepAliveMs: number | undefined,
 		) =>
 			Effect.suspend(() =>
-				backgroundTasks.hasLiveShells()
+				maxKeepAliveMs !== undefined && backgroundTasks.hasLiveShells()
 					? backgroundTasks.untilNoLiveShells.pipe(
+							Effect.timeoutOption(Duration.millis(maxKeepAliveMs)),
 							Effect.ensuring(Scope.close(connectionScope, Exit.void)),
 							Effect.forkIn(agentScope),
 							Effect.asVoid,
@@ -900,7 +930,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 			string,
 			{
 				currentConnection: () => AcpTurnEnvironment;
-				releaseBackgroundHold: () => boolean;
+				backgroundHold: ActiveBackgroundHold;
 			}
 		>();
 
@@ -945,9 +975,9 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 								onTurnActive: (
 									sessionId,
 									currentConnection,
-									releaseBackgroundHold,
+									backgroundHold,
 								) => {
-									const active = { currentConnection, releaseBackgroundHold };
+									const active = { currentConnection, backgroundHold };
 									activeTurns.set(sessionId, active);
 									return () => {
 										// A newer turn may have taken over the id before this one unwinds.
@@ -963,6 +993,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 							keepConnectionWhileShellsRun(
 								env.backgroundTasks,
 								connectionScope,
+								input.backgroundTasks?.maxHoldMs,
 							),
 						),
 					);
@@ -980,12 +1011,12 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 					});
 				}
 				// The prompt already returned, so there is no turn to steer into. The
-				// caller starts a fresh turn instead.
-				if (activeTurn.releaseBackgroundHold()) {
+				// caller releases the hold and starts a fresh turn instead.
+				if (activeTurn.backgroundHold.holdable()) {
 					return yield* new AcpSteerError({
 						code: 'NOT_RUNNING',
-						message: `The turn for ACP session ${input.sessionId} was only waiting for background tasks and has been ended.`,
-						cause: new Error('ACP turn released from background hold'),
+						message: `The turn for ACP session ${input.sessionId} has finished and is only waiting for background tasks.`,
+						cause: new Error('ACP turn is in a background hold'),
 					});
 				}
 				const connection = activeTurn.currentConnection();
@@ -1031,6 +1062,14 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 					});
 				}
 				return { messageId: crypto.randomUUID(), text: input.text };
+			});
+
+		const releaseHold = (input: { sessionId: string }) =>
+			Effect.suspend(() => {
+				const activeTurn = activeTurns.get(input.sessionId);
+				return activeTurn === undefined
+					? Effect.succeed(false)
+					: activeTurn.backgroundHold.release;
 			});
 
 		const forkSession = (input: { sessionId: string; cwd: string }) =>
@@ -1121,6 +1160,7 @@ export function makeAcpAgent(config: AcpAgentConfig) {
 		return {
 			runTurn,
 			steer,
+			releaseHold,
 			forkSession,
 			listModels,
 			listSessionCatalog,

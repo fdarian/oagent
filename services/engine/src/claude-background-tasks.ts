@@ -8,7 +8,6 @@ import {
 	Stream,
 	SubscriptionRef,
 } from 'effect';
-import { AcpTurnFailed } from './acp-turn-recovery.ts';
 
 const NOTIFICATION_FLUSH_MS = 50;
 const SDK_MESSAGE_METHOD = '_claude/sdkMessage';
@@ -83,22 +82,12 @@ const hasPendingTurnShell = (state: TrackerState): boolean =>
 const hasLiveShell = (state: TrackerState): boolean =>
 	anyLive(state.shellIds, state);
 
-const failWhenProcessExits = (
+const untilProcessExits = (
 	processExited: Promise<number> | undefined,
-): Effect.Effect<never, AcpTurnFailed> => {
-	if (processExited === undefined) return Effect.never;
-	return Effect.promise(() => processExited).pipe(
-		Effect.flatMap((code) =>
-			Effect.fail(
-				new AcpTurnFailed({
-					code: 'ACP_BACKGROUND_HOLD_INTERRUPTED',
-					message: `The Claude process exited (code ${code}) while the turn was waiting for background tasks.`,
-					cause: new Error('ACP process exited during background hold'),
-				}),
-			),
-		),
-	);
-};
+): Effect.Effect<void> =>
+	processExited === undefined
+		? Effect.never
+		: Effect.promise(() => processExited).pipe(Effect.asVoid);
 
 export type SettleOptions = {
 	/** How long to wait for a follow-up cycle to start once the turn's shells ended. */
@@ -123,6 +112,9 @@ export type BackgroundTaskTracker = {
 	untilSettled: (options: SettleOptions) => Effect.Effect<void>;
 	hasLiveShells: () => boolean;
 	untilNoLiveShells: Effect.Effect<void>;
+	/** Whether the SDK is mid-cycle, so the session's text is still being written. */
+	isCycleRunning: () => boolean;
+	untilCycleNotRunning: Effect.Effect<void>;
 	/** Feeds `_claude/sdkMessage` notifications. */
 	observeSdkMessage: (params: unknown) => void;
 	observeShellLaunch: (taskId: string) => void;
@@ -174,6 +166,10 @@ const makeTracker: Effect.Effect<BackgroundTaskTracker> = Effect.gen(
 				}),
 			hasLiveShells: () => hasLiveShell(current()),
 			untilNoLiveShells: awaitState((value) => !hasLiveShell(value)),
+			isCycleRunning: () => current().sessionState === 'running',
+			untilCycleNotRunning: awaitState(
+				(value) => value.sessionState !== 'running',
+			),
 			observeSdkMessage: (params) => {
 				const decoded = decodeSdkMessage(params);
 				if (Option.isNone(decoded)) return;
@@ -253,52 +249,73 @@ export function createBackgroundTaskRegistry(): BackgroundTaskRegistry {
 
 export type BackgroundHold = {
 	/**
+	 * Marks the turn holdable. Called synchronously when the prompt returns
+	 * `end_turn`, so a release arriving before the shell check still lands.
+	 */
+	markHoldable: (tracker: BackgroundTaskTracker) => void;
+	/** Whether the prompt has returned and the turn can only be released, not steered. */
+	holdable: () => boolean;
+	/**
 	 * Keeps the turn open until the turn's shells and their follow-up cycle are
-	 * done, the cap passes, the hold is released, or the process dies.
+	 * done, the cap passes, the hold is released, or the process exits.
 	 */
 	hold: (input: {
-		tracker: BackgroundTaskTracker;
 		settle: SettleOptions;
 		maxHoldMs: number;
 		processExited?: Promise<number>;
 		cancel: Effect.Effect<void>;
-	}) => Effect.Effect<void, AcpTurnFailed>;
-	/** Ends an in-progress hold; false when the turn is not being held. */
-	release: () => boolean;
+	}) => Effect.Effect<void>;
+	/**
+	 * Ends the hold, first waiting out a follow-up cycle that is mid-run so its
+	 * text is complete. False when the turn is not holdable. Bounded by the cap
+	 * because the turn itself ends then.
+	 */
+	release: Effect.Effect<boolean>;
+	/** Marks the turn finished, which also ends any release still waiting. */
+	close: () => void;
 };
 
 export const makeBackgroundHold: Effect.Effect<BackgroundHold> = Effect.gen(
 	function* () {
 		const released = yield* Deferred.make<void>();
-		const holding = { active: false };
+		const closed = yield* Deferred.make<void>();
+		const state = {
+			tracker: undefined as BackgroundTaskTracker | undefined,
+			closed: false,
+		};
 		return {
+			markHoldable: (tracker) => {
+				state.tracker = tracker;
+			},
+			holdable: () => state.tracker !== undefined && !state.closed,
 			hold: (input) =>
-				Effect.sync(() => {
-					holding.active = true;
-				}).pipe(
-					Effect.andThen(
+				Effect.suspend(() => {
+					if (state.tracker === undefined) {
+						return Effect.die(new Error('Hold started before it was holdable'));
+					}
+					return Effect.raceFirst(
 						Effect.raceFirst(
 							Effect.raceFirst(
-								Effect.raceFirst(
-									input.tracker.untilSettled(input.settle),
-									Deferred.await(released),
-								),
-								Effect.sleep(Duration.millis(input.maxHoldMs)),
+								state.tracker.untilSettled(input.settle),
+								Deferred.await(released),
 							),
-							failWhenProcessExits(input.processExited),
+							Effect.sleep(Duration.millis(input.maxHoldMs)),
 						),
-					),
-					Effect.onInterrupt(() => input.cancel),
-					Effect.ensuring(
-						Effect.sync(() => {
-							holding.active = false;
-						}),
-					),
-				),
-			release: () => {
-				if (!holding.active) return false;
-				Effect.runSync(Deferred.succeed(released, undefined));
-				return true;
+						untilProcessExits(input.processExited),
+					);
+				}).pipe(Effect.onInterrupt(() => input.cancel)),
+			release: Effect.suspend(() => {
+				const tracker = state.tracker;
+				if (tracker === undefined || state.closed) return Effect.succeed(false);
+				return tracker.untilCycleNotRunning.pipe(
+					Effect.raceFirst(Deferred.await(closed)),
+					Effect.andThen(Deferred.succeed(released, undefined)),
+					Effect.as(true),
+				);
+			}),
+			close: () => {
+				state.closed = true;
+				Effect.runSync(Deferred.succeed(closed, undefined));
 			},
 		};
 	},

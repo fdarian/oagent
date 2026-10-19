@@ -9,8 +9,12 @@
  * result's `backgroundTaskId`, answers "waiting" and ends the turn.
  * `background-shell:finish` then ends the shell 100ms later and runs an
  * autonomous follow-up cycle answering "shell finished"; plain
- * `background-shell` never finishes. A `finish-shell` prompt, sent on a later turn,
- * answers "ok" and ends the still-running shell the same way.
+ * `background-shell` never finishes. `background-shell:slow-finish` does the
+ * same with a follow-up cycle that stays running for 600ms before answering,
+ * and `background-shell:exit` kills the process 100ms after the turn ended.
+ * A `finish-shell` prompt, sent on a later turn, answers "ok" and ends the
+ * still-running shell the same way. Like the real adapter, the main turn
+ * reports SDK state `running` while it works and `idle` once it ends.
  */
 import {
 	AgentSideConnection,
@@ -30,7 +34,11 @@ const sdkMessage = (
 	message: Record<string, unknown>,
 ) => conn.extNotification('_claude/sdkMessage', { sessionId, message });
 
-const finishShell = (conn: AgentSideConnection, sessionId: string) =>
+const finishShell = (
+	conn: AgentSideConnection,
+	sessionId: string,
+	cycleMs = 0,
+) =>
 	setTimeout(async () => {
 		await sdkMessage(conn, sessionId, {
 			type: 'system',
@@ -49,6 +57,7 @@ const finishShell = (conn: AgentSideConnection, sessionId: string) =>
 				content: { type: 'text', text: 'shell finished' },
 			},
 		});
+		await Bun.sleep(cycleMs);
 		await sdkMessage(conn, sessionId, {
 			type: 'system',
 			subtype: 'session_state_changed',
@@ -110,6 +119,11 @@ new AgentSideConnection(
 			if (first?.type === 'text' && first.text.startsWith('background-shell')) {
 				await sdkMessage(conn, params.sessionId, {
 					type: 'system',
+					subtype: 'session_state_changed',
+					state: 'running',
+				});
+				await sdkMessage(conn, params.sessionId, {
+					type: 'system',
 					subtype: 'background_tasks_changed',
 					tasks: [{ task_id: 'shell-1', task_type: 'local_bash' }],
 				});
@@ -133,8 +147,19 @@ new AgentSideConnection(
 						content: { type: 'text', text: 'waiting on the shell' },
 					},
 				});
+				await sdkMessage(conn, params.sessionId, {
+					type: 'system',
+					subtype: 'session_state_changed',
+					state: 'idle',
+				});
 				if (first.text === 'background-shell:finish') {
 					finishShell(conn, params.sessionId);
+				}
+				if (first.text === 'background-shell:slow-finish') {
+					finishShell(conn, params.sessionId, 600);
+				}
+				if (first.text === 'background-shell:exit') {
+					setTimeout(() => process.exit(1), 100);
 				}
 				return { stopReason: 'end_turn' };
 			}
