@@ -273,6 +273,21 @@ const router = procedure.router({
 				);
 				return result;
 			}),
+		history: procedure
+			.input(
+				Schema.toStandardSchemaV1(
+					Schema.Struct({
+						sessionId: Schema.String,
+						jobId: Schema.optional(Schema.String),
+						limit: Schema.optional(Schema.Int),
+						before: Schema.optional(Schema.String),
+					}),
+				),
+			)
+			.effect(function* (options) {
+				const sessions = yield* Sessions;
+				return yield* sessions.history(options.input);
+			}),
 		cancel: procedure
 			.input(Schema.toStandardSchemaV1(Schema.Struct({ jobId: Schema.String })))
 			.effect(function* (options) {

@@ -1,7 +1,17 @@
 /// <reference types="bun" />
 
 import { randomUUIDv7 } from 'bun';
-import { and, desc, eq, getTableColumns, isNull, or, sql } from 'drizzle-orm';
+import {
+	and,
+	asc,
+	desc,
+	eq,
+	getTableColumns,
+	inArray,
+	isNull,
+	or,
+	sql,
+} from 'drizzle-orm';
 import type { AnySQLiteColumn } from 'drizzle-orm/sqlite-core';
 import { Context, Effect, Layer, Schema } from 'effect';
 import { AcpForkNotSupportedError } from './acp-agent.ts';
@@ -14,6 +24,7 @@ import {
 	sessionModelInput,
 } from './harness.ts';
 import { HarnessRegistry } from './harness-registry.ts';
+import { foldTimeline, type TimelineEntry } from './history/timeline.ts';
 import { JobStartError, Jobs } from './jobs.ts';
 import { type WorktreeRequest, Worktrees } from './worktree.ts';
 
@@ -86,6 +97,54 @@ export class SessionModelError extends Schema.TaggedError<SessionModelError>()(
 		message: Schema.String,
 	},
 ) {}
+
+export class SessionJobNotFound extends Schema.TaggedError<SessionJobNotFound>()(
+	'SessionJobNotFound',
+	{ sessionId: Schema.String, jobId: Schema.String },
+) {
+	override get message() {
+		return `Job ${this.jobId} is not a turn of session ${this.sessionId}`;
+	}
+}
+
+export class InvalidHistoryQuery extends Schema.TaggedError<InvalidHistoryQuery>()(
+	'InvalidHistoryQuery',
+	{ message: Schema.String },
+) {}
+
+const HISTORY_DEFAULT_LIMIT = 10;
+const HISTORY_MAX_LIMIT = 50;
+
+export type HistoryTurn = {
+	jobId: string;
+	/** 1-based position among the session's root jobs. */
+	number: number;
+	status: JobRow['status'];
+	prompt: string;
+	text: string | null;
+	errorMessage: string | null;
+	toolCalls: Record<string, number>;
+	createdAt: number;
+};
+
+type HistoryBase = {
+	session: { id: string; title: string; status: 'running' | 'idle' };
+	forkedFromJobId: string | null;
+	total: number;
+};
+
+export type SessionHistory =
+	| (HistoryBase & {
+			view: 'turns';
+			firstNumber: number;
+			turns: HistoryTurn[];
+			/** Pass as `before` to fetch the next older page; null when none. */
+			before: string | null;
+	  })
+	| (HistoryBase & {
+			view: 'turn';
+			turn: HistoryTurn & { entries: TimelineEntry[] };
+	  });
 
 const withinDirectory = (column: AnySQLiteColumn, directory: string) =>
 	sql`(${column} = ${directory} OR substr(${column}, 1, length(${directory}) + 1) = ${`${directory}/`})`;
@@ -644,6 +703,148 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				return { ...turn, jobId: job.uuid };
 			});
 
+		const history = (input: {
+			sessionId: string;
+			jobId?: string;
+			limit?: number;
+			before?: string;
+		}) =>
+			Effect.gen(function* () {
+				if (
+					input.jobId !== undefined &&
+					(input.limit !== undefined || input.before !== undefined)
+				) {
+					return yield* new InvalidHistoryQuery({
+						message: 'jobId cannot be combined with limit or before.',
+					});
+				}
+				const session = yield* findSession(input.sessionId);
+				const rootJobs = db
+					.select({
+						id: schema.jobs.id,
+						uuid: schema.jobs.uuid,
+						status: schema.jobs.status,
+					})
+					.from(schema.jobs)
+					.where(
+						and(
+							eq(schema.jobs.session_id, session.id),
+							isNull(schema.jobs.side_chat_id),
+						),
+					)
+					.orderBy(asc(schema.jobs.created_at), asc(schema.jobs.id))
+					.all();
+				const indexOfJob = (jobId: string) =>
+					rootJobs.findIndex((job) => job.uuid === jobId);
+
+				const forkSource =
+					session.forked_from_job_id === null
+						? undefined
+						: db
+								.select({ uuid: schema.jobs.uuid })
+								.from(schema.jobs)
+								.where(eq(schema.jobs.id, session.forked_from_job_id))
+								.get();
+				if (session.forked_from_job_id !== null && forkSource === undefined) {
+					return yield* Effect.die(
+						new Error(
+							`Invariant violated: session ${session.uuid} forks missing job ${session.forked_from_job_id}`,
+						),
+					);
+				}
+				const base: HistoryBase = {
+					session: {
+						id: session.uuid,
+						title: session.title,
+						status:
+							rootJobs[rootJobs.length - 1]?.status === 'running'
+								? 'running'
+								: 'idle',
+					},
+					forkedFromJobId: forkSource?.uuid ?? null,
+					total: rootJobs.length,
+				};
+
+				const loadTurns = (
+					firstPosition: number,
+					selected: typeof rootJobs,
+				): HistoryTurn[] => {
+					const uuids = selected.map((job) => job.uuid);
+					const rows = new Map(
+						db
+							.select()
+							.from(schema.jobs)
+							.where(inArray(schema.jobs.uuid, uuids))
+							.all()
+							.map((row) => [row.uuid, row]),
+					);
+					const counts = jobs.toolCallCountsByKind(uuids);
+					return selected.map((job, index) => {
+						const row = rows.get(job.uuid);
+						const toolCalls = counts.get(job.uuid);
+						if (row === undefined || toolCalls === undefined) {
+							throw new Error(`Invariant violated: job ${job.uuid} unreadable`);
+						}
+						return {
+							jobId: row.uuid,
+							number: firstPosition + index + 1,
+							status: row.status,
+							prompt: row.prompt,
+							text: row.text,
+							errorMessage: row.error_message,
+							toolCalls,
+							createdAt: row.created_at.getTime(),
+						};
+					});
+				};
+
+				if (input.jobId !== undefined) {
+					const position = indexOfJob(input.jobId);
+					const job = rootJobs[position];
+					const turn =
+						job === undefined ? undefined : loadTurns(position, [job])[0];
+					if (turn === undefined) {
+						return yield* new SessionJobNotFound({
+							sessionId: session.uuid,
+							jobId: input.jobId,
+						});
+					}
+					return {
+						...base,
+						view: 'turn' as const,
+						turn: {
+							...turn,
+							entries: foldTimeline(jobs.readAllEvents(input.jobId)),
+						},
+					};
+				}
+
+				const end =
+					input.before === undefined
+						? rootJobs.length
+						: indexOfJob(input.before);
+				if (input.before !== undefined && end === -1) {
+					return yield* new SessionJobNotFound({
+						sessionId: session.uuid,
+						jobId: input.before,
+					});
+				}
+				const limit = Math.min(
+					Math.max(input.limit ?? HISTORY_DEFAULT_LIMIT, 1),
+					HISTORY_MAX_LIMIT,
+				);
+				const start = Math.max(0, end - limit);
+				const selected = rootJobs.slice(start, end);
+				const oldest = selected[0];
+				return {
+					...base,
+					view: 'turns' as const,
+					firstNumber: start + 1,
+					turns: loadTurns(start, selected),
+					before: start > 0 && oldest !== undefined ? oldest.uuid : null,
+				};
+			});
+
 		const cancel = (input: { sessionId: string }) =>
 			Effect.gen(function* () {
 				const session = db
@@ -813,6 +1014,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			setModel,
 			sendMessage,
 			result,
+			history,
 			cancel,
 			list,
 			get,

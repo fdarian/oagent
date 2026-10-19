@@ -28,7 +28,9 @@ function blockText(block: ContentBlock): string {
 	return block.type === 'text' ? block.text : `[${block.type}]`;
 }
 
-function isSteer(event: { _meta?: { [key: string]: unknown } | null }): boolean {
+function isSteer(event: {
+	_meta?: { [key: string]: unknown } | null;
+}): boolean {
 	return event._meta?.[STEER_META_KEY] === true;
 }
 
@@ -37,7 +39,9 @@ function isSteer(event: { _meta?: { [key: string]: unknown } | null }): boolean 
  * Dropped updates never break adjacency: only emitted entries are compared when
  * merging text chunks or replacing a plan.
  */
-export function foldTimeline(events: readonly SessionUpdate[]): TimelineEntry[] {
+export function foldTimeline(
+	events: readonly SessionUpdate[],
+): TimelineEntry[] {
 	const entries: TimelineEntry[] = [];
 	const toolEntries = new Map<string, ToolEntry>();
 

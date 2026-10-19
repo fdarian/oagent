@@ -9,8 +9,10 @@ import type { IdleExit } from '../idle.ts';
 import { JobNotFound, JobSteerError, ModelResolutionError } from '../jobs.ts';
 import { SessionCostError } from '../session-costs.ts';
 import {
+	InvalidHistoryQuery,
 	SessionBusy,
 	SessionForkError,
+	SessionJobNotFound,
 	SessionModelError,
 	SessionNotFound,
 	SessionNotReady,
@@ -46,7 +48,7 @@ function toProcedureError(error: unknown) {
 			cause: error,
 		});
 	}
-	if (error instanceof SessionNotFound) {
+	if (error instanceof SessionNotFound || error instanceof SessionJobNotFound) {
 		return new ORPCError('NOT_FOUND', {
 			message: error.message,
 			cause: error,
@@ -58,7 +60,8 @@ function toProcedureError(error: unknown) {
 		error instanceof SessionStartError ||
 		error instanceof SessionBusy ||
 		error instanceof SessionModelError ||
-		error instanceof SessionForkError
+		error instanceof SessionForkError ||
+		error instanceof InvalidHistoryQuery
 	) {
 		return new ORPCError('BAD_REQUEST', {
 			message: error.message,

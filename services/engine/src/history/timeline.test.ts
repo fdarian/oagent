@@ -107,7 +107,11 @@ describe('foldTimeline', () => {
 	test('an update arriving without a prior tool_call creates the entry', () => {
 		expect(
 			foldTimeline([
-				{ sessionUpdate: 'tool_call_update', toolCallId: 'x', status: 'failed' },
+				{
+					sessionUpdate: 'tool_call_update',
+					toolCallId: 'x',
+					status: 'failed',
+				},
 			]),
 		).toEqual([{ type: 'tool', title: null, kind: null, status: 'failed' }]);
 	});

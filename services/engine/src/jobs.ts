@@ -1804,7 +1804,10 @@ export class Jobs extends Context.Service<Jobs>()('oagent/Jobs', {
 				const kindsByJob = new Map<string, Map<string, string | null>>();
 				for (const row of rows) {
 					const kinds = kindsByJob.get(row.jobId) ?? new Map();
-					kinds.set(row.toolCallId, row.kind ?? kinds.get(row.toolCallId) ?? null);
+					kinds.set(
+						row.toolCallId,
+						row.kind ?? kinds.get(row.toolCallId) ?? null,
+					);
 					kindsByJob.set(row.jobId, kinds);
 				}
 				for (const jobId of jobIds) {
