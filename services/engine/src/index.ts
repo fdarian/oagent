@@ -37,7 +37,7 @@ export { progressMessage, progressReporter } from './mcp/progress.ts';
 export { registerTools } from './mcp/register-tools.ts';
 export { cancelTool } from './mcp/tools/cancel.ts';
 export { formatSessions, listTool } from './mcp/tools/list.ts';
-export { readTool } from './mcp/tools/read.ts';
+export { resultTool } from './mcp/tools/result.ts';
 export { sendMessageTool } from './mcp/tools/send-message.ts';
 export {
 	type AgentTypePreset,

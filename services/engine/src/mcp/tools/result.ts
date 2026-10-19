@@ -10,7 +10,7 @@ import type { Sessions } from '../../sessions.ts';
 import { waitWithProgress } from '../progress.ts';
 
 const description = `\
-Read the latest turn in a session. Set wait to block until it finishes.`;
+Get the latest turn's result in a session. Set wait to block until it finishes.`;
 
 export const inputSchema = z.object({
 	sessionId: z.string().describe('The sessionId returned by `start`.'),
@@ -18,19 +18,19 @@ export const inputSchema = z.object({
 });
 
 type Args = z.infer<typeof inputSchema>;
-type ReadSessions = Pick<Sessions['Service'], 'read'>;
+type ResultSessions = Pick<Sessions['Service'], 'result'>;
 
 function textResponse(text: string) {
 	return { content: [{ type: 'text' as const, text }] };
 }
 
-export const readTool = {
+export const resultTool = {
 	description,
 	inputSchema,
 	handle(
 		args: Args,
 		ctx: {
-			sessions: ReadSessions;
+			sessions: ResultSessions;
 			jobs: Pick<
 				Jobs['Service'],
 				'subscribe' | 'getJobMetadata' | 'readEventsPage' | 'wait'
@@ -38,7 +38,7 @@ export const readTool = {
 			mcp: ServerContext;
 		},
 	) {
-		return ctx.sessions.read({ sessionId: args.sessionId }).pipe(
+		return ctx.sessions.result({ sessionId: args.sessionId }).pipe(
 			Effect.flatMap((result) =>
 				args.wait === true && result.status === 'running'
 					? waitWithProgress(ctx.jobs, result.jobId, ctx.mcp).pipe(

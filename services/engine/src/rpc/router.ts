@@ -405,7 +405,7 @@ const router = procedure.router({
 					options.input.model,
 				);
 			}),
-		read: procedure
+		result: procedure
 			.input(
 				Schema.toStandardSchemaV1(
 					Schema.Struct({
@@ -416,7 +416,7 @@ const router = procedure.router({
 			)
 			.effect(function* (options) {
 				const sessions = yield* Sessions;
-				return yield* sessions.read(options.input);
+				return yield* sessions.result(options.input);
 			}),
 		cancel: procedure
 			.input(

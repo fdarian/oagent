@@ -10,7 +10,7 @@ import {
 	formatToolError,
 	formatTurnResult,
 	listTool,
-	readTool,
+	resultTool,
 	sendMessageTool,
 	startDescription,
 	startInputSchema,
@@ -146,8 +146,8 @@ export function runMcpStdio(params: {
 				}),
 			);
 		});
-		register('read', readTool, async (args, ctx) => {
-			const result = await rpc(() => client.sessions.read(args));
+		register('result', resultTool, async (args, ctx) => {
+			const result = await rpc(() => client.sessions.result(args));
 			return text(
 				formatTurnResult({
 					sessionId: args.sessionId,

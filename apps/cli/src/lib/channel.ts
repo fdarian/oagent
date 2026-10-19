@@ -12,7 +12,7 @@ import {
 	formatTurnResult,
 	progressMessage,
 	progressReporter,
-	readTool,
+	resultTool,
 	sendMessageTool,
 	startInputSchema,
 	startWorktreeInputSchema,
@@ -29,11 +29,11 @@ function channelInstructions(source: string) {
 }
 
 function channelStartDescription(source: string) {
-	return `Start a coding-agent session or fork an existing session/job. Pass its session ID to send_message to continue. Foreground calls wait for the result; set background to return immediately and receive a <channel source="${source}" job_id="..." status="..." session_id="..."> notification when the turn finishes. Use read to check a background turn. Model accepts <backend>:<modelId>[#effort] or <alias>[#effort]; the suffix overrides alias effort. cwd is an absolute working directory, optional when forkId is set.`;
+	return `Start a coding-agent session or fork an existing session/job. Pass its session ID to send_message to continue. Foreground calls wait for the result; set background to return immediately and receive a <channel source="${source}" job_id="..." status="..." session_id="..."> notification when the turn finishes. Use result to check a background turn. Model accepts <backend>:<modelId>[#effort] or <alias>[#effort]; the suffix overrides alias effort. cwd is an absolute working directory, optional when forkId is set.`;
 }
 
-function channelReadDescription() {
-	return 'Read the latest turn in a session. Set wait to block until it finishes.';
+function channelResultDescription() {
+	return "Get the latest turn's result in a session. Set wait to block until it finishes.";
 }
 function errorMessage(cause: unknown): string {
 	return cause instanceof Error ? cause.message : String(cause);
@@ -285,14 +285,14 @@ function registerChannelTools(
 	);
 
 	server.registerTool(
-		'read',
+		'result',
 		{
-			description: channelReadDescription(),
-			inputSchema: readTool.inputSchema,
+			description: channelResultDescription(),
+			inputSchema: resultTool.inputSchema,
 		},
 		async (args, ctx) => {
 			try {
-				const current = await client.sessions.read({
+				const current = await client.sessions.result({
 					sessionId: args.sessionId,
 				});
 				const result =

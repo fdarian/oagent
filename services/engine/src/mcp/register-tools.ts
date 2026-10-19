@@ -12,7 +12,7 @@ import type { Sessions } from '../sessions.ts';
 import type { Settings } from '../settings.ts';
 import { cancelTool } from './tools/cancel.ts';
 import { listTool } from './tools/list.ts';
-import { readTool } from './tools/read.ts';
+import { resultTool } from './tools/result.ts';
 import { sendMessageTool } from './tools/send-message.ts';
 import {
 	buildDescription,
@@ -59,13 +59,13 @@ export function registerTools(
 	);
 
 	server.registerTool(
-		'read',
+		'result',
 		{
-			description: readTool.description,
-			inputSchema: readTool.inputSchema,
+			description: resultTool.description,
+			inputSchema: resultTool.inputSchema,
 		},
 		(args, ctx) =>
-			runHandler(readTool.handle(args, { jobs, sessions, mcp: ctx })),
+			runHandler(resultTool.handle(args, { jobs, sessions, mcp: ctx })),
 	);
 
 	server.registerTool(

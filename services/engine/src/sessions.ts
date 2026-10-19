@@ -627,21 +627,21 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 				};
 			});
 
-		const read = (input: { sessionId: string; wait?: boolean }) =>
+		const result = (input: { sessionId: string; wait?: boolean }) =>
 			Effect.gen(function* () {
 				const session = yield* findSession(input.sessionId);
 				const job = latestJob(session);
 				if (job === undefined) {
 					return yield* new SessionNotReady({
 						sessionId: session.uuid,
-						message: `Session ${session.uuid} has no jobs to read.`,
+						message: `Session ${session.uuid} has no jobs to get a result from.`,
 					});
 				}
-				const result = yield* jobs.wait({
+				const turn = yield* jobs.wait({
 					jobId: job.uuid,
 					timeoutMs: input.wait === true ? undefined : 0,
 				});
-				return { ...result, jobId: job.uuid };
+				return { ...turn, jobId: job.uuid };
 			});
 
 		const cancel = (input: { sessionId: string }) =>
@@ -812,7 +812,7 @@ export class Sessions extends Context.Service<Sessions>()('oagent/Sessions', {
 			start,
 			setModel,
 			sendMessage,
-			read,
+			result,
 			cancel,
 			list,
 			get,

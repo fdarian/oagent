@@ -730,11 +730,11 @@ describe('session turns', () => {
 		});
 		await turnStarted.promise;
 		const blockingRead = Effect.runPromise(
-			services.sessions.read({ sessionId: started.sessionId, wait: true }),
+			services.sessions.result({ sessionId: started.sessionId, wait: true }),
 		);
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({ status: 'running', jobId: started.jobId });
 		releaseTurn.resolve();
@@ -765,7 +765,7 @@ describe('session turns', () => {
 		).toMatchObject({ status: 'done', text: 'Final: second prompt' });
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({
 			status: 'done',
@@ -1333,7 +1333,7 @@ describe('session turns', () => {
 		await turnStarted.promise;
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({
+				services.sessions.result({
 					sessionId: started.sessionId,
 				}),
 			),
@@ -1345,7 +1345,7 @@ describe('session turns', () => {
 		).toEqual({ ok: true, status: 'cancelled' });
 		expect(
 			await Effect.runPromise(
-				services.sessions.read({ sessionId: started.sessionId }),
+				services.sessions.result({ sessionId: started.sessionId }),
 			),
 		).toMatchObject({ status: 'cancelled', jobId: started.jobId });
 		expect(

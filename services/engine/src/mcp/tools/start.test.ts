@@ -97,9 +97,9 @@ Configured agent types (use as \`agent_type\`):
 		expect(formatMcpInstructions([], [])).toBeUndefined();
 	});
 
-	test('describes session continuation and read handles', () => {
+	test('describes session continuation and result handles', () => {
 		expect(buildDescription()).toBe(
-			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. Use `read` to check a background turn. Model accepts `<backend>:<modelId>[#effort]` or `<alias>[#effort]`.',
+			'Start a coding-agent session or fork an existing session/job. Pass its returned session ID to `send_message` to continue. Use `result` to check a background turn. Model accepts `<backend>:<modelId>[#effort]` or `<alias>[#effort]`.',
 		);
 	});
 
@@ -187,7 +187,7 @@ Configured agent types (use as \`agent_type\`):
 			content: [
 				{
 					type: 'text',
-					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `read` with session ID `session-1`.',
+					text: 'Session ID: session-1\nJob ID: job-1\nStatus: running\nWorktree: /repo-worktree (oagent/1234abcd)\nCall `result` with session ID `session-1`.',
 				},
 			],
 		});

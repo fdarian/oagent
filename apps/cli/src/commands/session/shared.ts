@@ -120,7 +120,7 @@ function renderDetached(params: { json: boolean; started: StartedTurn }) {
 		lines.push(`Worktree: ${started.worktreePath}${branch}`);
 	}
 	lines.push(
-		`Run \`oagent session read ${started.sessionId} --wait\` to wait for the result.`,
+		`Run \`oagent session result ${started.sessionId} --wait\` to wait for the result.`,
 	);
 	return lines.join('\n');
 }

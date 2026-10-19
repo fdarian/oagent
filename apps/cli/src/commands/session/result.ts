@@ -10,8 +10,8 @@ import {
 import { pollWait } from '#/lib/job-wait.ts';
 import { jsonFlag, renderTurn } from './shared.ts';
 
-export const read = Command.make(
-	'read',
+export const result = Command.make(
+	'result',
 	{
 		sessionId: Argument.String('sessionId'),
 		wait: Flag.Boolean('wait').pipe(
@@ -27,9 +27,9 @@ export const read = Command.make(
 		Effect.gen(function* () {
 			const engine = connectEngine(options.engineUrl);
 			const latest = yield* callEngine(engine, (client) =>
-				client.sessions.read({ sessionId: options.sessionId, wait: false }),
+				client.sessions.result({ sessionId: options.sessionId, wait: false }),
 			);
-			const result =
+			const turn =
 				options.wait && latest.status === 'running'
 					? yield* Effect.tryPromise({
 							try: () => pollWait(engine.client, latest.jobId),
@@ -41,7 +41,7 @@ export const read = Command.make(
 				renderTurn({
 					json: options.json,
 					started: { sessionId: options.sessionId, jobId: latest.jobId },
-					result,
+					result: turn,
 				}),
 			);
 		}).pipe(

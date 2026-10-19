@@ -28,11 +28,11 @@ export function formatTurnResult(input: {
 		return lines.join('\n');
 	}
 	if (input.result.status === 'running') {
-		lines.push(`Call \`read\` with session ID \`${input.sessionId}\`.`);
+		lines.push(`Call \`result\` with session ID \`${input.sessionId}\`.`);
 		return lines.join('\n');
 	}
 	if (input.result.status === 'restarting') {
-		return `${lines.join('\n')}\n---\noagent is restarting. Job \`${input.jobId}\` is still running and will resume automatically after the restart. Call \`read\` with sessionId \`${input.sessionId}\` and \`wait: true\` in about 30 seconds; if the call fails because the server is still starting, wait a bit and retry.`;
+		return `${lines.join('\n')}\n---\noagent is restarting. Job \`${input.jobId}\` is still running and will resume automatically after the restart. Call \`result\` with sessionId \`${input.sessionId}\` and \`wait: true\` in about 30 seconds; if the call fails because the server is still starting, wait a bit and retry.`;
 	}
 	if (input.result.status === 'done') {
 		return `${lines.join('\n')}\n---\n${input.result.text}`;

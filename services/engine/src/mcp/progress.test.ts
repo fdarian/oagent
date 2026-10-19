@@ -38,7 +38,7 @@ test('shutdown resolves a normal restarting result without waiting for the job',
 	expect(
 		formatTurnResult({ sessionId: 'session-1', jobId: 'job-1', result }),
 	).toBe(
-		'Session ID: session-1\nJob ID: job-1\nStatus: restarting\n---\noagent is restarting. Job `job-1` is still running and will resume automatically after the restart. Call `read` with sessionId `session-1` and `wait: true` in about 30 seconds; if the call fails because the server is still starting, wait a bit and retry.',
+		'Session ID: session-1\nJob ID: job-1\nStatus: restarting\n---\noagent is restarting. Job `job-1` is still running and will resume automatically after the restart. Call `result` with sessionId `session-1` and `wait: true` in about 30 seconds; if the call fails because the server is still starting, wait a bit and retry.',
 	);
 });
 
