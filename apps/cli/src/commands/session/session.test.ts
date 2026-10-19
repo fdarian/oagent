@@ -27,7 +27,7 @@ async function runCli(args: ReadonlyArray<string>) {
 test('session --help lists every subcommand', async () => {
 	const result = await runCli(['session', '--help']);
 	expect(result.exitCode).toBe(0);
-	for (const name of ['start', 'send', 'result', 'cancel', 'list']) {
+	for (const name of ['start', 'send', 'result', 'history', 'cancel', 'list']) {
 		expect(result.stdout).toContain(name);
 	}
 });
@@ -51,6 +51,7 @@ const subcommandFlags: ReadonlyArray<[string, ReadonlyArray<string>]> = [
 	],
 	['send', ['--detach', '--json', '--engine-url']],
 	['result', ['--wait', '--json', '--engine-url']],
+	['history', ['--job', '--limit', '--before', '--json', '--engine-url']],
 	['cancel', ['--json', '--engine-url']],
 	['list', ['--cwd', '--all', '--json', '--engine-url']],
 ];
@@ -195,4 +196,20 @@ describe('parseAcpCommand', () => {
 			/--acp/,
 		);
 	});
+});
+
+test('session history rejects an out-of-range --limit before contacting the engine', async () => {
+	for (const limit of ['0', '51', '1.5']) {
+		const result = await runCli([
+			'session',
+			'history',
+			'session-1',
+			'--limit',
+			limit,
+			'--engine-url',
+			'http://127.0.0.1:9',
+		]);
+		expect(result.exitCode).toBe(1);
+		expect(result.stderr).toContain('--limit');
+	}
 });

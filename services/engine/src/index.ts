@@ -29,6 +29,11 @@ export {
 } from './harness.ts';
 export { HarnessRegistry } from './harness-registry.ts';
 export { Harnesses } from './harnesses.ts';
+export {
+	HISTORY_DEFAULT_LIMIT,
+	HISTORY_MAX_LIMIT,
+	HISTORY_MIN_LIMIT,
+} from './history/limits.ts';
 export { serveSPA } from './http/spa.ts';
 export { handleJobEvents } from './http/sse.ts';
 export { handleJobWait } from './http/wait.ts';
