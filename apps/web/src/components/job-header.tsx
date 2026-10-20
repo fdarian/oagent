@@ -1,11 +1,5 @@
 import { CheckIcon, CopyIcon, EllipsisIcon, XCircleIcon } from 'lucide-react';
-import {
-	type ComponentProps,
-	type RefObject,
-	useEffect,
-	useRef,
-	useState,
-} from 'react';
+import { type RefObject, useEffect, useRef, useState } from 'react';
 import { Badge } from '@/components/ui/badge';
 import {
 	DropdownMenu,
@@ -162,59 +156,12 @@ function SessionIdRow(props: SessionIdRowProps) {
 }
 
 function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
-	const [open, setOpen] = useState(false);
-	const closeTimeout = useRef<number | undefined>(undefined);
-	const suppressTriggerFocusOpen = useRef(false);
-
-	useEffect(
-		() => () => {
-			if (closeTimeout.current !== undefined) {
-				window.clearTimeout(closeTimeout.current);
-			}
-		},
-		[],
-	);
-
-	const clearCloseTimeout = () => {
-		if (closeTimeout.current === undefined) return;
-		window.clearTimeout(closeTimeout.current);
-		closeTimeout.current = undefined;
-	};
-
-	const handleOpen = () => {
-		clearCloseTimeout();
-		setOpen(true);
-	};
-
-	const handleTriggerFocus = () => {
-		if (suppressTriggerFocusOpen.current) {
-			suppressTriggerFocusOpen.current = false;
-			return;
-		}
-		handleOpen();
-	};
-
-	const handleClose = () => {
-		clearCloseTimeout();
-		closeTimeout.current = window.setTimeout(() => {
-			closeTimeout.current = undefined;
-			setOpen(false);
-		}, 120);
-	};
-
-	const handleOpenChange: NonNullable<
-		ComponentProps<typeof Popover>['onOpenChange']
-	> = (nextOpen, eventDetails) => {
-		if (nextOpen) clearCloseTimeout();
-		if (!nextOpen && eventDetails.reason === 'escape-key') {
-			suppressTriggerFocusOpen.current = true;
-		}
-		setOpen(nextOpen);
-	};
-
 	return (
-		<Popover open={open} onOpenChange={handleOpenChange}>
+		<Popover>
 			<PopoverTrigger
+				openOnHover
+				delay={0}
+				closeDelay={120}
 				render={
 					<Badge
 						variant="outline"
@@ -223,10 +170,6 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 							<button
 								type="button"
 								aria-label={`${props.harnessLabel} harness; show session IDs`}
-								onPointerEnter={handleOpen}
-								onPointerLeave={handleClose}
-								onFocus={handleTriggerFocus}
-								onBlur={handleClose}
 							>
 								{props.harnessLabel}
 							</button>
@@ -239,10 +182,6 @@ function HarnessSessionPopover(props: HarnessSessionPopoverProps) {
 				sideOffset={8}
 				aria-label="Session details"
 				className="w-[min(24rem,calc(100vw-2rem))] rounded-none p-15"
-				onPointerEnter={handleOpen}
-				onPointerLeave={handleClose}
-				onFocus={handleOpen}
-				onBlur={handleClose}
 			>
 				<div className="flex flex-col gap-10">
 					<div className="flex items-center justify-between gap-15">
