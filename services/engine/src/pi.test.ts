@@ -55,6 +55,7 @@ describe('Pi ACP backend', () => {
 					listModels: () =>
 						Effect.succeed([{ id: 'provider/model', label: 'Model label' }]),
 					steer: () => Effect.die('Unexpected steer'),
+					releaseHold: () => Effect.die('Unexpected release'),
 					forkSession: () => Effect.die('Unexpected fork'),
 					listSessionCatalog: () => Effect.die('Unexpected mode catalog'),
 					listModelConfigChoices: (input) => {

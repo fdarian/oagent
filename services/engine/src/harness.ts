@@ -190,6 +190,10 @@ export type HarnessSteer = (input: {
 	text: string;
 }) => Effect.Effect<HarnessSteerResult, HarnessSteerError, never>;
 
+export type HarnessReleaseHold = (input: {
+	sessionId: string;
+}) => Effect.Effect<boolean, never, never>;
+
 export type HarnessForkSession = (input: {
 	sessionId: string;
 	cwd: string;
@@ -228,6 +232,11 @@ export type Harness = {
 	check: () => Effect.Effect<HarnessCheckResult, never, never>;
 	auth?: HarnessAuth;
 	steer?: HarnessSteer;
+	/**
+	 * Ends a turn that is only held open for background work, waiting out a
+	 * follow-up cycle that is mid-run. False when the session's turn is not held.
+	 */
+	releaseHold?: HarnessReleaseHold;
 	forkSession?: HarnessForkSession;
 	forkSessionBefore?: HarnessForkSessionBefore;
 	getLatestMessageId?: (

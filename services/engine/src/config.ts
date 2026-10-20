@@ -10,6 +10,11 @@ const ConfigSchema = Schema.Struct({
 		Schema.optional,
 		Schema.withDecodingDefaultType(Effect.succeed(false)),
 	),
+	/** How long a Claude job stays running for its background shells before finishing anyway. */
+	claudeBackgroundHoldMinutes: Schema.Number.pipe(
+		Schema.check(Schema.isGreaterThan(0)),
+		Schema.withDecodingDefaultTypeKey(Effect.succeed(30)),
+	),
 });
 const ConfigSchemaFromJson = Schema.fromJsonString(ConfigSchema);
 

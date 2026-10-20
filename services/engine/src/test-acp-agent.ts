@@ -8,6 +8,18 @@
  * Set `TEST_ACP_MODEL_CONFIG_ID=x` to name that option `x` instead of `model`;
  * setting `model` then fails like an adapter rejecting an unknown option.
  * Set `TEST_ACP_FORK=1` to advertise `session/fork` and `session/load`.
+ *
+ * A prompt starting with `background-shell` mimics Claude launching a background
+ * Bash: it reports the task through `_claude/sdkMessage` and the Bash tool
+ * result's `backgroundTaskId`, answers "waiting" and ends the turn.
+ * `background-shell:finish` then ends the shell 100ms later and runs an
+ * autonomous follow-up cycle answering "shell finished"; plain
+ * `background-shell` never finishes. `background-shell:slow-finish` does the
+ * same with a follow-up cycle that stays running for 600ms before answering,
+ * and `background-shell:exit` kills the process 100ms after the turn ended.
+ * A `finish-shell` prompt, sent on a later turn, answers "ok" and ends the
+ * still-running shell the same way. Like the real adapter, the main turn
+ * reports SDK state `running` while it works and `idle` once it ends.
  */
 import {
 	AgentSideConnection,
@@ -40,6 +52,43 @@ const configOptionsFor = (sessionId: string) =>
 					options: models.map((model) => ({ value: model, name: model })),
 				},
 			];
+
+const sdkMessage = (
+	conn: AgentSideConnection,
+	sessionId: string,
+	message: Record<string, unknown>,
+) => conn.extNotification('_claude/sdkMessage', { sessionId, message });
+
+const finishShell = (
+	conn: AgentSideConnection,
+	sessionId: string,
+	cycleMs = 0,
+) =>
+	setTimeout(async () => {
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'background_tasks_changed',
+			tasks: [],
+		});
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'session_state_changed',
+			state: 'running',
+		});
+		await conn.sessionUpdate({
+			sessionId,
+			update: {
+				sessionUpdate: 'agent_message_chunk',
+				content: { type: 'text', text: 'shell finished' },
+			},
+		});
+		await Bun.sleep(cycleMs);
+		await sdkMessage(conn, sessionId, {
+			type: 'system',
+			subtype: 'session_state_changed',
+			state: 'idle',
+		});
+	}, 100);
 
 const inFlight = new Map<string, (steeredText: string) => Promise<void>>();
 const cancelInFlight = new Map<string, () => void>();
@@ -112,6 +161,64 @@ new AgentSideConnection(
 				await steered.promise;
 				inFlight.delete(params.sessionId);
 				cancelInFlight.delete(params.sessionId);
+				return { stopReason: 'end_turn' };
+			}
+			if (first?.type === 'text' && first.text.startsWith('background-shell')) {
+				await sdkMessage(conn, params.sessionId, {
+					type: 'system',
+					subtype: 'session_state_changed',
+					state: 'running',
+				});
+				await sdkMessage(conn, params.sessionId, {
+					type: 'system',
+					subtype: 'background_tasks_changed',
+					tasks: [{ task_id: 'shell-1', task_type: 'local_bash' }],
+				});
+				await conn.sessionUpdate({
+					sessionId: params.sessionId,
+					update: {
+						sessionUpdate: 'tool_call_update',
+						toolCallId: 'bash-1',
+						_meta: {
+							claudeCode: {
+								toolName: 'Bash',
+								toolResponse: { backgroundTaskId: 'shell-1' },
+							},
+						},
+					},
+				});
+				await conn.sessionUpdate({
+					sessionId: params.sessionId,
+					update: {
+						sessionUpdate: 'agent_message_chunk',
+						content: { type: 'text', text: 'waiting on the shell' },
+					},
+				});
+				await sdkMessage(conn, params.sessionId, {
+					type: 'system',
+					subtype: 'session_state_changed',
+					state: 'idle',
+				});
+				if (first.text === 'background-shell:finish') {
+					finishShell(conn, params.sessionId);
+				}
+				if (first.text === 'background-shell:slow-finish') {
+					finishShell(conn, params.sessionId, 600);
+				}
+				if (first.text === 'background-shell:exit') {
+					setTimeout(() => process.exit(1), 100);
+				}
+				return { stopReason: 'end_turn' };
+			}
+			if (first?.type === 'text' && first.text === 'finish-shell') {
+				finishShell(conn, params.sessionId);
+				await conn.sessionUpdate({
+					sessionId: params.sessionId,
+					update: {
+						sessionUpdate: 'agent_message_chunk',
+						content: { type: 'text', text: 'ok' },
+					},
+				});
 				return { stopReason: 'end_turn' };
 			}
 			await conn.sessionUpdate({

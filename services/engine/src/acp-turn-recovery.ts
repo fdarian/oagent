@@ -6,6 +6,7 @@ import {
 import { Effect, Schema, Semaphore } from 'effect';
 import type { Scope } from 'effect/Scope';
 import { createAcpTurnReplay } from './acp-turn-replay.ts';
+import type { BackgroundTaskRegistry } from './claude-background-tasks.ts';
 
 export class AcpTurnFailed extends Schema.TaggedError<AcpTurnFailed>()(
 	'AcpTurnFailed',
@@ -47,6 +48,7 @@ export type AcpTurnConnection = {
 		(method: string, params: unknown) => void
 	>;
 	steeringSupported?: boolean;
+	backgroundTasks?: BackgroundTaskRegistry;
 	agentInfo?: { name: string; version: string };
 	processExited?: Promise<number>;
 	close?: () => void;
@@ -83,6 +85,8 @@ export type AcpTurnRecoveryController = {
 		prompt: string,
 		onPromptDispatch?: () => void,
 	) => Effect.Effect<PromptResponse, AcpTurnFailed, Scope>;
+	/** Cancels the session's current work, including a turn that outlived its prompt. */
+	cancel: Effect.Effect<void, never, never>;
 	cleanup: Effect.Effect<void, never, never>;
 };
 
@@ -513,6 +517,7 @@ export function createAcpTurnRecovery(
 				runPromptEffect(prompt, onPromptDispatch).pipe(
 					Effect.onInterrupt(() => cancelAndAwait),
 				),
+			cancel: cancelAndAwait,
 			cleanup: Effect.sync(() => {
 				state.unregister();
 				for (const connection of connections) {

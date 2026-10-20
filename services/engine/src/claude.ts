@@ -1,5 +1,7 @@
-import { Context, Layer } from 'effect';
+import { Context, Duration, Effect, Layer } from 'effect';
 import { makeAcpAdapterHarness } from './acp-harness.ts';
+import { claudeRawMessageFilter } from './claude-background-tasks.ts';
+import { loadConfig } from './config.ts';
 import { Settings } from './settings.ts';
 
 const adapter = makeAcpAdapterHarness({
@@ -15,8 +17,14 @@ const adapter = makeAcpAdapterHarness({
 		{ value: 'max', label: 'Max' },
 	],
 	nativeSubagents: true,
-	// Without this the adapter keeps subagent text internal to the Agent tool call.
-	sessionMeta: { claudeCode: { options: { forwardSubagentText: true } } },
+	sessionMeta: {
+		claudeCode: {
+			// Background task state is only visible in raw SDK messages.
+			emitRawSDKMessages: claudeRawMessageFilter,
+			// Without this the adapter keeps subagent text internal to the Agent tool call.
+			options: { forwardSubagentText: true },
+		},
+	},
 });
 
 export const getClaudeBinary = adapter.getBinary;
@@ -25,7 +33,14 @@ export const createClaudeAcpConfig = adapter.createConfig;
 export const getClaudeConfigOptions = adapter.getConfigOptions;
 
 export class Claude extends Context.Service<Claude>()('oagent/Claude', {
-	make: adapter.make,
+	make: Effect.gen(function* () {
+		const config = yield* loadConfig();
+		return yield* adapter.makeWith({
+			backgroundHoldMaxMs: Duration.toMillis(
+				Duration.minutes(config.claudeBackgroundHoldMinutes),
+			),
+		});
+	}),
 }) {
 	static readonly layer = Layer.effect(Claude, Claude.make).pipe(
 		Layer.provide(adapter.acpLayer),

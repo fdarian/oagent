@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'bun:test';
+import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
-import { Effect, Scope } from 'effect';
+import { Effect, Exit, Scope } from 'effect';
+import { makeAcpAgent } from './acp-agent.ts';
 import { Agents, AgentTypeNotFound } from './agents.ts';
 import { Db } from './db/client.ts';
 import * as schema from './db/schema.ts';
@@ -22,6 +24,7 @@ function createServices(
 	runTurn: (input: TurnInput) => TurnEffect,
 	options?: {
 		steer?: Harness['steer'];
+		releaseHold?: Harness['releaseHold'];
 		forkSession?: Harness['forkSession'];
 		forkSessionBefore?: Harness['forkSessionBefore'];
 		getFirstMessageAfter?: Harness['getFirstMessageAfter'];
@@ -36,6 +39,7 @@ function createServices(
 		listModels: () => Effect.succeed([{ id: 'model' }, { id: 'new-model' }]),
 		runTurn,
 		steer: options?.steer,
+		releaseHold: options?.releaseHold,
 		forkSession: options?.forkSession,
 		forkSessionBefore: options?.forkSessionBefore,
 		getFirstMessageAfter: options?.getFirstMessageAfter,
@@ -1530,6 +1534,159 @@ describe('session turns', () => {
 			code: 'MISSING_CHECKPOINT',
 		});
 		database.sqlite.close();
+	});
+});
+
+describe('Claude background hold through jobs and sessions', () => {
+	const agentScript = fileURLToPath(
+		new URL('./test-acp-agent.ts', import.meta.url),
+	);
+
+	async function createHeldClaude(maxHoldMs: number) {
+		const database = createTestDatabase();
+		const scope = Effect.runSync(Scope.make());
+		const agent = await Effect.runPromise(
+			makeAcpAgent({
+				binary: process.execPath,
+				args: [agentScript],
+				clientInfoName: 'oagent-test',
+			}).pipe(Effect.provideService(Scope.Scope, scope)),
+		);
+		const services = await createServices(
+			database,
+			'claude',
+			(input) =>
+				agent.runTurn({
+					...input,
+					// The fake adapter has no model or effort options to set.
+					configOptions: [],
+					backgroundTasks: { maxHoldMs, settleMs: 50, followUpStartMs: 500 },
+				}),
+			{
+				steer: (input) =>
+					agent.steer(input).pipe(
+						Effect.mapError(
+							(error) =>
+								new HarnessSteerError({
+									code: error.code,
+									message: error.message,
+									cause: error,
+								}),
+						),
+					),
+				releaseHold: agent.releaseHold,
+			},
+		);
+		const startSession = (prompt: string) =>
+			Effect.runPromise(
+				services.sessions.start({
+					title: 'Claude session',
+					prompt,
+					cwd: process.cwd(),
+					model: 'claude:model',
+				}),
+			);
+		const wait = (jobId: string) =>
+			Effect.runPromise(services.jobs.wait({ jobId, timeoutMs: 5_000 }));
+		return {
+			services,
+			startSession,
+			wait,
+			/** Long enough for the prompt to return and the hold to begin. */
+			untilHeld: () => Bun.sleep(400),
+			close: async () => {
+				await Effect.runPromise(Scope.close(scope, Exit.void));
+				database.sqlite.close();
+			},
+		};
+	}
+
+	test('a send while held ends the held job as done and starts a new job', async () => {
+		const claude = await createHeldClaude(10_000);
+		const started = await claude.startSession('background-shell');
+		await claude.untilHeld();
+
+		const sent = await Effect.runPromise(
+			claude.services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'pid',
+			}),
+		);
+
+		expect(sent.delivery).toBe('started');
+		expect(sent.jobId).not.toBe(started.jobId);
+		expect(await claude.wait(started.jobId)).toMatchObject({
+			status: 'done',
+			text: 'waiting on the shell',
+		});
+		expect(await claude.wait(sent.jobId)).toMatchObject({
+			status: 'done',
+			text: expect.stringMatching(/^\d+$/),
+		});
+		await claude.close();
+	});
+
+	test('a send during a follow-up cycle waits for it, keeping the held job complete', async () => {
+		const claude = await createHeldClaude(10_000);
+		const started = await claude.startSession('background-shell:slow-finish');
+		// The shell ends 100ms in and its follow-up cycle then runs for 600ms.
+		await claude.untilHeld();
+
+		const sent = await Effect.runPromise(
+			claude.services.sessions.sendMessage({
+				sessionId: started.sessionId,
+				prompt: 'pid',
+			}),
+		);
+
+		expect(sent.delivery).toBe('started');
+		expect(await claude.wait(started.jobId)).toMatchObject({
+			status: 'done',
+			text: 'shell finished',
+		});
+		const next = await claude.wait(sent.jobId);
+		expect(next).toMatchObject({ status: 'done' });
+		expect(next.status === 'done' ? next.text : '').toMatch(/^\d+$/);
+		await claude.close();
+	});
+
+	test('cancelling a held job marks it cancelled', async () => {
+		const claude = await createHeldClaude(10_000);
+		const started = await claude.startSession('background-shell');
+		await claude.untilHeld();
+
+		expect(
+			await Effect.runPromise(
+				claude.services.sessions.cancel({ sessionId: started.sessionId }),
+			),
+		).toEqual({ ok: true, status: 'cancelled' });
+
+		expect(await claude.wait(started.jobId)).toMatchObject({
+			status: 'cancelled',
+		});
+		await claude.close();
+	});
+
+	test('a job held past the cap finishes as done with its pre-hold text', async () => {
+		const claude = await createHeldClaude(300);
+		const started = await claude.startSession('background-shell');
+
+		expect(await claude.wait(started.jobId)).toMatchObject({
+			status: 'done',
+			text: 'waiting on the shell',
+		});
+		await claude.close();
+	});
+
+	test('the adapter exiting during a hold finishes the job as done with its pre-hold text', async () => {
+		const claude = await createHeldClaude(10_000);
+		const started = await claude.startSession('background-shell:exit');
+
+		expect(await claude.wait(started.jobId)).toMatchObject({
+			status: 'done',
+			text: 'waiting on the shell',
+		});
+		await claude.close();
 	});
 });
 
